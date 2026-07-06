@@ -1,6 +1,5 @@
 /// This module holds the simulation crystal 
-/// 
-use std::rc::Rc;
+
 use crate::numeric::Numeric;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -72,46 +71,43 @@ impl Boundary {
     }
 }
 
+/// The coordinate struct holds the x, y, z coordinates and can either be set directly 
+/// or randomly generated between some 0 and x,y,z limits
 #[derive(Debug, Clone)]
 pub struct Coord {
     pub x: f32,
     pub y: f32,
     pub z: f32,
-    pub boundary: Rc<Boundary>,
+   
 }
 
 impl Coord {
     /// Create a Coord 
-    pub fn new<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z, boundary: Rc<Boundary>) -> Self {
+    pub fn new<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z) -> Self {
         let x = x.to_f32();
         let y =y.to_f32();
         let z = z.to_f32();
-        Self { x, y, z, boundary }
+        Self { x, y, z }
     }
 
-    /// Randomly generates x, y, z coordinates of a Coord.
-    pub fn random_in<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z, boundary: Rc<Boundary>) -> Self {
+    /// Randomly generates x, y, z coordinates of a Coord between [0,X), [0,y), [0,z)
+    pub fn random_in<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z ) -> Self {
         let mut rng = rand::thread_rng();
         Coord {
             x: X::random_in(x, &mut rng),
             y: Y::random_in(y, &mut rng),
             z: Z::random_in(z, &mut rng),
-            boundary,
+
         }
     }
 
     /// Calculate distance to another coordinate using this coordinate's boundary.
     pub fn distance(&self, other: &Coord) -> f32 {
-        if !matches!(self.boundary.kind, BoundaryCondition::Padded) {
-            self.boundary.distance(self, other)
-        } else if !matches!(other.boundary.kind, BoundaryCondition::Padded) {
-            other.boundary.distance(self, other)
-        } else {
-            Boundary::padded_distance(self, other)
-        }
+        ((self.x- other.x).powi(2) + (self.y - other.y).powi(2) + (self.z - other.z).powi(2)).sqrt()
     }
 }
 
+/// Describes an electron trapping site 
 #[derive(Debug, Clone)]
 pub struct Trap {
     pub position: Coord,
@@ -122,11 +118,12 @@ impl Trap {
         Self { position }
     }
 
-    pub fn random<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z, boundary: Rc<Boundary>) -> Self {
-        let coord = Coord::random_in(x, y, z, boundary);
+    pub fn random<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z,) -> Self {
+        let coord = Coord::random_in(x, y, z,);
         Self::new(coord)
     }
 }
+/// Describes a hole trap capable of accepting an electron 
 #[derive(Debug, Clone)]
 pub struct Hole {
     pub position: Coord,
@@ -137,12 +134,13 @@ impl Hole {
         Self { position }
     }
 
-    pub fn random<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z, boundary: Rc<Boundary>) -> Self {
-        let coord = Coord::random_in(x, y, z, boundary);
+    pub fn random<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z,) -> Self {
+        let coord = Coord::random_in(x, y, z, );
         Self::new(coord)
     }
 }
 
+/// Describes a band tail state that are shallow electron traps
 #[derive(Debug, Clone)]
 pub struct Bandtail {
     pub position: Coord,
@@ -153,12 +151,13 @@ impl Bandtail {
         Self { position }
     }
 
-    pub fn random<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z, boundary: Rc<Boundary>) -> Self {
-        let coord = Coord::random_in(x, y, z, boundary);
+    pub fn random<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z,) -> Self {
+        let coord = Coord::random_in(x, y, z, );
         Self::new(coord)
     }
 }
 
+/// Struct to store the traps, holes and bandtail states in a simulation crystal
 #[derive(Debug, Clone)]
 pub struct ElectronPlaces {
     pub traps: Vec<Trap>,
@@ -205,8 +204,8 @@ impl ElectronPlaces{
     }
 
     /// Create and append a trap at the given coordinate.
-    pub fn push_trap_at<X: Numeric, Y: Numeric, Z: Numeric>(&mut self, x: X, y: Y, z: Z, boundary: Rc<Boundary>) {
-        self.traps.push(Trap::new(Coord::new(x, y, z, boundary)));
+    pub fn push_trap_at<X: Numeric, Y: Numeric, Z: Numeric>(&mut self, x: X, y: Y, z: Z,) {
+        self.traps.push(Trap::new(Coord::new(x, y, z, )));
     }
 
     /// Push a pre-built hole into the collection.
@@ -215,8 +214,8 @@ impl ElectronPlaces{
     }
 
     /// Create and append a hole at the given coordinate.
-    pub fn push_hole_at<X: Numeric, Y: Numeric, Z: Numeric>(&mut self, x: X, y: Y, z: Z, boundary: Rc<Boundary>) {
-        self.holes.push(Hole::new(Coord::new(x, y, z, boundary)));
+    pub fn push_hole_at<X: Numeric, Y: Numeric, Z: Numeric>(&mut self, x: X, y: Y, z: Z, ) {
+        self.holes.push(Hole::new(Coord::new(x, y, z, )));
     }
 
     /// Push a pre-built bandtail into the collection.
@@ -225,8 +224,8 @@ impl ElectronPlaces{
     }
 
     /// Create and append a bandtail at the given coordinate.
-    pub fn push_bandtail_at<X: Numeric, Y: Numeric, Z: Numeric>(&mut self, x: X, y: Y, z: Z, boundary: Rc<Boundary>) {
-        self.bandtails.push(Bandtail::new(Coord::new(x, y, z, boundary)));
+    pub fn push_bandtail_at<X: Numeric, Y: Numeric, Z: Numeric>(&mut self, x: X, y: Y, z: Z, ) {
+        self.bandtails.push(Bandtail::new(Coord::new(x, y, z, )));
     }
 
     /// Calculate distance between two traps.
@@ -242,18 +241,18 @@ impl ElectronPlaces{
         x: X,
         y: Y,
         z: Z,
-        boundary: &Rc<Boundary>,
+    
     ) -> Self {
         let traps = (0..t_no)
-            .map(|_| Trap::random(x, y, z, Rc::clone(boundary)))
+            .map(|_| Trap::random(x, y, z,))
             .collect();
 
         let holes = (0..h_no)
-            .map(|_| Hole::random(x, y, z, Rc::clone(boundary)))
+            .map(|_| Hole::random(x, y, z, ))
             .collect();
 
         let bandtails = (0..b_no)
-            .map(|_| Bandtail::random(x, y, z, Rc::clone(boundary)))
+            .map(|_| Bandtail::random(x, y, z,))
             .collect();
 
         ElectronPlaces::new(traps, holes, bandtails)
@@ -263,16 +262,28 @@ impl ElectronPlaces{
 #[derive(Debug, Clone)]
 pub struct Cube {
     pub places: ElectronPlaces,
-    pub boundary: Rc<Boundary>,
+    pub boundary: Boundary,
 }
 
 impl Cube {
     pub fn new<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z, periodic: bool) -> Self {
-        let boundary = Rc::new(Boundary::new(x, y, z, periodic));
+        let boundary = Boundary::new(x, y, z, periodic);
         let places = ElectronPlaces::with_capacity(0, 0, 0);
         Self { places, boundary }
     }
-
+    pub fn new_random<X: Numeric, Y: Numeric, Z: Numeric>(
+        x: X,
+        y: Y,
+        z: Z,
+        t_no: usize,
+        h_no: usize,
+        b_no: usize,
+        periodic: bool,
+    ) -> Self {
+        let boundary = Boundary::new(x, y, z, periodic);
+        let places = ElectronPlaces::random_new(t_no, h_no, b_no, x, y, z,);
+        Self { places, boundary }
+    }
     pub fn contains(&self, point: &Coord) -> bool {
         self.boundary.contains(point)
     }
@@ -283,25 +294,11 @@ impl Cube {
     }
 
     pub fn trap_trap_distance(&self, p1: usize, p2: usize) -> f32 {
-        self.places.traps[p1].position.distance(&self.places.traps[p2].position)
-    }
-
-    pub fn new_random<X: Numeric, Y: Numeric, Z: Numeric>(
-        x: X,
-        y: Y,
-        z: Z,
-        t_no: usize,
-        h_no: usize,
-        b_no: usize,
-        periodic: bool,
-    ) -> Self {
-        let boundary = Rc::new(Boundary::new(x, y, z, periodic));
-        let places = ElectronPlaces::random_new(t_no, h_no, b_no, x, y, z, &boundary);
-        Self { places, boundary }
+        self.boundary.distance(&self.places.traps[p1].position,&self.places.traps[p2].position)
     }
 
     pub fn random_point(&self) -> Coord {
-        Coord::random_in(self.boundary.x, self.boundary.y, self.boundary.z, self.boundary.clone())
+        Coord::random_in(self.boundary.x, self.boundary.y, self.boundary.z, )
     }
 }
 
@@ -311,43 +308,46 @@ mod tests {
 
     #[test]
     fn distance_euclidean() {
-        let p1 = Coord::new(0.0, 0.0, 0.0, Rc::new(Boundary::new(10.0, 10.0, 10.0, false)));
-        let p2 = Coord::new(3.0, 4.0, 0.0, Rc::new(Boundary::new(10.0, 10.0, 10.0, false)));
+        let p1 = Coord::new(0.0, 0.0, 0.0,);
+        let p2 = Coord::new(3.0, 4.0, 0.0,);
         assert_eq!(p1.distance(&p2), 5.0);
     }
 
     #[test]
     fn distance_padded_boundary() {
-        let p1 = Coord::new(1.0, 1.0, 1.0, Rc::new(Boundary::new(10.0, 10.0, 10.0, false)));
-        let p2 = Coord::new(4.0, 1.0, 1.0, Rc::new(Boundary::new(10.0, 10.0, 10.0, false)));
-        let distance = p1.distance(&p2);
+        let p1 = Coord::new(1.0, 1.0, 1.0,);
+        let p2 = Coord::new(4.0, 1.0, 1.0,);
+        let boundary = Boundary::new(10.0, 10.0, 10.0, false);
+        let distance = boundary.distance(&p1, &p2);
         assert_eq!(distance, 3.0);
     }
 
     #[test]
     fn distance_periodic_boundary_wraps() {
-        let p1 = Coord::new(0.5, 5.0, 5.0, Rc::new(Boundary::new(10.0, 10.0, 10.0, true)));
-        let p2 = Coord::new(8.5, 5.0, 5.0, Rc::new(Boundary::new(10.0, 10.0, 10.0, true)));
+        let p1 = Coord::new(0.5, 5.0, 5.0,);
+        let p2 = Coord::new(8.5, 5.0, 5.0,);
+        let boundary = Boundary::new(10.0, 10.0, 10.0, true);
         // Without wrapping: distance = 9.0
         // With wrapping: distance should be 2.0 (shorter path wraps around)
-        let distance = p1.distance(&p2);
+       let distance = boundary.distance(&p1, &p2);
         assert_eq!(distance, 2.0);
     }
 
     #[test]
     fn cube_distance_with_boundary() {
         let mut cube = Cube::new_random(10.0, 10.0, 10.0, 0, 0, 0, true);
-        cube.places.push_trap_at(1.0, 5.0, 5.0, Rc::clone(&cube.boundary));
-        cube.places.push_trap_at(9.0, 5.0, 5.0, Rc::clone(&cube.boundary));
-
+        cube.places.push_trap_at(1.0, 5.0, 5.0,);
+        cube.places.push_trap_at(9.0, 5.0, 5.0,);
         // Periodic: shortest distance is 2.0
-        assert_eq!(cube.places.trap_trap_distance(0, 1), 2.0);
+        assert_eq!(cube.trap_trap_distance(0, 1), 2.0);
     }
 
     #[test]
     fn coord_with_integers() {
-        let p1 = Coord::new(0i32, 0i32, 0i32, Rc::new(Boundary::new(10i32, 10i32, 10i32, false)));
-        let p2 = Coord::new(3i32, 4i32, 0i32, Rc::new(Boundary::new(10i32, 10i32, 10i32, false)));
+        let boundary = Boundary::new(10i32, 10i32, 10i32, false); 
+        let p1 = Coord::new(0i32, 0i32, 0i32, );
+        let p2 = Coord::new(3i32, 4i32, 0i32,);
+        boundary.distance(&p1, &p2);
         assert_eq!(p1.distance(&p2), 5.0);
     }
 }

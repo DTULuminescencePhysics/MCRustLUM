@@ -26,10 +26,11 @@ mod tests {
     #[test]
     fn mixed_types_coordinates() {
         // x: i32, y: f32, z: i64
-        let boundary = std::rc::Rc::new(crystal::Boundary::new(10i32, 10.0f32, 10i64, false));
-        let p1 = crystal::Coord::new(1i32, 5.0f32, 5i64, boundary.clone());
-        let p2 = crystal::Coord::new(4i32, 5.0f32, 5i64, boundary);
-        let distance = p1.distance(&p2);
+        let boundary = crystal::Boundary::new(10i32, 10.0f32, 10i64, false);
+        let p1 = crystal::Coord::new(1i32, 5.0f32, 5i64, );
+        let p2 = crystal::Coord::new(4i32, 5.0f32, 5i64, );
+
+        let distance = boundary.distance(&p1, &p2);
         assert_eq!(distance, 3.0);
     }
 }

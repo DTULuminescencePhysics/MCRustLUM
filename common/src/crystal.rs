@@ -1,6 +1,6 @@
 /// This module holds the simulation crystal 
 
-use crate::numeric::Numeric;
+use crate::numeric::{Numeric,Float};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BoundaryCondition {
@@ -10,18 +10,18 @@ pub enum BoundaryCondition {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Boundary {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
+    pub x: Float,
+    pub y: Float,
+    pub z: Float,
     pub kind: BoundaryCondition,
 }
 
 impl Boundary {
     /// Create a Periodic or Padded boundary condition.
     pub fn new<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z, periodic: bool) -> Self {
-        let x = x.to_f32();
-        let y =y.to_f32();
-        let z = z.to_f32();
+        let x = x.to_float();
+        let y =y.to_float();
+        let z = z.to_float();
         
         if periodic {
             Self { x, y, z, kind: BoundaryCondition::Periodic }
@@ -31,12 +31,12 @@ impl Boundary {
     }
 
     /// Padded boundary distance between p1 and p2
-    pub fn padded_distance(p1: &Coord, p2: &Coord) -> f32 {
+    pub fn padded_distance(p1: &Coord, p2: &Coord) -> Float {
         ((p1.x- p2.x).powi(2) + (p1.y - p2.y).powi(2) + (p1.z - p2.z).powi(2)).sqrt()
     }
 
     /// Periodic boundary distance between p1 and p2
-    pub fn periodic_distance(&self, p1: &Coord, p2: &Coord) -> f32 {
+    pub fn periodic_distance(&self, p1: &Coord, p2: &Coord) -> Float {
         
         let dx = if (p1.x - p2.x).abs() > self.x / 2.0 {
             self.x - (p1.x - p2.x).abs()
@@ -57,7 +57,7 @@ impl Boundary {
     }
 
     /// Calculate boundary-aware distance between two coordinates.
-    pub fn distance(&self, p1: &Coord, p2: &Coord) -> f32 {
+    pub fn distance(&self, p1: &Coord, p2: &Coord) -> Float {
         match self.kind {
             BoundaryCondition::Padded => Boundary::padded_distance(p1, p2),
             BoundaryCondition::Periodic => self.periodic_distance(p1, p2),
@@ -75,18 +75,18 @@ impl Boundary {
 /// or randomly generated between some 0 and x,y,z limits
 #[derive(Debug, Clone)]
 pub struct Coord {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
+    pub x: Float,
+    pub y: Float,
+    pub z: Float,
    
 }
 
 impl Coord {
     /// Create a Coord 
     pub fn new<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z) -> Self {
-        let x = x.to_f32();
-        let y =y.to_f32();
-        let z = z.to_f32();
+        let x = x.to_float();
+        let y =y.to_float();
+        let z = z.to_float();
         Self { x, y, z }
     }
 
@@ -102,7 +102,7 @@ impl Coord {
     }
 
     /// Calculate distance to another coordinate using this coordinate's boundary.
-    pub fn distance(&self, other: &Coord) -> f32 {
+    pub fn distance(&self, other: &Coord) -> Float {
         ((self.x- other.x).powi(2) + (self.y - other.y).powi(2) + (self.z - other.z).powi(2)).sqrt()
     }
 }
@@ -229,7 +229,7 @@ impl ElectronPlaces{
     }
 
     /// Calculate distance between two traps.
-    pub fn trap_trap_distance(&self, p1: usize, p2: usize) -> f32 {
+    pub fn trap_trap_distance(&self, p1: usize, p2: usize) -> Float {
         self.traps[p1].position.distance(&self.traps[p2].position)
     }
 
@@ -289,11 +289,11 @@ impl Cube {
     }
 
     /// Calculate distance between two points with the cube's boundary conditions
-    pub fn distance(&self, p1: &Coord, p2: &Coord) -> f32 {
+    pub fn distance(&self, p1: &Coord, p2: &Coord) -> Float {
         self.boundary.distance(p1, p2)
     }
 
-    pub fn trap_trap_distance(&self, p1: usize, p2: usize) -> f32 {
+    pub fn trap_trap_distance(&self, p1: usize, p2: usize) -> Float {
         self.boundary.distance(&self.places.traps[p1].position,&self.places.traps[p2].position)
     }
 

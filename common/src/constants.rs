@@ -17,8 +17,8 @@ pub mod metric{
     const PICO: f32 = 0.000_000_000_001;
     const FEMTO: f32 = 0.000_000_000_000_001;
 
-    const GIGA_SQ: u32 = GIGA*GIGA;
-    const MEGA_SQ: u32 = MEGA*MEGA;
+    const GIGA_SQ: u64 = GIGA as u64*GIGA as u64;
+    const MEGA_SQ: u64 = MEGA as u64*MEGA as u64;
     const KILO_SQ: u32 = KILO*KILO;
     const HECTO_SQ: u32 = HECTO*HECTO;
     const DECA_SQ: u32 = DECA*DECA;
@@ -31,8 +31,7 @@ pub mod metric{
     const PICO_SQ: f32 = PICO*PICO;
     const FEMTO_SQ: f32 = FEMTO*FEMTO;
 
-    const GIGA_CUBE: u32 = GIGA_SQ*GIGA;
-    const MEGA_CUBE: u32 = MEGA_SQ*MEGA;
+    const MEGA_CUBE: u64 = MEGA_SQ*MEGA as u64;
     const KILO_CUBE: u32 = KILO_SQ*KILO;
     const HECTO_CUBE: u32 = HECTO_SQ*HECTO;
     const DECA_CUBE: u32 = DECA_SQ*DECA;
@@ -49,26 +48,85 @@ pub mod metric{
 
 /// This module contains useful Physical constants to be used throughout the program
 pub mod physical_constants{
-    const BOLTZMANN: f32 = 1.380649e-23; /// Boltzmann constant in J/K (kg·m²/s²·K)
-    const BOLTZMANN_EV: f32 = 8.617333262e-5;  /// Boltzmann constant in eV/K
-    const PLANCK: f32 = 6.62607015e-34;   /// Planck constant in J·s (kg·m²/s)
-    const PLANCK_BAR: f32 = 1.054571817e-34; /// Reduced Planck constant in J·s (kg·m²/s)
-    const SPEED_LIGHT: i32 = 299792458;        /// Speed of light in m/s
-    const ELEMENTARY_CHARGE: f32 = 1.602176634e-19;  /// Elementary charge in C
-    const ELECTRON_MASS: f32 = 9.10938356e-31; /// Electron mass in kg
-    const AVOGARDRO: f32 = 6.02214076e23;  /// Avogadro's number in 1/mol
-    const GAS_CONSTANT: f32 = 8.314462618;  /// Gas constant in J/(mol·K)
-    const VACUUM_PERM: f32 = 8.854187817e-12;  /// Vacuum permittivity in F/m 
-    const EV_TO_J: f32 = 1.602176634e-19;  /// Conversion factor from eV to J
+    /// Boltzmann constant in J/K (kg·m²/s²·K)
+    const BOLTZMANN: f32 = 1.380649e-23; 
+    /// Boltzmann constant in eV/K
+    const BOLTZMANN_EV: f32 = 8.617333262e-5; 
+    /// Planck constant in J·s (kg·m²/s)
+    const PLANCK: f32 = 6.62607015e-34;   
+    /// Reduced Planck constant in J·s (kg·m²/s)
+    const PLANCK_BAR: f32 = 1.054571817e-34; 
+    /// Speed of light in m/s
+    const SPEED_LIGHT: i32 = 299792458;       
+    /// Elementary charge in C
+    const ELEMENTARY_CHARGE: f32 = 1.602176634e-19;  
+    /// Electron mass in kg
+    const ELECTRON_MASS: f32 = 9.10938356e-31; 
+    /// Avogadro's number in 1/mol
+    const AVOGARDRO: f32 = 6.02214076e23;  
+    /// Gas constant in J/(mol·K)
+    const GAS_CONSTANT: f32 = 8.314462618;  
+    /// Vacuum permittivity in F/m 
+    const VACUUM_PERM: f32 = 8.854187817e-12;  
+    /// Conversion factor from eV to J
+    const EV_TO_J: f32 = 1.602176634e-19;  
 }
 
+/// Holds converstions from 
 pub mod time{
-    const SECOND: u32 = 1;
+    use crate::numeric::{Numeric, PrecisionInput, TimeFloat, TimePrecision};    const SECOND: u32 = 1;
     const MINUTE: u32 = 60;
     const HOUR: u32 = 60*MINUTE;
     const DAY: u32 = 24*HOUR;
-    const YEAR: u32 = DAY*365.2425;
-    const K_ANNUM: u32 = metric::KILO*YEAR;
-    const MA_ANNUM: u32 = metric::MEGA*YEAR;
+    const YEAR: u32 = 31_556_952;
+    const K_ANNUM: u64 = 31_556_952_000; 
+    const MA_ANNUM: u64 = 31_556_952_000_000;
+
+    #[derive(Debug, Clone, Copy)]
+    pub enum TimeMultiplier {
+        U32(u32),
+        U64(u64),
+    }
+
+    impl TimeMultiplier {
+        pub fn to_float(self) -> TimeFloat {
+            match self {
+                TimeMultiplier::U32(value) => value as TimeFloat,
+                TimeMultiplier::U64(value) => value as TimeFloat,
+            }
+        }
+    }
+
+    pub fn unit_multiplier(unit: &str) -> Option<TimeMultiplier> {
+        match unit.to_lowercase().as_str() {
+            "s" | "sec" | "second" | "seconds" => Some(TimeMultiplier::U32(SECOND)),
+            "m" | "min" | "minute" | "minutes" => Some(TimeMultiplier::U32(MINUTE)),
+            "h" | "hr" | "hour" | "hours" => Some(TimeMultiplier::U32(HOUR)),
+            "d" | "day" | "days" => Some(TimeMultiplier::U32(DAY)),
+            "y" | "yr" | "year" | "years" => Some(TimeMultiplier::U32(YEAR)),
+
+            "ka" | "k_annum" | "kannum" => Some(TimeMultiplier::U64(K_ANNUM)),
+            "ma" | "ma_annum" | "maannum" => Some(TimeMultiplier::U64(MA_ANNUM)),
+
+            _ => None,
+
+        }
+    }
+    pub fn is_ka_or_ma(unit: &str) -> bool {
+
+        matches!(
+            unit.to_lowercase().as_str(),
+            "ka" | "k_annum" | "kannum" | "ma" | "ma_annum" | "maannum"
+        )
+
+        
+    }
+    pub fn convert_to_seconds<T>(unit: &str, value: T) -> Option<T::Output>
+    where
+        T: PrecisionInput<TimePrecision>,
+    {
+        let multiplier = unit_multiplier(unit)?.to_float();
+        Some(value.map_to_precision(multiplier))
+    }
 
 }

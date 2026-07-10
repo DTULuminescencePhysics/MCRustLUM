@@ -611,9 +611,10 @@ mod tests {
         .unwrap();
 
         let start_time = profile.current_time();
-        profile.advance(-10000.0);
+        profile.advance(-1000000.0);
 
-        assert_close(profile.current_time(), start_time  - 10000.0);
+        assert_close(profile.current_time(), start_time  - 1000000.0);
         assert!(profile.current_temperature() > 20.0);
+        assert_close_f32(profile.current_temperature(), 20.00031689);
     }
 }

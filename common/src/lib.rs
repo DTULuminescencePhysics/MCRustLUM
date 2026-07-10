@@ -1,7 +1,8 @@
 pub mod numeric;
+pub mod constants;
 pub mod crystal;
 pub mod time_temperature;
-pub mod constants;
+pub mod rate_equations;
 
 #[cfg(test)]
 mod tests {

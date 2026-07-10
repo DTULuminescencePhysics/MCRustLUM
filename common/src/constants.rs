@@ -48,33 +48,35 @@ pub mod metric{
 
 /// This module contains useful Physical constants to be used throughout the program
 pub mod physical_constants{
+    use crate::numeric::{Float};
     /// Boltzmann constant in J/K (kg·m²/s²·K)
-    const BOLTZMANN: f32 = 1.380649e-23; 
+    pub const BOLTZMANN: Float = 1.380649e-23; 
     /// Boltzmann constant in eV/K
-    const BOLTZMANN_EV: f32 = 8.617333262e-5; 
+    pub const BOLTZMANN_EV: Float = 8.617333262e-5; 
     /// Planck constant in J·s (kg·m²/s)
-    const PLANCK: f32 = 6.62607015e-34;   
+    pub const PLANCK: Float = 6.62607015e-34;   
     /// Reduced Planck constant in J·s (kg·m²/s)
-    const PLANCK_BAR: f32 = 1.054571817e-34; 
+    pub const PLANCK_BAR: Float = 1.054571817e-34; 
     /// Speed of light in m/s
-    const SPEED_LIGHT: i32 = 299792458;       
+    pub const SPEED_LIGHT: Float = 299792458.0;       
     /// Elementary charge in C
-    const ELEMENTARY_CHARGE: f32 = 1.602176634e-19;  
+    pub const ELEMENTARY_CHARGE: Float = 1.602176634e-19;  
     /// Electron mass in kg
-    const ELECTRON_MASS: f32 = 9.10938356e-31; 
+    pub const ELECTRON_MASS: Float = 9.10938356e-31; 
     /// Avogadro's number in 1/mol
-    const AVOGARDRO: f32 = 6.02214076e23;  
+    pub const AVOGARDRO: Float = 6.02214076e23;  
     /// Gas constant in J/(mol·K)
-    const GAS_CONSTANT: f32 = 8.314462618;  
+    pub const GAS_CONSTANT: Float = 8.314462618;  
     /// Vacuum permittivity in F/m 
-    const VACUUM_PERM: f32 = 8.854187817e-12;  
+    pub const VACUUM_PERM: Float = 8.854187817e-12;  
     /// Conversion factor from eV to J
-    const EV_TO_J: f32 = 1.602176634e-19;  
+    pub const EV_TO_J: Float = 1.602176634e-19;  
 }
 
 /// Holds converstions from 
 pub mod time{
-    use crate::numeric::{Numeric, PrecisionInput, TimeFloat, TimePrecision};    const SECOND: u32 = 1;
+    use crate::numeric::{PrecisionInput, TimeFloat, TimePrecision};    
+    const SECOND: u32 = 1;
     const MINUTE: u32 = 60;
     const HOUR: u32 = 60*MINUTE;
     const DAY: u32 = 24*HOUR;
@@ -89,7 +91,7 @@ pub mod time{
     }
 
     impl TimeMultiplier {
-        pub fn to_float(self) -> TimeFloat {
+        pub fn get_float_precision(self) -> TimeFloat {
             match self {
                 TimeMultiplier::U32(value) => value as TimeFloat,
                 TimeMultiplier::U64(value) => value as TimeFloat,
@@ -125,8 +127,11 @@ pub mod time{
     where
         T: PrecisionInput<TimePrecision>,
     {
-        let multiplier = unit_multiplier(unit)?.to_float();
-        Some(value.map_to_precision(multiplier))
+        Some(value.multiply_to_precision(
+       unit_multiplier(unit)?
+                  .get_float_precision()
+            )
+        )
     }
 
 }

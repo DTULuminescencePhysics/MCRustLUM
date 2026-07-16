@@ -1,398 +1,594 @@
-/// This module contains all of the rate equations that can be used 
-/// for electron transitions. They all take the following general form
-/// pub fn rate_equation_name<P, A, B, C, D, E, F, G, H, I, J, K, L, T, V, W>(a, b, c) -> Option< >
-/// where 
-///     P: ElementWise<Float, Output = A> + ElementWise<P, Output = D> +
-///        ElementWise<D, Output= H> + ElementWiseUnary<Output = E> +  
-///        ElementWise<E, Output = F> + ElementWise<L, Output = V>,
-///    A: ElementWise<A, Output = B> + ElementWise<P, Output = G>,   
-///    B: ElementWiseUnary<Output = C>,
-///    C: ElementWise<D, Output = V> + ElementWise<F, Output = V>,
-///    D: ElementWise<D, Output = V>,
-///    G: ElementWise<P, Output = V> + ElementWiseUnary<Output = L>,
-///    H: ElementWise<P, Output = V> +  ElementWise<D, Output = I> +
-///       ElementWise<Float, Output = J>,
-///    I: ElementWise<J, Output = K>,
-///    K: ElementWise<I, Output = W>,
-///    V: PrecisionInput<TimePrecision> + PrecisionInput<TimePrecision, Output = W>,
-///    W: ElementWise<W, Output = W>,
-///    T: Numeric,
-/// { 
-///     Calculation here ...
-///     Some(value.map_to_precision()?)
-/// }
-/// This structure allows float, Vec and ndarray to be passed to the same functions.
+//! Generic rate equations used by the Monte Carlo luminescence model.
+//!
+//! All functions operate through the element-wise traits in `numeric.rs`,
+//! allowing the same equation to accept scalars, vectors, or ndarrays.
+//! Mixed input shapes are supported when a corresponding broadcasting
+//! implementation exists, such as vector energies with scalar temperature.
+//!
+//! Most public functions return `Option<T>`. `None` indicates that an
+//! element-wise operation could not be completed, usually because input
+//! container shapes were incompatible. Successful rate values are converted
+//! to `TimePrecision` before being returned.
 
-use crate::numeric::{Float, Numeric, ElementWise, ElementWiseUnary, PrecisionInput, TimePrecision};
+use crate::numeric::{Float, ElementWise, ElementWiseUnary, PrecisionInput, TimePrecision};
 use crate::constants::physical_constants::{BOLTZMANN_EV};
 
-/// Function to calculate the exponential of the energy over KbT
-pub fn exponential_energy_over_kb_t<P, A, B, C>( e: &P,temp: &P,)-> Option<C>
-where
-    P: ElementWise<Float, Output = A>, 
-    A: ElementWise<A, Output = B>,
-    B: ElementWiseUnary<Output = C>,
 
+/// Function to calculate the exponential of the energy over KbT.
+///
+/// Energy and temperature may use different container types. For example,
+/// `e` may be a `Vec<Float>` while `temp` is a single `Float`, provided the
+/// required `ElementWise` implementations exist.
+pub fn exponential_energy_over_kb_t<E, T, ENeg, KT, Ratio, Exp>(
+    e: &E,
+    temp: &T,
+) -> Option<Exp>
+where
+    E: ElementWise<Float, Output = ENeg>,
+    T: ElementWise<Float, Output = KT>,
+    ENeg: ElementWise<KT, Output = Ratio>,
+    Ratio: ElementWiseUnary<Output = Exp>,
 {
-    Some(e.element_mul(&-1.0)?
-        .element_div(&temp.element_mul(&BOLTZMANN_EV)?)?
-        .element_exp())
+    let negative_energy = e.element_mul(&-1.0)?;
+    let kb_t = temp.element_mul(&BOLTZMANN_EV)?;
+    Some(negative_energy.element_div(&kb_t)?.element_exp())
 }
 
-/// Delocalised Transitions 
-/// First order rate equation 
-/// e_cb conduction band energy (eV); s_frequency factor (s^-1); temp (K), n concentration of traps
-pub fn first_order_delocalised_rate_equation<P, A, B, C, D, V>(
-    e_cb: &P,
-    s_frequency: &P,
-    n: &P,
-    temp: &P,
+/// Calculate the first-order delocalised release rate.
+/// The model evaluates the per-particle rate `s * exp(-E / (k_B T))`, where
+/// `s` is the attempt frequency. Population scaling is applied by callers that
+/// calculate population changes.
+pub fn first_order_delocalised_rate_equation<E, S, T, ENeg, KT, Ratio, Exp, V>(
+    e_cb: &E,
+    s_frequency: &S,
+    temp: &T,
 ) -> Option<<V as PrecisionInput<TimePrecision>>::Output>
-
 where
-    P: ElementWise<Float, Output = A> + ElementWise<P, Output = D>, 
-    A: ElementWise<A, Output = B>,
-    B: ElementWiseUnary<Output = C>,
-    C: ElementWise<D, Output = V>,
-    V: PrecisionInput<TimePrecision>,
-
-{
-    
-    let exponent = exponential_energy_over_kb_t(e_cb,temp)?;
-
-    let prefactor = s_frequency.element_mul(n)?;
-
-    Some(exponent.element_mul(&prefactor)?
-                  .multiply_to_precision(-1.0)
-    )
-
-}
-
-/// Second order rate equation 
-/// e_cb conduction band energy (eV); s_frequency factor (m^3s^-1); temp (K), n concentration of traps
-pub fn second_order_delocalised_rate_equation<P, A, B, C, F, E, V>(
-    e_cb: &P,
-    s_frequency: &P,
-    n: &P,
-    temp: &P,
-) -> Option<<V as PrecisionInput<TimePrecision>>::Output>
-
-where
-    P: ElementWise<Float, Output = A> + ElementWiseUnary<Output = E> + 
-       ElementWise<E, Output = F>,
-    A: ElementWise<A, Output = B>,
-    B: ElementWiseUnary<Output = C>,
-    C: ElementWise<F, Output = V>,
-    V: PrecisionInput<TimePrecision>,
-
-{
-    let exponent = exponential_energy_over_kb_t(e_cb,temp)?;
-
-    let prefactor = s_frequency.element_mul(&n.element_powf(2.0))?;
-
-    Some(exponent.element_mul(&prefactor)?
-                  .multiply_to_precision(-1.0)
-    )
-
-}
-
-/// General order rate equation 
-/// e_cb conduction band energy (eV); s_frequency factor (m^3(b-1)s^-1); temp (K), n concentration of traps
-pub fn general_order_delocalised_rate_equation<P, A, B, C, F, E, T, V,>(
-    e_cb: &P,
-    s_frequency: &P,
-    n: &P,
-    temp: &P,
-    order: &T,
-) -> Option<<V as PrecisionInput<TimePrecision>>::Output>
-
-where
-    P: ElementWise<Float, Output = A> + ElementWiseUnary<Output = E> +
-       ElementWise<E, Output = F>,
-    A: ElementWise<A, Output = B>,
-    B: ElementWiseUnary<Output = C>,
-    C: ElementWise<F, Output = V>,
-    T: Numeric,
+    E: ElementWise<Float, Output = ENeg>,
+    T: ElementWise<Float, Output = KT>,
+    ENeg: ElementWise<KT, Output = Ratio>,
+    Ratio: ElementWiseUnary<Output = Exp>,
+    Exp: ElementWise<S, Output = V>,
     V: PrecisionInput<TimePrecision>,
 {
-    let exponent = exponential_energy_over_kb_t(e_cb,temp)?;
-
-    let prefactor = s_frequency.element_mul(&n.element_powf(*order))?;
-
-    Some(exponent.element_mul(& prefactor)?
-                  .multiply_to_precision(-1.0)
-    )
-
+    let exponent = exponential_energy_over_kb_t(e_cb, temp)?;
+    Some(exponent.element_mul(s_frequency)?.map_to_precision())
 }
 
-/// General order approach
-/// Here the three rate equations will be given so the change in holes, traps and conduction band carriers can be calculated.
-/// The quasi-equilibrium assumption leading to a single rate equation is also given
-
-/// Change in hole concentration 
-/// m concentration of holes; nc concentration of charge carriers; recomb recombination probability  
-pub fn hole_change_delocalised_rate_equation<P, A, G, V>(
-    m: &P,
-    nc: &P,
-    recomb: &P,
+/// Calculate the second-order delocalised release rate.
+///
+/// The model evaluates the per-particle rate `s * exp(-E / (k_B T))`.
+pub fn second_order_delocalised_rate_equation<E, S, T, ENeg, KT, Ratio, Exp, V>(
+    e_cb: &E,
+    s_frequency: &S,
+    temp: &T,
 ) -> Option<<V as PrecisionInput<TimePrecision>>::Output>
-
 where
-    P: ElementWise<Float, Output = A>,
-    A: ElementWise<P, Output = G>,
-    G: ElementWise<P, Output = V>,
+    E: ElementWise<Float, Output = ENeg>,
+    T: ElementWise<Float, Output = KT>,
+    ENeg: ElementWise<KT, Output = Ratio>,
+    Ratio: ElementWiseUnary<Output = Exp>,
+    Exp: ElementWise<S, Output = V>,
     V: PrecisionInput<TimePrecision>,
+{
+    let exponent = exponential_energy_over_kb_t(e_cb, temp)?;
+    Some(exponent.element_mul(s_frequency)?.map_to_precision())
+}
 
+/// Calculate a general-order delocalised release rate.
+///
+/// The model evaluates the per-particle rate `s * exp(-E / (k_B T))`.
+/// `order` remains part of the configured model identity but population-order
+/// scaling is no longer performed by this function.
+pub fn general_order_delocalised_rate_equation<E, S, Temp, Order, ENeg, KT, Ratio, Exp, V>(
+    e_cb: &E,
+    s_frequency: &S,
+    temp: &Temp,
+    _order: &Order,
+) -> Option<<V as PrecisionInput<TimePrecision>>::Output>
+where
+    E: ElementWise<Float, Output = ENeg>,
+    Temp: ElementWise<Float, Output = KT>,
+    ENeg: ElementWise<KT, Output = Ratio>,
+    Ratio: ElementWiseUnary<Output = Exp>,
+    Exp: ElementWise<S, Output = V>,
+    V: PrecisionInput<TimePrecision>,
+{
+    let exponent = exponential_energy_over_kb_t(e_cb, temp)?;
+    Some(exponent.element_mul(s_frequency)?.map_to_precision())
+}
+
+/// Calculate recombination loss from the hole population.
+///
+/// The returned magnitude is `nc * m * recomb`, where `nc` is the
+/// conduction-band population, `m` is the occupied-hole population, and
+/// `recomb` is the recombination coefficient.
+pub fn hole_change_delocalised_rate_equation<M, Nc, Recomb, MNc, V>(
+    m: &M,
+    nc: &Nc,
+    recomb: &Recomb,
+) -> Option<<V as PrecisionInput<TimePrecision>>::Output>
+where
+    Nc: ElementWise<M, Output = MNc>,
+    MNc: ElementWise<Recomb, Output = V>,
+    V: PrecisionInput<TimePrecision>,
 {
     Some(
-        nc.element_mul(&-1.0)?
-          .element_mul(m)?
-          .element_mul(recomb)?
-          .map_to_precision()
+        nc.element_mul(m)?
+            .element_mul(recomb)?
+            .map_to_precision(),
     )
 }
 
-/// n concentration of traps; nc concentration of charge carriers; N_tot total number of traps; retrap recombination probability  
-pub fn retrapping_change_delocalised_rate_equation<P, D, H, V>(
-    n_tot: &P,
-    n: &P,
-    nc: &P,
-    retrap: &P,
+/// Calculate conduction-band retrapping into available traps.
+///
+/// Available traps are `n_tot - n`, giving the rate
+/// `nc * (n_tot - n) * retrap`.
+pub fn retrapping_change_delocalised_rate_equation<NTot, N, Nc, Retrap, Available, NcAvailable, V>(
+    n_tot: &NTot,
+    n: &N,
+    nc: &Nc,
+    retrap: &Retrap,
 ) -> Option<<V as PrecisionInput<TimePrecision>>::Output>
-
 where
-    P: ElementWise<P, Output = D> + ElementWise<D, Output= H>,
-    H: ElementWise<P, Output = V>,
+    NTot: ElementWise<N, Output = Available>,
+    Nc: ElementWise<Available, Output = NcAvailable>,
+    NcAvailable: ElementWise<Retrap, Output = V>,
     V: PrecisionInput<TimePrecision>,
-
-{   
+{
+    let available = n_tot.element_sub(n)?;
     Some(
-        nc.element_mul(&n_tot.element_sub(n)?)?
-          .element_mul(retrap)?
-          .map_to_precision()
+        nc.element_mul(&available)?
+            .element_mul(retrap)?
+            .map_to_precision(),
     )
 }
-/// Change in trap concentration
-/// e_cb conduction band energy (eV); s_frequency factor (s^-1); temp (K), n concentration of traps
-/// n concentration of traps; nc concentration of charge carriers; N_tot total number of traps; retrap recombination probability
-pub fn trap_change_delocalised_rate_equation<P, A, B, C, D, H, V, W>(
-    e_cb: &P,
-    s_frequency: &P,
-    n: &P,
-    temp: &P,
-    n_tot: &P,
-    nc: &P,
-    retrap: &P,
-) -> Option<W> 
-where 
-    P: ElementWise<Float, Output = A> + ElementWise<P, Output = D> +
-       ElementWise<D, Output= H>,
-    A: ElementWise<A, Output = B>,
-    B: ElementWiseUnary<Output = C>,
-    C: ElementWise<D, Output = V>, 
-    H: ElementWise<P, Output = V>,
-    V: PrecisionInput<TimePrecision, Output = W>,
-    W: ElementWise<W, Output = W>,
-    
-{
-    let to_cb = first_order_delocalised_rate_equation(e_cb,s_frequency,n,temp)?;
-    let back_cb= retrapping_change_delocalised_rate_equation(n_tot,n,nc,retrap)?;
-    
-    Some(to_cb.element_add(&back_cb)?)
-}
 
-/// Change in charge carrier concentration
-/// e_cb conduction band energy (eV); s_frequency factor (s^-1); temp (K), n concentration of traps
-/// n concentration of traps; nc concentration of charge carriers; N_tot total number of traps; retrap recombination probability
-/// m concentration of holes; nc concentration of charge carriers; recomb recombination probability  
-pub fn cb_band_change_delocalised_rate_equation<P, A, B, C, D, G, H, V, W>(
-    e_cb: &P,
-    s_frequency: &P,
-    n: &P,
-    temp: &P,
-    n_tot: &P,
-    nc: &P,
-    m: &P,
-    retrap: &P,
-    recomb: &P,
-    
-) -> Option<W>
-
+/// Calculate the net change in occupied trap concentration.
+///
+/// Thermal release decreases the trap population, while conduction-band
+/// retrapping increases it. The returned value is
+/// `retrapping_rate - thermal_release_rate`.
+pub fn trap_change_delocalised_rate_equation
+< E, S, N, Temp, NTot, Nc, Retrap, ENeg, KT, Ratio, Exp, ThermalRaw,
+  ThermalBase, PopulationRaw, PopulationOut, ThermalOut, Available, NcAvailable,
+  RetrapRaw, RetrapOut, V, >(
+    e_cb: &E,
+    s_frequency: &S,
+    n: &N,
+    temp: &Temp,
+    n_tot: &NTot,
+    nc: &Nc,
+    retrap: &Retrap,
+) -> Option<V >
 where
-    P: ElementWise<Float, Output = A> + ElementWise<P, Output = D> +
-       ElementWise<D, Output= H> + ElementWise<Float, Output = A>,
-    A: ElementWise<A, Output = B> + ElementWise<P, Output = G>,
-    B: ElementWiseUnary<Output = C>,
-    C: ElementWise<D, Output = V>,
-    G: ElementWise<P, Output = V>,
-    H: ElementWise<P, Output = V>,  
-    V: PrecisionInput<TimePrecision, Output = W>,
-    W: ElementWise<W, Output = W>,
+    E: ElementWise<Float, Output = ENeg>,
+    Temp: ElementWise<Float, Output = KT>,
+    ENeg: ElementWise<KT, Output = Ratio>,
+    Ratio: ElementWiseUnary<Output = Exp>,
+    Exp: ElementWise<S, Output = ThermalRaw>,
+    ThermalRaw: PrecisionInput<TimePrecision, Output = ThermalBase>,
+    N: ElementWise<Float, Output = PopulationRaw>,
+    PopulationRaw: PrecisionInput<TimePrecision, Output = PopulationOut>,
+    ThermalBase: ElementWise<PopulationOut, Output = ThermalOut>,
+    NTot: ElementWise<N, Output = Available>,
+    Nc: ElementWise<Available, Output = NcAvailable>,
+    NcAvailable: ElementWise<Retrap, Output = RetrapRaw>,
+    RetrapRaw: PrecisionInput<TimePrecision, Output = RetrapOut>,
+    RetrapOut: ElementWise<ThermalOut, Output = V>,
 
-{   
-    let from_trap = first_order_delocalised_rate_equation(e_cb,s_frequency,n,temp)?;
-    let to_trap= retrapping_change_delocalised_rate_equation(n_tot,n,nc,retrap)?;
-    let to_hole = hole_change_delocalised_rate_equation(m,nc,recomb)?;
-    
-    Some(to_trap.element_add(&to_hole.element_sub(&from_trap)?)?)
+{
+    let per_particle_to_cb = first_order_delocalised_rate_equation(
+        e_cb,
+        s_frequency,
+        temp,
+    )?;
+    let population = n.element_mul(&1.0)?.map_to_precision();
+    let to_cb = per_particle_to_cb.element_mul(&population)?;
+    let back_cb = retrapping_change_delocalised_rate_equation(
+        n_tot,
+        n,
+        nc,
+        retrap,
+    )?;
 
+    back_cb.element_sub(&to_cb)
 }
 
-/// Change in trap concentration
-/// e_cb conduction band energy (eV); s_frequency factor (s^-1); temp (K), n concentration of traps
-/// n concentration of traps; N_tot total number of traps; retrap recombination probability
-/// m concentration of holes; nc concentration of charge carriers; recomb recombination probability  
-pub fn quasi_equ_delocalised_rate_equation<P, A, B, C, D, G, H, I, J, K, V, W>(
-    e_cb: &P,
-    s_frequency: &P,
-    n: &P,
-    temp: &P,
-    n_tot: &P,
-    m: &P,
-    retrap: &P,
-    recomb: &P,
-) -> Option<W> 
-where 
-    P: ElementWise<Float, Output = A> + ElementWise<P, Output = D> +
-       ElementWise<D, Output= H>,
-    A: ElementWise<A, Output = B> + ElementWise<P, Output = G>,
-    B: ElementWiseUnary<Output = C>,
-    C: ElementWise<D, Output = V>,
-    H: ElementWise<P, Output = V> +  ElementWise<D, Output = I> +
-       ElementWise<Float, Output = J>,
-    D: ElementWise<I, Output=K>,
-    I: ElementWise<H, Output = K>,
-    V: PrecisionInput<TimePrecision, Output = W>,
-    W: ElementWise<K, Output = W>,
-{
-    let to_cb = first_order_delocalised_rate_equation(e_cb,s_frequency,n,temp)?;
-
-    let to_trap =  retrap.element_mul(&n_tot
-                            .element_sub(n)?)?;
+// /// Calculate the net change in conduction-band carrier concentration.
+///
+/// Thermal release supplies carriers to the conduction band, while
+/// retrapping and recombination remove them. This implementation follows
+/// the existing simulation sign convention and returns
+/// `retrapping - recombination - thermal_release`. 
+pub fn cb_band_change_delocalised_rate_equation
+< E, S, N, Temp, NTot, Nc, M, Retrap, Recomb, ENeg, KT, Ratio, Exp, 
+  ThermalRaw, ThermalBase, PopulationRaw, PopulationOut, ThermalOut, Available,
+  NcAvailable, RetrapRaw, RetrapOut, MNc, HoleRaw, HoleOut, LossesRaw, Losses, V >(
+    e_cb: &E,
+    s_frequency: &S,
+    n: &N,
+    temp: &Temp,
+    n_tot: &NTot,
+    nc: &Nc,
+    m: &M,
+    retrap: &Retrap,
+    recomb: &Recomb,
+) -> Option< V >
+where
+    E: ElementWise<Float, Output = ENeg>,
+    Temp: ElementWise<Float, Output = KT>,
+    ENeg: ElementWise<KT, Output = Ratio>,
+    Ratio: ElementWiseUnary<Output = Exp>,
+    Exp: ElementWise<S, Output = ThermalRaw>,
+    ThermalRaw: PrecisionInput<TimePrecision, Output = ThermalBase>,
+    N: ElementWise<Float, Output = PopulationRaw>,
+    PopulationRaw: PrecisionInput<TimePrecision, Output = PopulationOut>,
+    ThermalBase: ElementWise<PopulationOut, Output = ThermalOut>,
+    NTot: ElementWise<N, Output = Available>,
+    Nc: ElementWise<Available, Output = NcAvailable>
+        + ElementWise<M, Output = MNc>,
+    NcAvailable: ElementWise<Retrap, Output = RetrapRaw>,
+    RetrapRaw: PrecisionInput<TimePrecision, Output = RetrapOut>,
+    MNc: ElementWise<Recomb, Output = HoleRaw>,
+    HoleRaw: PrecisionInput<TimePrecision, Output = HoleOut>,
+    HoleOut: ElementWise<ThermalOut, Output = LossesRaw>,
+    LossesRaw: PrecisionInput<TimePrecision, Output = Losses>,
+    RetrapOut: ElementWise<Losses, Output = V>,
     
+
+{
+    let per_particle_from_trap = first_order_delocalised_rate_equation(
+        e_cb,
+        s_frequency,
+        temp,
+    )?;
+    let population = n.element_mul(&1.0)?.map_to_precision();
+    let from_trap = per_particle_from_trap.element_mul(&population)?;
+    let to_trap = retrapping_change_delocalised_rate_equation(
+        n_tot,
+        n,
+        nc,
+        retrap,
+    )?;
+    let to_hole = hole_change_delocalised_rate_equation(
+        m,
+        nc,
+        recomb,
+    )?;
+
+    let losses = to_hole.element_add(&from_trap)?.map_to_precision();
+    to_trap.element_sub(&losses)
+}
+
+/// Calculate the quasi-equilibrium delocalised recombination rate.
+///
+/// The thermal release rate is multiplied by the fraction of released
+/// carriers expected to recombine rather than retrap.
+pub fn quasi_equ_delocalised_rate_equation
+< E, S, N, Temp, NTot, M, Retrap, Recomb, ENeg, KT, Ratio, Exp, ThermalRaw,
+  ThermalBase, PopulationRaw, PopulationOut, ThermalOut, Available, ToTrap,
+  ToHole, Total, FractionRaw, FractionOut, V >(
+    e_cb: &E,
+    s_frequency: &S,
+    n: &N,
+    temp: &Temp,
+    n_tot: &NTot,
+    m: &M,
+    retrap: &Retrap,
+    recomb: &Recomb,
+) -> Option< V >
+where
+    E: ElementWise<Float, Output = ENeg>,
+    Temp: ElementWise<Float, Output = KT>,
+    ENeg: ElementWise<KT, Output = Ratio>,
+    Ratio: ElementWiseUnary<Output = Exp>,
+    Exp: ElementWise<S, Output = ThermalRaw>,
+    ThermalRaw: PrecisionInput<TimePrecision, Output = ThermalBase>,
+    N: ElementWise<Float, Output = PopulationRaw>,
+    PopulationRaw: PrecisionInput<TimePrecision, Output = PopulationOut>,
+    ThermalBase: ElementWise<PopulationOut, Output = ThermalOut>,
+    NTot: ElementWise<N, Output = Available>,
+    Retrap: ElementWise<Available, Output = ToTrap>,
+    M: ElementWise<Recomb, Output = ToHole>,
+    ToTrap: ElementWise<ToHole, Output = Total>,
+    ToHole: ElementWise<Total, Output = FractionRaw>,
+    FractionRaw: PrecisionInput<TimePrecision, Output = FractionOut>,
+    ThermalOut: ElementWise<FractionOut, Output = V>,
+{
+    let per_particle_to_cb = first_order_delocalised_rate_equation(
+        e_cb,
+        s_frequency,
+        temp,
+    )?;
+    let population = n.element_mul(&1.0)?.map_to_precision();
+    let to_cb = per_particle_to_cb.element_mul(&population)?;
+    let available = n_tot.element_sub(n)?;
+    let to_trap = retrap.element_mul(&available)?;
     let to_hole = m.element_mul(recomb)?;
-    
-    let numer = to_trap.element_add(&to_hole)?;
-    
-    let frac = to_hole.element_div(&numer)?;
-    
-    Some(to_cb.element_mul(&frac)?)
+    let total = to_trap.element_add(&to_hole)?;
+    let fraction = to_hole.element_div(&total)?.map_to_precision();
+
+    to_cb.element_mul(&fraction)
 }
+
 
 /// Localised Transitions 
-/// Function to calculate tunnelling from one state to either a hole or a trap
-/// alpha exponential constant (m^-1); b attemp to escape frequency (s^-1); r distance from trap to hole (m);
-pub fn tunnelling_rate<P, A, G, L, V>(
-    alpha: &P,
-    b: &P, 
-    r: &P
-)-> Option<<V as PrecisionInput<TimePrecision>>::Output>
+/// Calculate a localised tunnelling rate with exponential distance decay.
+///
+/// The model evaluates `b * exp(-alpha * r)`, where `alpha` is the decay
+/// constant, `b` is the attempt frequency, and `r` is the tunnelling distance.
+pub fn tunnelling_rate<Alpha, B, R, NegativeAlpha, Product, Exp, V>(
+    alpha: &Alpha,
+    b: &B,
+    r: &R,
+) -> Option<<V as PrecisionInput<TimePrecision>>::Output>
 where
-    P: ElementWise<Float, Output = A> + ElementWise<L, Output = V>, 
-    A: ElementWise<P, Output = G>,
-    G: ElementWiseUnary<Output = L>,
+    Alpha: ElementWise<Float, Output = NegativeAlpha>,
+    NegativeAlpha: ElementWise<R, Output = Product>,
+    Product: ElementWiseUnary<Output = Exp>,
+    B: ElementWise<Exp, Output = V>,
     V: PrecisionInput<TimePrecision>,
-
-{   
-    Some(
-        b.element_mul(&alpha
-         .element_mul(&-1.0)?
-         .element_mul(r)?
-         .element_exp())?
-         .map_to_precision()
-    )
-    
+{
+    let negative_alpha = alpha.element_mul(&-1.0)?;
+    let exponent = negative_alpha.element_mul(r)?.element_exp();
+    Some(b.element_mul(&exponent)?.map_to_precision())
 }
 
 /// Filling 
-pub fn filling_rate<P, D, V>(
-    d0: &P,
-    d_dot: &P, 
-    n: &P, 
-    n_tot: &P) -> Option<<V as PrecisionInput<TimePrecision>>::Output>
- where 
-    P: ElementWise<P, Output = D>,
-    D: ElementWise<D, Output = V>,
-    V: PrecisionInput<TimePrecision>,
-
- { 
-    Some(
-        d_dot.element_div(d0)?
-             .element_mul(&n_tot
-             .element_sub(n)?)?
-             .map_to_precision()
-    )
- }
-
-pub fn filling_with_recombination_rate<P, D, H, I, V, W>(
-    d0: &P,
-    d_dot: &P,
-    n: &P,
-    n_tot: &P,
-    m: &P,
-    retrap: &P,
-    recomb: &P,
-) -> Option<W>
+/// Calculate filling of currently available traps under an external dose.
+///
+/// The model evaluates `(d_dot / d0) * (n_tot - n)`, where `d0` is the
+/// characteristic dose and `d_dot` is the applied dose rate.
+pub fn filling_rate<D0, DDot, N, NTot, DoseRatio, Available, V>(
+    d0: &D0,
+    d_dot: &DDot,
+    n: &N,
+    n_tot: &NTot,
+) -> Option<<V as PrecisionInput<TimePrecision>>::Output>
 where
-    P: ElementWise<P, Output = D> + ElementWise<D, Output = H>,
-    D: ElementWise<D, Output = V>,
-    H: ElementWise<D, Output = I> + ElementWise<I, Output = I>,
-    V: PrecisionInput<TimePrecision, Output = W>,
-    W: ElementWise<I, Output = W>,
+    DDot: ElementWise<D0, Output = DoseRatio>,
+    NTot: ElementWise<N, Output = Available>,
+    DoseRatio: ElementWise<Available, Output = V>,
+    V: PrecisionInput<TimePrecision>,
+{
+    let dose_ratio = d_dot.element_div(d0)?;
+    let available = n_tot.element_sub(n)?;
+    Some(dose_ratio.element_mul(&available)?.map_to_precision())
+}
+
+/// Calculate trap filling when newly released carriers may recombine directly.
+///
+/// The basic filling rate is multiplied by the affinity-derived probability
+/// that the carrier is retrapped rather than recombined.   
+pub fn filling_with_recombination_rate
+< D0, DDot, N, NTot, M, Retrap, Recomb, DoseRatio, Available, FillRaw, 
+  FillOut, ToTrap, ToHole, Total,FractionRaw, Fraction, V >(
+    d0: &D0,
+    d_dot: &DDot,
+    n: &N,
+    n_tot: &NTot,
+    m: &M,
+    retrap: &Retrap,
+    recomb: &Recomb,
+) -> Option<V >
+where
+    DDot: ElementWise<D0, Output = DoseRatio>,
+    NTot: ElementWise<N, Output = Available>,
+    DoseRatio: ElementWise<Available, Output = FillRaw>,
+    FillRaw: PrecisionInput<TimePrecision, Output = FillOut>,
+    Retrap: ElementWise<Available, Output = ToTrap>,
+    M: ElementWise<Recomb, Output = ToHole>,
+    ToTrap: ElementWise<ToHole, Output = Total>
+        + ElementWise<Total, Output = FractionRaw>,
+    FractionRaw: PrecisionInput<TimePrecision, Output = Fraction>,
+    FillOut: ElementWise<Fraction, Output = V>,
+   
 {
     let fill = filling_rate(d0, d_dot, n, n_tot)?;
-    
-    let to_trap = retrap.element_mul(&n_tot.element_sub(n)?)?;
-    let to_hole = m.element_mul(recomb)?;
-    let numer = to_trap.element_add(&to_hole)?;
-    let frac = to_trap.element_div(&numer)?;
-
-    Some(fill.element_mul(&frac)?)
+    let fraction = retrapping_by_affinity(n, n_tot, m, retrap, recomb)?;
+    fill.element_mul(&fraction)
 }
+
+/// Return the affinity-derived probability of retrapping.
+///
+/// The result is `to_trap / (to_trap + to_hole)`.
+pub fn retrapping_by_affinity 
+< N, NTot, M, Retrap, Recomb, Available, 
+  ToTrap, ToHole, Total,FractionRaw, W > (
+    n: &N,
+    n_tot: &NTot,
+    m: &M,
+    retrap: &Retrap,
+    recomb: &Recomb,
+) -> Option < W >
+where
+    NTot: ElementWise<N, Output = Available>,
+    Retrap: ElementWise<Available, Output = ToTrap>,
+    M: ElementWise<Recomb, Output = ToHole>,
+    ToTrap: ElementWise<ToHole, Output = Total>
+        + ElementWise<Total, Output = FractionRaw>,
+    FractionRaw: PrecisionInput<TimePrecision, Output = W>,
+{   
+    let available = n_tot.element_sub(n)?;
+    let to_trap = retrap.element_mul(&available)?;
+    let to_hole = m.element_mul(recomb)?;
+    let total = to_trap.element_add(&to_hole)?;
+    Some(to_trap.element_div(&total)?.map_to_precision())
+
+}
+/// Return the affinity-derived probability of recombination.
+///
+/// The result is `to_hole / (to_trap + to_hole)`. It complements
+/// `retrapping_by_affinity` when the denominator is nonzero.
+pub fn recombination_by_affinity 
+< N, NTot, M, Retrap, Recomb, Available, 
+  ToTrap, ToHole, Total,FractionRaw, W > (
+    n: &N,
+    n_tot: &NTot,
+    m: &M,
+    retrap: &Retrap,
+    recomb: &Recomb,
+) -> Option < W >
+where
+    NTot: ElementWise<N, Output = Available>,
+    Retrap: ElementWise<Available, Output = ToTrap>,
+    M: ElementWise<Recomb, Output = ToHole>,
+    ToHole: ElementWise<ToTrap, Output = Total>
+        + ElementWise<Total, Output = FractionRaw>,
+    FractionRaw: PrecisionInput<TimePrecision, Output = W>,
+{   
+    let available = n_tot.element_sub(n)?;
+    let to_trap = retrap.element_mul(&available)?;
+    let to_hole = m.element_mul(recomb)?;
+    let total =to_hole.element_add(&to_trap)?;
+    Some(to_hole.element_div(&total)?.map_to_precision())
+
+}
+/// Calculate the current distance-dependent retrapping factor.
+///
+/// The implementation evaluates `out = prefactor * exp((r / mu)^2)`. The name is
+/// retained for compatibility, although the function returns the model
+/// reciprocal factor to be used to select a transition tau = -ln(u) * out.
+pub fn retrapping_probability_by_r <Pf, Mu, R, Frac, Sq, Exp, V> (
+    prefactor: &Pf,
+    mu: &Mu,
+    r: &R 
+) ->  Option<<V as PrecisionInput<TimePrecision>>::Output>
+where 
+    R: ElementWise<Mu, Output = Frac>,
+    Frac: ElementWiseUnary<Output = Sq >,
+    Sq: ElementWiseUnary< Output = Exp >,
+    Pf: ElementWise<Exp, Output = V >,
+   
+    V: PrecisionInput<TimePrecision>,
+
+{
+    let frac = r.element_div(mu)?; 
+    let sq = frac.element_powf(2);
+    let e = sq.element_exp();
+    
+    Some(prefactor.element_mul(&e)?.map_to_precision())
+}
+
+
+
 
 /// Internal transitions
-pub fn thermal_ground_state_rate<P, A, B, C, D, V, W>(
-    e: &P,
-    s_frequency_e: &P,
-    s_frequency_g: &P,
-    n_e: &P,
-    n_g: &P,
-    temp: &P,) -> Option<<V as PrecisionInput<TimePrecision>>::Output>
-where    
-    P: ElementWise<Float, Output = A> + ElementWise<P, Output = D>, 
-    A: ElementWise<A, Output = B>,
-    B: ElementWiseUnary<Output = C>,
-    C: ElementWise<D, Output = V>,
-    V: PrecisionInput<TimePrecision, Output = W>,
-    W: ElementWise<D, Output = W>,
-    V: PrecisionInput<TimePrecision>,
+/// Calculate the thermal occupation weights of the ground and excited states.
+///
+/// For `x = exp(-E / (k_B T))`, the returned pair is
+/// `(ground_weight, excited_weight) = (1 / (1 + x), x / (1 + x))`.
+/// Consequently, the two weights sum to one for every element. Energy and
+/// temperature accept the same scalar, vector, and array combinations as the
+/// thermal state-rate functions below.
+pub fn ground_excited_state_weights
+<E, Temp, ENeg, KT, Ratio, Exp, Denominator, GroundWeight, ExcitedWeight>(
+    e: &E,
+    temp: &Temp,
+) -> Option<(GroundWeight, ExcitedWeight)>
+where
+    E: ElementWise<Float, Output = ENeg>,
+    Temp: ElementWise<Float, Output = KT>,
+    ENeg: ElementWise<KT, Output = Ratio>,
+    Ratio: ElementWiseUnary<Output = Exp>,
+    Exp: ElementWise<Float, Output = Denominator>
+        + ElementWise<Denominator, Output = ExcitedWeight>,
+    Float: ElementWise<Denominator, Output = GroundWeight>,
 {
-    let leaving  = first_order_delocalised_rate_equation(e,s_frequency_e,n_g,temp)?;
-    let coming = s_frequency_g.element_mul(n_e)?;
-    Some(leaving.element_add(&coming)?)
+    let boltzmann_factor = exponential_energy_over_kb_t(e, temp)?;
+    let one: Float = 1.0;
+    let denominator = boltzmann_factor.element_add(&one)?;
+    let ground_weight = one.element_div(&denominator)?;
+    let excited_weight = boltzmann_factor.element_div(&denominator)?;
 
+    Some((ground_weight, excited_weight))
 }
 
-pub fn thermal_excited_state_rate<P, A, B, C, D, V, W>(
-    e: &P,
-    s_frequency_e: &P,
-    s_frequency_g: &P,
-    n_e: &P,
-    n_g: &P,
-    temp: &P,) -> Option<<V as PrecisionInput<TimePrecision>>::Output>
-where    
-    P: ElementWise<Float, Output = A> + ElementWise<P, Output = D>, 
-    A: ElementWise<A, Output = B>,
-    B: ElementWiseUnary<Output = C>,
-    C: ElementWise<D, Output = V>,
-    V: PrecisionInput<TimePrecision, Output = W>,
-    D: ElementWise<W, Output = W>,
-    V: PrecisionInput<TimePrecision>,
+/// Calculate the net localised ground-state population change.
+///
+/// Relaxation from the excited state contributes positively, while thermal
+/// excitation out of the ground state contributes negatively.
+pub fn thermal_ground_state_rate
+< E, SE, SG, NE, NG, Temp, ENeg, KT, Ratio, Exp, ExcitationRaw,
+  ExcitationBase, PopulationRaw, PopulationOut, ExcitationOut, RelaxationRaw,
+  RelaxationOut, V, >(
+    e: &E,
+    s_frequency_e: &SE,
+    s_frequency_g: &SG,
+    n_e: &NE,
+    n_g: &NG,
+    temp: &Temp,
+) -> Option<V>
+where
+    E: ElementWise<Float, Output = ENeg>,
+    Temp: ElementWise<Float, Output = KT>,
+    ENeg: ElementWise<KT, Output = Ratio>,
+    Ratio: ElementWiseUnary<Output = Exp>,
+    Exp: ElementWise<SE, Output = ExcitationRaw>,
+    ExcitationRaw: PrecisionInput<TimePrecision, Output = ExcitationBase>,
+    NG: ElementWise<Float, Output = PopulationRaw>,
+    PopulationRaw: PrecisionInput<TimePrecision, Output = PopulationOut>,
+    ExcitationBase: ElementWise<PopulationOut, Output = ExcitationOut>,
+    SG: ElementWise<NE, Output = RelaxationRaw>,
+    RelaxationRaw: PrecisionInput<TimePrecision, Output = RelaxationOut>,
+    RelaxationOut: ElementWise<ExcitationOut, Output = V>,
 {
-    let coming  = first_order_delocalised_rate_equation(e,s_frequency_e,n_g,temp)?;
-    let leaving = s_frequency_g.element_mul(n_e)?;
-    Some(leaving.element_sub(&coming)?)
+    let per_particle_leaving = first_order_delocalised_rate_equation(
+        e,
+        s_frequency_e,
+        temp,
+    )?;
+    let population = n_g.element_mul(&1.0)?.map_to_precision();
+    let leaving = per_particle_leaving.element_mul(&population)?;
+    let coming = s_frequency_g
+        .element_mul(n_e)?
+        .map_to_precision();
 
+    coming.element_sub(&leaving)
+}
+
+/// Calculate the net localised excited-state population change.
+///
+/// Thermal excitation from the ground state and the relaxation term are
+/// combined using the sign convention required by the existing simulation.
+pub fn thermal_excited_state_rate
+< E, SE, SG, NE, NG, Temp, ENeg, KT, Ratio, Exp, ExcitationRaw,
+  ExcitationBase, PopulationRaw, PopulationOut, ExcitationOut, RelaxationRaw,
+  RelaxationOut, V, >(
+    e: &E,
+    s_frequency_e: &SE,
+    s_frequency_g: &SG,
+    n_e: &NE,
+    n_g: &NG,
+    temp: &Temp,
+) -> Option<V>
+where
+    E: ElementWise<Float, Output = ENeg>,
+    Temp: ElementWise<Float, Output = KT>,
+    ENeg: ElementWise<KT, Output = Ratio>,
+    Ratio: ElementWiseUnary<Output = Exp>,
+    Exp: ElementWise<SE, Output = ExcitationRaw>,
+    ExcitationRaw: PrecisionInput<TimePrecision, Output = ExcitationBase>,
+    NG: ElementWise<Float, Output = PopulationRaw>,
+    PopulationRaw: PrecisionInput<TimePrecision, Output = PopulationOut>,
+    ExcitationBase: ElementWise<PopulationOut, Output = ExcitationOut>,
+    SG: ElementWise<NE, Output = RelaxationRaw>,
+    RelaxationRaw: PrecisionInput<TimePrecision, Output = RelaxationOut>,
+    RelaxationOut: ElementWise<ExcitationOut, Output = V>,
+{
+    let per_particle_coming = first_order_delocalised_rate_equation(
+        e,
+        s_frequency_e,
+        temp,
+    )?;
+    let population = n_g.element_mul(&1.0)?.map_to_precision();
+    let coming = per_particle_coming.element_mul(&population)?;
+    let leaving = s_frequency_g
+        .element_mul(n_e)?
+        .map_to_precision();
+
+    leaving.element_add(&coming)
 }
 
 #[cfg(test)]
@@ -405,11 +601,10 @@ mod tests {
     fn expected_first_order_rate(
         e_cb: Float,
         s_frequency: Float,
-        n: Float,
         temp: Float,
     ) -> f64 {
         let exponent = (-e_cb / (BOLTZMANN_EV * temp)).exp();
-        (s_frequency * n * exponent) as f64
+        (s_frequency * exponent) as f64
     }
 
     fn assert_close(left: f64, right: f64) {
@@ -424,23 +619,20 @@ mod tests {
     fn first_order_delocalised_rate_equation_returns_expected_float_value() {
         let e_cb: Float = 0.45;
         let s_frequency: Float = 1.0e12;
-        let n: Float = 0.25;
         let temp: Float = 450.0;
 
         let actual = first_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
         )
         .expect("rate equation should return a value");
 
-        let expected = -1.0*expected_first_order_rate(e_cb, s_frequency, n, temp);
+        let expected = expected_first_order_rate(e_cb, s_frequency, temp);
         assert_close(actual, expected);
 
         assert_eq!(e_cb, 0.45);
         assert_eq!(s_frequency, 1.0e12);
-        assert_eq!(n, 0.25);
         assert_eq!(temp, 450.0);
     }
 
@@ -448,13 +640,11 @@ mod tests {
     fn first_order_delocalised_rate_equation_returns_expected_vec_values() {
         let e_cb: Vec<Float> = vec![0.35, 0.45, 0.55];
         let s_frequency: Vec<Float> = vec![1.0e12, 2.0e12, 3.0e12];
-        let n: Vec<Float> = vec![0.1, 0.2, 0.3];
         let temp: Vec<Float> = vec![300.0, 450.0, 600.0];
 
         let actual = first_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
         )
         .expect("rate equation should return a value");
@@ -462,10 +652,9 @@ mod tests {
         let expected: Vec<f64> = e_cb
             .iter()
             .zip(s_frequency.iter())
-            .zip(n.iter())
             .zip(temp.iter())
-            .map(|(((e_cb, s_frequency), n), temp)| {
-                -1.0*expected_first_order_rate(*e_cb, *s_frequency, *n, *temp)
+            .map(|((e_cb, s_frequency), temp)| {
+                expected_first_order_rate(*e_cb, *s_frequency, *temp)
             })
             .collect();
 
@@ -476,7 +665,6 @@ mod tests {
 
         assert_eq!(e_cb, vec![0.35, 0.45, 0.55]);
         assert_eq!(s_frequency, vec![1.0e12, 2.0e12, 3.0e12]);
-        assert_eq!(n, vec![0.1, 0.2, 0.3]);
         assert_eq!(temp, vec![300.0, 450.0, 600.0]);
     }
 
@@ -484,21 +672,19 @@ mod tests {
     fn first_order_delocalised_rate_equation_returns_expected_ndarray_values() {
         let e_cb = array![0.35 as Float, 0.45 as Float, 0.55 as Float];
         let s_frequency = array![1.0e12 as Float, 2.0e12 as Float, 3.0e12 as Float];
-        let n = array![0.1 as Float, 0.2 as Float, 0.3 as Float];
         let temp = array![300.0 as Float, 450.0 as Float, 600.0 as Float];
 
         let actual = first_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
         )
         .expect("rate equation should return a value");
 
         let expected = array![
-            -1.0*expected_first_order_rate(e_cb[0], s_frequency[0], n[0], temp[0]),
-            -1.0*expected_first_order_rate(e_cb[1], s_frequency[1], n[1], temp[1]),
-            -1.0*expected_first_order_rate(e_cb[2], s_frequency[2], n[2], temp[2]),
+            expected_first_order_rate(e_cb[0], s_frequency[0], temp[0]),
+            expected_first_order_rate(e_cb[1], s_frequency[1], temp[1]),
+            expected_first_order_rate(e_cb[2], s_frequency[2], temp[2]),
         ];
 
         assert_eq!(actual.shape(), expected.shape());
@@ -508,7 +694,6 @@ mod tests {
 
         assert_eq!(e_cb, array![0.35 as Float, 0.45 as Float, 0.55 as Float]);
         assert_eq!(s_frequency, array![1.0e12 as Float, 2.0e12 as Float, 3.0e12 as Float]);
-        assert_eq!(n, array![0.1 as Float, 0.2 as Float, 0.3 as Float]);
         assert_eq!(temp, array![300.0 as Float, 450.0 as Float, 600.0 as Float]);
     }
 
@@ -560,43 +745,39 @@ mod tests {
     }
 
     #[test]
-    fn second_order_delocalised_rate_equation_uses_squared_trap_concentration() {
+    fn second_order_delocalised_rate_equation_returns_per_particle_rate() {
         let e_cb: Float = 0.45;
         let s_frequency: Float = 2.0e12;
-        let n: Float = 0.25;
         let temp: Float = 450.0;
 
         let actual = second_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
         )
         .expect("second-order rate should be calculated");
 
-        let expected = (-1.0*s_frequency * n.powf(2.0)
+        let expected = (s_frequency
             * (-e_cb / (BOLTZMANN_EV * temp)).exp()) as f64;
         assert_close(actual, expected);
     }
 
     #[test]
-    fn general_order_delocalised_rate_equation_respects_the_requested_order() {
+    fn general_order_delocalised_rate_equation_returns_per_particle_rate() {
         let e_cb: Float = 0.45;
         let s_frequency: Float = 2.0e12;
-        let n: Float = 0.25;
         let temp: Float = 450.0;
         let order: Float = 1.5;
 
         let actual = general_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
             &order,
         )
         .expect("general-order rate should be calculated");
 
-        let expected = (-1.0*s_frequency * n.powf(order)
+        let expected = (s_frequency
             * (-e_cb / (BOLTZMANN_EV * temp)).exp()) as f64;
         assert_close(actual, expected);
     }
@@ -605,20 +786,17 @@ mod tests {
     fn general_order_matches_first_and_second_order_at_integer_orders() {
         let e_cb: Float = 0.45;
         let s_frequency: Float = 2.0e12;
-        let n: Float = 0.25;
         let temp: Float = 450.0;
 
         let first = first_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
         )
         .unwrap();
         let general_first = general_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
             &1.0,
         )
@@ -628,14 +806,12 @@ mod tests {
         let second = second_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
         )
         .unwrap();
         let general_second = general_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
             &2.0,
         )
@@ -651,7 +827,7 @@ mod tests {
 
         let actual = hole_change_delocalised_rate_equation(&m, &nc, &recomb)
             .expect("hole change should be calculated");
-        let expected = -(m * nc * recomb) as f64;
+        let expected = (m * nc * recomb) as f64;
         assert_close(actual, expected);
     }
 
@@ -696,7 +872,6 @@ mod tests {
         let to_cb = first_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
         )
         .unwrap();
@@ -707,7 +882,7 @@ mod tests {
             &retrap,
         )
         .unwrap();
-        assert_close(actual, to_cb + back_cb);
+        assert_close(actual, back_cb - n as f64 * to_cb);
     }
 
     #[test]
@@ -738,7 +913,6 @@ mod tests {
         let from_trap = first_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
         )
         .unwrap();
@@ -751,7 +925,7 @@ mod tests {
         .unwrap();
         let to_hole = hole_change_delocalised_rate_equation(&m, &nc, &recomb)
             .unwrap();
-        assert_close(actual, to_trap + to_hole - from_trap);
+        assert_close(actual, to_trap - to_hole - n as f64 * from_trap);
     }
 
     #[test]
@@ -780,13 +954,12 @@ mod tests {
         let to_cb = first_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
         )
         .unwrap();
         let to_trap = retrap * (n_tot - n);
         let to_hole = m * recomb;
-        let expected = to_cb * (to_hole / (to_trap + to_hole)) as f64;
+        let expected = n as f64 * to_cb * (to_hole / (to_trap + to_hole)) as f64;
         assert_close(actual, expected);
     }
 
@@ -847,7 +1020,39 @@ mod tests {
     }
 
     #[test]
-    fn thermal_ground_state_rate_adds_arrival_to_thermal_leaving_rate() {
+    fn ground_excited_state_weights_follow_boltzmann_distribution() {
+        let e: Float = 0.045;
+        let temp: Float = 450.0;
+
+        let (ground, excited) = ground_excited_state_weights(&e, &temp)
+            .expect("thermal state weights should calculate");
+
+        let factor = (-e / (BOLTZMANN_EV * temp)).exp();
+        let expected_ground = 1.0 / (1.0 + factor);
+        let expected_excited = factor / (1.0 + factor);
+
+        assert_close(ground as f64, expected_ground as f64);
+        assert_close(excited as f64, expected_excited as f64);
+        assert!((ground + excited - 1.0).abs() <= 2.0 * Float::EPSILON);
+    }
+
+    #[test]
+    fn ground_excited_state_weights_support_vector_energy_and_scalar_temperature() {
+        let e: Vec<Float> = vec![0.01, 0.03, 0.05];
+        let temp: Float = 450.0;
+
+        let (ground, excited) = ground_excited_state_weights(&e, &temp)
+            .expect("vector thermal state weights should calculate");
+
+        assert_eq!(ground.len(), e.len());
+        assert_eq!(excited.len(), e.len());
+        for (ground_weight, excited_weight) in ground.iter().zip(excited.iter()) {
+            assert!((ground_weight + excited_weight - 1.0).abs() <= 2.0 * Float::EPSILON);
+        }
+    }
+
+    #[test]
+    fn thermal_ground_state_rate_subtracts_thermal_leaving_rate_from_arrival() {
         let e: Float = 0.45;
         let s_frequency_e: Float = 1.0e12;
         let s_frequency_g: Float = 2.0;
@@ -868,16 +1073,15 @@ mod tests {
         let leaving = first_order_delocalised_rate_equation(
             &e,
             &s_frequency_e,
-            &n_g,
             &temp,
         )
         .unwrap();
         let coming = (s_frequency_g * n_e) as f64;
-        assert_close(actual, leaving + coming);
+        assert_close(actual,  coming - n_g as f64 * leaving);
     }
 
     #[test]
-    fn thermal_excited_state_rate_subtracts_thermal_arrival_from_leaving_rate() {
+    fn thermal_excited_state_rate_adds_thermal_arrival_to_leaving_rate() {
         let e: Float = 0.45;
         let s_frequency_e: Float = 1.0e12;
         let s_frequency_g: Float = 2.0;
@@ -898,35 +1102,31 @@ mod tests {
         let coming = first_order_delocalised_rate_equation(
             &e,
             &s_frequency_e,
-            &n_g,
             &temp,
         )
         .unwrap();
         let leaving = (s_frequency_g * n_e) as f64;
-        assert_close(actual, leaving - coming);
+        assert_close(actual, n_g as f64 * coming + leaving);
     }
 
     #[test]
     fn second_order_rate_preserves_vector_and_array_shapes() {
         let e_cb: Vec<Float> = vec![0.35, 0.45, 0.55];
         let s_frequency: Vec<Float> = vec![1.0e12, 2.0e12, 3.0e12];
-        let n: Vec<Float> = vec![0.1, 0.2, 0.3];
         let temp: Vec<Float> = vec![300.0, 450.0, 600.0];
 
         let vector = second_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
         )
         .unwrap();
         let expected_vector: Vec<f64> = e_cb
             .iter()
             .zip(s_frequency.iter())
-            .zip(n.iter())
             .zip(temp.iter())
-            .map(|(((energy, frequency), concentration), temperature)| {
-                (-1.0*frequency * concentration.powf(2.0)
+            .map(|((energy, frequency), temperature)| {
+                (frequency
                     * (-energy / (BOLTZMANN_EV * temperature)).exp()) as f64
             })
             .collect();
@@ -934,26 +1134,106 @@ mod tests {
 
         let e_cb = array![0.35 as Float, 0.45 as Float, 0.55 as Float];
         let s_frequency = array![1.0e12 as Float, 2.0e12 as Float, 3.0e12 as Float];
-        let n = array![0.1 as Float, 0.2 as Float, 0.3 as Float];
         let temp = array![300.0 as Float, 450.0 as Float, 600.0 as Float];
         let array_result = second_order_delocalised_rate_equation(
             &e_cb,
             &s_frequency,
-            &n,
             &temp,
         )
         .unwrap();
         assert_eq!(array_result.shape(), e_cb.shape());
-        for ((((actual, energy), frequency), concentration), temperature) in array_result
+        for (((actual, energy), frequency), temperature) in array_result
             .iter()
             .zip(e_cb.iter())
             .zip(s_frequency.iter())
-            .zip(n.iter())
             .zip(temp.iter())
         {
-            let expected = (-1.0*frequency * concentration.powf(2.0)
+            let expected = (frequency
                 * (-energy / (BOLTZMANN_EV * temperature)).exp()) as f64;
             assert_close(*actual, expected);
         }
+    }
+
+
+    #[test]
+    fn delocalised_rates_accept_vector_properties_and_scalar_temperature() {
+        let e_cb: Vec<Float> = vec![0.35, 0.45, 0.55];
+        let s_frequency: Vec<Float> = vec![1.0e12, 2.0e12, 3.0e12];
+        let temp: Float = 450.0;
+
+        let actual = first_order_delocalised_rate_equation(
+            &e_cb,
+            &s_frequency,
+            &temp,
+        )
+        .expect("mixed vector and scalar inputs should be supported");
+
+        let expected: Vec<f64> = e_cb
+            .iter()
+            .zip(s_frequency.iter())
+            .map(|(energy, frequency)| {
+                (frequency
+                    * (-energy / (BOLTZMANN_EV * temp)).exp()) as f64
+            })
+            .collect();
+
+        assert_vec_close(&actual, &expected);
+    }
+
+    #[test]
+    fn tunnelling_rate_accepts_scalar_parameters_and_vector_distances() {
+        let alpha: Float = 2.0;
+        let b: Float = 5.0e6;
+        let r: Vec<Float> = vec![0.1, 0.2, 0.4];
+
+        let actual = tunnelling_rate(&alpha, &b, &r)
+            .expect("mixed tunnelling inputs should be supported");
+
+        let expected: Vec<f64> = r
+            .iter()
+            .map(|distance| (b * (-alpha * distance).exp()) as f64)
+            .collect();
+
+        assert_vec_close(&actual, &expected);
+    }
+
+    #[test]
+    fn filling_rate_accepts_scalar_dose_and_vector_occupancy() {
+        let d0: Float = 4.0;
+        let d_dot: Float = 2.0;
+        let n: Vec<Float> = vec![0.1, 0.3, 0.8];
+        let n_tot: Float = 1.0;
+
+        let actual = filling_rate(&d0, &d_dot, &n, &n_tot)
+            .expect("mixed filling inputs should be supported");
+
+        let expected: Vec<f64> = n
+            .iter()
+            .map(|occupied| (d_dot / d0 * (n_tot - occupied)) as f64)
+            .collect();
+
+        assert_vec_close(&actual, &expected);
+    }
+
+    #[test]
+    fn thermal_excited_state_rate_accepts_vector_populations_and_scalar_temperature() {
+        let e: Vec<Float> = vec![0.35, 0.45];
+        let s_frequency_e: Vec<Float> = vec![1.0e12, 2.0e12];
+        let s_frequency_g: Float = 2.0;
+        let n_e: Vec<Float> = vec![0.3, 0.4];
+        let n_g: Vec<Float> = vec![0.25, 0.35];
+        let temp: Float = 450.0;
+
+        let actual = thermal_excited_state_rate(
+            &e,
+            &s_frequency_e,
+            &s_frequency_g,
+            &n_e,
+            &n_g,
+            &temp,
+        )
+        .expect("mixed thermal inputs should be supported");
+
+        assert_eq!(actual.len(), e.len());
     }
 }

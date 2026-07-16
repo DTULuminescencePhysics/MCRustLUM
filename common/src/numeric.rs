@@ -1,20 +1,38 @@
+//! Numeric types and element-wise operations shared by the simulation.
+//!
+//! Rate equations are written once and can then operate on a scalar, a
+//! [`Vec`], or an [`ndarray::ArrayBase`]. [`ElementWise`] supplies the binary
+//! arithmetic used by those equations, while [`ElementWiseUnary`] supplies
+//! operations such as `exp` and `powf`.
+//!
+//! Two floating-point precisions are intentionally available:
+//! [`Float`] is the normal simulation precision and [`TimeFloat`] is the
+//! higher precision used for rates and time calculations. [`PrecisionInput`]
+//! converts either individual values or complete containers between them.
+
 use std::ops::{Add, Div, Mul, Sub};
 use rand::Rng;
 use ndarray::{Array, Array1, ArrayBase, ArrayD, Data, Dimension, Zip};
-/// Trait for numeric types that can be used as coordinates.
-/// Set the default precision used by most of the program.
-pub type Float = f32;
 
-/// Set the precision used by time/temperature profiles.
+/// Default floating-point precision used for model parameters and state.
+pub type Float = f32;
+// pub type Float = f64;
+/// Higher precision used for rates, lifetimes, and time/temperature profiles.
 pub type TimeFloat = f64;
 
-// pub type Float = f64;
-/// Supports conversion to the program-wide `Float` type for distance calculations and comparisons.
+/// Common behaviour required from scalar values accepted by numeric helpers.
+///
+/// This trait allows coordinates and model inputs to be supplied as common
+/// integer or floating-point types. Conversion is explicit so calculations
+/// can consistently target either [`Float`] or [`TimeFloat`].
 pub trait Numeric: Copy + Clone + PartialOrd + std::fmt::Debug {
+    /// Convert this value to the normal simulation precision.
     fn to_float(self) -> Float;
+    /// Convert this value to the precision used for time and rates.
     fn to_time_float(self) -> TimeFloat;
+    /// Return the additive identity for this numeric type.
     fn zero() -> Self;
-    /// Generate a random value in the range [0, max]
+    /// Generate a value in the inclusive range `0..=max`.
     fn random_in(max: Self, rng: &mut rand::rngs::ThreadRng) -> Float;
 }
 
@@ -116,13 +134,22 @@ impl Numeric for u64 {
     }
 }
 
+/// Describes a precision to which numeric inputs can be converted.
+///
+/// Marker types implement this trait so [`PrecisionInput`] can select its
+/// output type without duplicating conversion logic for scalars and
+/// containers.
 pub trait PrecisionTarget {
+    /// Scalar value produced by this precision target.
     type Value: Copy + Mul<Output = Self::Value>;
+    /// Convert one supported scalar into the target precision.
     fn from_numeric<T: Numeric>(value: T) -> Self::Value;
 
 }
 
+/// Marker selecting the program-wide [`Float`] precision.
 pub struct ProgramPrecision;
+/// Marker selecting the higher-precision [`TimeFloat`] representation.
 pub struct TimePrecision;
 
 impl PrecisionTarget for ProgramPrecision {
@@ -139,12 +166,20 @@ impl PrecisionTarget for TimePrecision {
     }
 }
 
+/// Converts a scalar or container to a selected [`PrecisionTarget`].
+///
+/// Implementations preserve the input shape: a scalar remains a scalar, a
+/// vector remains a vector, and an ndarray retains its dimensions. Both
+/// methods consume the input because conversion creates a new value.
 pub trait PrecisionInput<P>
 where
     P: PrecisionTarget,
 {
+    /// Converted scalar or shape-preserving container type.
     type Output;
+    /// Convert every value to the selected precision.
     fn map_to_precision(self) -> Self::Output;
+    /// Convert every value and multiply it by a target-precision scalar.
     fn multiply_to_precision(self, multiplier: P::Value) -> Self::Output;
 }
 
@@ -202,6 +237,10 @@ where
     }
 }
 
+/// Floating-point operations needed by generic rate equations.
+///
+/// Unlike [`Numeric`], this trait is restricted to real floating-point types
+/// because exponential and fractional-power operations are required.
 pub trait RealNumber:
     Numeric
     + Add<Output = Self>
@@ -209,9 +248,13 @@ pub trait RealNumber:
     + Mul<Output = Self>
     + Div<Output = Self>
 {
+    /// Calculate `e` raised to this value.
     fn exp(self) -> Self;
+    /// Raise this value to a floating-point power.
     fn powf(self, power: Self) -> Self;
+    /// Construct this type from an `f64`, accepting a precision loss for f32.
     fn from_f64(value: f64) -> Self;
+    /// Convert any supported numeric scalar to `f64`.
     fn to_f64<T>(value:T)-> f64 
     where
         T: Numeric ;
@@ -259,24 +302,45 @@ impl RealNumber for f64 {
 
 }
 
+/// Shape-aware binary arithmetic for scalars, vectors, and ndarrays.
+///
+/// Scalar/container combinations broadcast the scalar across the container.
+/// Two vectors must have equal lengths and two ndarrays must have identical
+/// shapes. Vector/ndarray combinations use ndarray broadcasting rules and
+/// return a dynamically dimensioned array. Operations return `None` when
+/// their input shapes cannot be combined; arithmetic conditions such as
+/// division by zero follow the underlying floating-point behaviour.
 pub trait ElementWise<Rhs = Self> {
+    /// Result type after applying the operation and any broadcasting.
     type Output;
 
+    /// Add corresponding elements.
     fn element_add(&self, rhs: &Rhs) -> Option<Self::Output>;
+    /// Subtract corresponding elements, preserving left-to-right order.
     fn element_sub(&self, rhs: &Rhs) -> Option<Self::Output>;
+    /// Multiply corresponding elements.
     fn element_mul(&self, rhs: &Rhs) -> Option<Self::Output>;
+    /// Divide corresponding elements, preserving left-to-right order.
     fn element_div(&self, rhs: &Rhs) -> Option<Self::Output>;
 }   
 
+/// Unary mathematical operations applied independently to every element.
+///
+/// Unary operations cannot have shape mismatches, so they return their output
+/// directly rather than wrapping it in [`Option`].
 pub trait ElementWiseUnary {
+    /// Shape-preserving result of the unary operation.
     type Output;
 
+    /// Apply the exponential function to every value.
     fn element_exp(&self) -> Self::Output;
+    /// Raise every value to the same numeric power.
     fn element_powf<P>(&self, power: P) -> Self::Output
     where
         P: Numeric;
 }
 
+// Scalar operations cannot fail because there is no container shape to check.
 macro_rules! impl_element_wise_scalar {
     ($type:ty) => {
         impl ElementWise<$type> for $type {
@@ -320,6 +384,8 @@ macro_rules! impl_element_wise_scalar {
 impl_element_wise_scalar!(f32);
 impl_element_wise_scalar!(f64);
 
+// Mixed f32/f64 arithmetic promotes the result to f64 so the more precise
+// operand is not narrowed before the operation.
 impl ElementWise<f32> for f64 {
     type Output = f64;
 
@@ -360,6 +426,56 @@ impl ElementWise<f64> for f32 {
     }
 }
 
+impl ElementWise<Vec<f64>> for f32 {
+    type Output = Vec<f64>;
+
+    fn element_add(&self, rhs: &Vec<f64>) -> Option<Self::Output> {
+        let left = *self as f64;
+        Some(rhs.iter().map(|value| left + *value).collect())
+    }
+
+    fn element_sub(&self, rhs: &Vec<f64>) -> Option<Self::Output> {
+        let left = *self as f64;
+        Some(rhs.iter().map(|value| left - *value).collect())
+    }
+
+    fn element_mul(&self, rhs: &Vec<f64>) -> Option<Self::Output> {
+        let left = *self as f64;
+        Some(rhs.iter().map(|value| left * *value).collect())
+    }
+
+    fn element_div(&self, rhs: &Vec<f64>) -> Option<Self::Output> {
+        let left = *self as f64;
+        Some(rhs.iter().map(|value| left / *value).collect())
+    }
+}
+
+impl ElementWise<f32> for Vec<f64> {
+    type Output = Vec<f64>;
+
+    fn element_add(&self, rhs: &f32) -> Option<Self::Output> {
+        let right = *rhs as f64;
+        Some(self.iter().map(|value| *value + right).collect())
+    }
+
+    fn element_sub(&self, rhs: &f32) -> Option<Self::Output> {
+        let right = *rhs as f64;
+        Some(self.iter().map(|value| *value - right).collect())
+    }
+
+    fn element_mul(&self, rhs: &f32) -> Option<Self::Output> {
+        let right = *rhs as f64;
+        Some(self.iter().map(|value| *value * right).collect())
+    }
+
+    fn element_div(&self, rhs: &f32) -> Option<Self::Output> {
+        let right = *rhs as f64;
+        Some(self.iter().map(|value| *value / right).collect())
+    }
+}
+
+// Paired vectors require equal lengths. Using `Option` prevents `zip` from
+// silently discarding values from the longer input.
 impl<T> ElementWise<Vec<T>> for Vec<T>
 where
     T: RealNumber,
@@ -403,6 +519,7 @@ where
     }
 }
 
+// A scalar is broadcast over every vector element in either operand order.
 impl<T> ElementWise<T> for Vec<T>
 where
     T: RealNumber,
@@ -468,6 +585,9 @@ where
     }
 }
 
+// Array/array operations deliberately require exact shapes. More permissive
+// broadcasting is reserved for the explicit vector/array implementations
+// below, making accidental array shape changes less likely.
 impl<T, S, D, S2> ElementWise<ArrayBase<S2, D>> for ArrayBase<S, D>
 where
     T: RealNumber,
@@ -494,6 +614,7 @@ where
     }
 }
 
+// Scalar/array operations preserve the ndarray's static dimension type.
 impl<T, S, D> ElementWise<T> for ArrayBase<S, D>
 where
     T: RealNumber,
@@ -565,6 +686,9 @@ where
     }
 }
 
+// Combining Vec and ndarray uses ndarray broadcasting. Because the final
+// dimensionality depends on the array supplied at runtime, the output is
+// ArrayD rather than an array with a statically known dimension.
 impl<T, S, D> ElementWise<ArrayBase<S, D>> for Vec<T>
 where
     T: RealNumber,

@@ -2,7 +2,9 @@ pub mod numeric;
 pub mod constants;
 pub mod crystal;
 pub mod time_temperature;
+pub mod rate_equation_selection;
 pub mod rate_equations;
+pub mod rate_equation_inputs;
 
 #[cfg(test)]
 mod tests {

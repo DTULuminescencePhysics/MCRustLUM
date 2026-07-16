@@ -1,19 +1,32 @@
-/// This module contains controls the time and temperature progression 
+//! Piecewise-linear control of simulation time and temperature.
+//!
+//! A [`TimeTemperature`] profile is defined by matching time and temperature
+//! control points. Between adjacent points, temperature changes linearly.
+//! [`Step`] caches the gradient for each section and provides a signed maximum
+//! timestep that limits a temperature change to one degree and prevents a
+//! step from crossing the next control-point boundary.
+//!
+//! Ordinary units run forward from zero. Geological-age units (`ka` and `ma`)
+//! run in reverse from the oldest supplied age toward zero, so their valid
+//! timesteps and timestep limits are negative.
 
 use crate::constants::time;
 use crate::numeric::{TimeFloat};
-/// Precision used internally by time/temperature profiles.
-/// This is intentionally independent of `crate::numeric::Float`, so the rest
-/// of the program can use `f32` while time profiles keep enough precision for
-/// `ka` and `ma` second values.
-/// Time enum can either run forward or backwards in time
+
+/// Direction and current position of a bounded time interval.
+///
+/// Time is stored as [`TimeFloat`] independently of the temperature precision.
+/// This retains useful resolution after `ka` and `ma` values are converted to
+/// their much larger representations in seconds.
 #[derive(Debug, Clone, Copy)]
 pub enum TimeAdvance {
+    /// Advances from `start` to `end` using non-negative timesteps.
     Forward {
         start: TimeFloat,
         end: TimeFloat,
         current: TimeFloat,
     },
+    /// Advances from `start` to `end` using non-positive timesteps.
     Reverse {
         start: TimeFloat,
         end: TimeFloat,
@@ -22,6 +35,7 @@ pub enum TimeAdvance {
 }
 
 impl TimeAdvance {
+    /// Create a forward interval starting at zero and ending at `end`.
     pub fn forward(end: TimeFloat) -> Self {
         Self::Forward {
             start: 0.0,
@@ -30,6 +44,7 @@ impl TimeAdvance {
         }
     }
 
+    /// Create a reverse interval starting at `start` and ending at zero.
     pub fn reverse(start: TimeFloat) -> Self {
         Self::Reverse {
             start,
@@ -38,6 +53,7 @@ impl TimeAdvance {
         }
     }
 
+    /// Return the current time in seconds.
     pub fn current(&self) -> TimeFloat {
         match self {
             Self::Forward { current, .. } => *current,
@@ -45,10 +61,14 @@ impl TimeAdvance {
         }
     }
 
+    /// Return whether this interval advances toward increasing time.
     pub fn is_forward(&self) -> bool {
         matches!(self, Self::Forward { .. })
     }
 
+    /// Return `1.0` for forward time or `-1.0` for reverse time.
+    ///
+    /// This sign is used when constructing direction-aware timestep limits.
     pub fn direction(&self) -> TimeFloat {
         if self.is_forward() {
             1.0
@@ -57,6 +77,9 @@ impl TimeAdvance {
         }
     }
 
+    /// Replace the current time without clamping or validating it.
+    ///
+    /// Callers are responsible for keeping `new_time` inside this interval.
     pub fn set_current(&mut self, new_time: TimeFloat) {
         match self {
             Self::Forward { current, .. } => *current = new_time,
@@ -64,6 +87,11 @@ impl TimeAdvance {
         }
     }
 
+    /// Move by `dt` and clamp the result to the terminal boundary.
+    ///
+    /// Forward intervals expect a non-negative value and reverse intervals a
+    /// non-positive value. The requirement is checked by a debug assertion;
+    /// [`Step::advance`] performs the corresponding runtime check.
     pub fn advance(&mut self, dt: TimeFloat) {
         match self {
             Self::Forward { current, end, .. } => {
@@ -80,6 +108,7 @@ impl TimeAdvance {
         }
     }
 
+    /// Return whether the terminal boundary has been reached.
     pub fn is_finished(&self) -> bool {
         match self {
             Self::Forward { current, end, .. } => *current >= *end,
@@ -87,6 +116,9 @@ impl TimeAdvance {
         }
     }
 
+    /// Check that a timestep has the correct sign for this interval.
+    ///
+    /// Zero is valid in either direction.
     pub fn dt_check(&self, dt: &TimeFloat) -> bool {
         match self {
            Self::Forward{ .. }=>  if dt < &0.0 { return false} else{ return true}, 
@@ -96,28 +128,38 @@ impl TimeAdvance {
     }
 }
 
+/// Precomputed interpolation data and timestep limits for a profile.
+///
+/// Section `i` spans control points `i` and `i + 1`. All section vectors
+/// therefore contain one fewer element than the profile's control-point
+/// vectors.
 #[derive(Debug, Clone)]
 pub struct Step {
-    /// dT/dt for each section.
+    /// Temperature gradient `dT/dt` for each section.
     /// Length is times.len() - 1.
     pub gradients: Vec<TimeFloat>,
 
-    /// Maximum dt for each section such that temperature changes
-    /// by no more than 1 degree.
+    /// Signed timestep for each section that changes temperature by at most
+    /// one degree. Constant-temperature sections use signed infinity.
     /// Length is times.len() - 1.
     pub max_dt: Vec<TimeFloat>,
 
-    /// Controls the time advancement
+    /// Direction, bounds, and current position of the profile.
     pub time_advance: TimeAdvance,
 
-    /// Cached maximum allowed dt from the current state.
-    /// This is the smaller of:
-    /// - max_dt[section_index]
-    /// - time until the next section boundary
+    /// Cached signed timestep limit at the current profile position.
+    ///
+    /// Its magnitude is the smaller of the section's one-degree limit and the
+    /// distance to the next section boundary. It is zero when the profile is
+    /// finished.
     pub current_max_dt: TimeFloat,
 }
 impl Step {
 
+    /// Precompute gradients and one-degree timestep limits for every section.
+    ///
+    /// `times` and `temperatures` must have matching lengths of at least two
+    /// and must already be ordered in the direction of `time_advance`.
     pub fn new(
         times: &Vec<TimeFloat>,
         temperatures: &Vec<f32>,
@@ -153,6 +195,10 @@ impl Step {
         return profile
     }
 
+    /// Recalculate the timestep limit for the current position and section.
+    ///
+    /// This should be called after advancing or changing sections so a caller
+    /// can safely choose its next timestep.
     pub fn update_current_max_dt(&mut self, times: &Vec<TimeFloat>, section_index: &usize) {
         if self.time_advance.is_finished() {
             self.current_max_dt = 0.0;
@@ -172,10 +218,17 @@ impl Step {
         };   
     }
     
+    /// Check whether `dt` has the sign required by the profile direction.
     pub fn dt_check(&self, dt: &TimeFloat) -> bool{
         self.time_advance.dt_check(dt)
     }
 
+    /// Advance time within one section and return its temperature change.
+    ///
+    /// A timestep with the wrong sign, or a step taken after the profile is
+    /// finished, returns zero without changing time. Callers should keep the
+    /// magnitude within [`Step::current_max_dt`] so this calculation does not
+    /// cross a section boundary.
     pub fn advance(&mut self, dt: TimeFloat, section_index: &usize) -> f32{
 
         if !self.dt_check(&dt){ 
@@ -194,18 +247,25 @@ impl Step {
 
 }
 
-/// TimeTemperature struct that controls the system temperature
+/// Stateful piecewise-linear time and temperature profile.
+///
+/// The first control point supplies the initial temperature. Advancing updates
+/// both time and temperature, snaps exactly reached boundaries to their stored
+/// temperature, and then refreshes the next permitted timestep.
 #[derive(Debug, Clone)]
 pub struct TimeTemperature {
-    /// times and temperatures contain the points where time and temperature change
-    /// and have a minimum size of two for the start and end points
+    /// Control-point times converted to seconds in profile order.
+    ///
+    /// Forward profiles are strictly increasing and reverse profiles strictly
+    /// decreasing. There are at least two entries.
     pub times: Vec<TimeFloat>, 
+    /// Temperatures corresponding one-to-one with [`Self::times`].
     pub temperatures: Vec<f32>,
 
-    /// Controls the changes in time and temperature
+    /// Interpolation and time-advancement state.
     pub step: Step,
 
-    /// Current temperature
+    /// Current interpolated temperature.
     pub current_temperature: f32,
 
     /// Current section index.
@@ -217,6 +277,16 @@ pub struct TimeTemperature {
 }
 
 impl TimeTemperature {
+    /// Build and validate a time/temperature profile.
+    ///
+    /// `times` and `temperatures` must have the same length and contain at
+    /// least two values. Times are converted from `unit` to seconds. Units
+    /// recognised as `ka` or `ma` create a reverse profile; all other known
+    /// units create a forward profile.
+    ///
+    /// Returns an error for an unknown unit, mismatched lengths, insufficient
+    /// points, or control points that are not strictly ordered after
+    /// conversion.
     pub fn new(
         times: Vec<f32>,
         temperatures: Vec<f32>,
@@ -268,6 +338,11 @@ impl TimeTemperature {
         Ok(profile)
     }
 
+    /// Convert control-point times to seconds and select their direction.
+    ///
+    /// Equal neighbouring times are separated by one second in the direction
+    /// of travel. This handles distinct input values that collapse to the same
+    /// representable second after conversion.
     pub fn convert_time_temperature(
         times: Vec<f32>,
         unit: &str
@@ -293,6 +368,7 @@ impl TimeTemperature {
 
         Ok((times, time_advance))
     }
+    /// Separate adjacent duplicate times by the signed number of seconds.
     fn fix_duplicate_times(times: &mut Vec<TimeFloat>, sec: TimeFloat) {
         for i in 1..times.len() {
             if times[i] == times[i - 1] {
@@ -301,18 +377,30 @@ impl TimeTemperature {
         }
     }
 
+    /// Return the current profile time in seconds.
     pub fn current_time(&self) -> TimeFloat {
         self.step.time_advance.current()
     }
 
+    /// Return the current interpolated temperature.
     pub fn current_temperature(&self) -> f32 {
         self.current_temperature
     }
 
+    /// Return the signed maximum timestep permitted from the current state.
+    ///
+    /// The value is positive for forward profiles, negative for reverse
+    /// profiles, and zero after the profile finishes.
     pub fn current_max_dt(&self) -> TimeFloat {
         self.step.current_max_dt
     }
 
+    /// Advance the profile by one timestep.
+    ///
+    /// The timestep must have the profile's direction and should not exceed
+    /// [`Self::current_max_dt`] in magnitude. Reaching a control point snaps
+    /// the temperature to its exact stored value and activates the next
+    /// section. Zero and wrong-direction timesteps leave the profile unchanged.
     pub fn advance(&mut self, dt: TimeFloat) {
         if dt == 0.0 {
             return;

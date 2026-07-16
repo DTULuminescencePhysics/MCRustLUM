@@ -69,6 +69,14 @@ impl Boundary {
             && point.y >= 0.0 && point.y <= self.y
             && point.z >= 0.0 && point.z <= self.z
     }
+
+    pub fn volume(&self) ->Float {
+        self.x*self.y*self.z
+    }
+
+    pub fn density_to_number(&self, density: Float,) -> usize {
+        (density*self.volume()) as usize
+    }
 }
 
 /// The coordinate struct holds the x, y, z coordinates and can either be set directly 
@@ -163,6 +171,9 @@ pub struct ElectronPlaces {
     pub traps: Vec<Trap>,
     pub holes: Vec<Hole>,
     pub bandtails: Vec<Bandtail>,
+
+    pub trap_occupied: Vec<bool>,
+    pub hole_available: Vec<bool>,
 }
 
 impl ElectronPlaces{
@@ -170,16 +181,24 @@ impl ElectronPlaces{
         traps: Vec<Trap>,
         holes: Vec<Hole>,
         bandtails: Vec<Bandtail>,
-    ) -> Self {
-        Self { traps, holes, bandtails }
+    ) -> Self 
+    
+    {  
+        let trap_occupied  = vec![false; traps.len()];
+        let hole_available =  vec![false; holes.len()];
+
+        Self { traps, holes, bandtails, trap_occupied, hole_available }
     }
 
     /// Create a new ElectronPlaces with reserved capacity for later assignment.
-    pub fn with_capacity(traps: usize, holes: usize, bandtails: usize) -> Self {
+    pub fn with_capacity(traps: usize, holes: usize, bandtails: usize) -> Self 
+    {
         Self {
             traps: Vec::with_capacity(traps),
             holes: Vec::with_capacity(holes),
             bandtails: Vec::with_capacity(bandtails),
+            trap_occupied: vec![false; traps], 
+            hole_available: vec![false; holes],
         }
     }
 
@@ -259,6 +278,7 @@ impl ElectronPlaces{
     }
 }
 
+
 #[derive(Debug, Clone)]
 pub struct Cube {
     pub places: ElectronPlaces,
@@ -266,9 +286,32 @@ pub struct Cube {
 }
 
 impl Cube {
-    pub fn new<X: Numeric, Y: Numeric, Z: Numeric>(x: X, y: Y, z: Z, periodic: bool) -> Self {
+    pub fn new_empty< X: Numeric, Y: Numeric, Z: Numeric >(
+        x: X, 
+        y: Y, 
+        z: Z,
+        t_no: usize,
+        h_no: usize,
+        b_no: usize, 
+        periodic: bool) -> Self {
         let boundary = Boundary::new(x, y, z, periodic);
-        let places = ElectronPlaces::with_capacity(0, 0, 0);
+        let places = ElectronPlaces::with_capacity(t_no, h_no, b_no);
+        Self { places, boundary }
+    }
+    pub fn new_empty_from_density< X: Numeric, Y: Numeric, Z: Numeric >(
+        x: X, 
+        y: Y, 
+        z: Z,
+        density: Float,
+        h_no: usize,
+        b_no: usize, 
+        periodic: bool) -> Self {
+        let boundary = Boundary::new(x, y, z, periodic);
+        let t_no = boundary.density_to_number(density);
+        let h_no = h_no* &t_no;
+        let b_no = b_no* &t_no;
+
+        let places = ElectronPlaces::with_capacity(t_no, h_no, b_no);
         Self { places, boundary }
     }
     pub fn new_random<X: Numeric, Y: Numeric, Z: Numeric>(
@@ -284,6 +327,23 @@ impl Cube {
         let places = ElectronPlaces::random_new(t_no, h_no, b_no, x, y, z,);
         Self { places, boundary }
     }
+    pub fn new_random_from_density<X: Numeric, Y: Numeric, Z: Numeric>(
+        x: X,
+        y: Y,
+        z: Z,
+        density: Float,
+        h_no: usize,
+        b_no: usize, 
+        periodic: bool,
+    ) -> Self {
+        let boundary = Boundary::new(x, y, z, periodic);
+        let t_no = boundary.density_to_number(density);
+        let h_no = h_no* &t_no;
+        let b_no = b_no* &t_no;
+        let places = ElectronPlaces::random_new(t_no, h_no, b_no, x, y, z,);
+        Self { places, boundary }
+    }
+
     pub fn contains(&self, point: &Coord) -> bool {
         self.boundary.contains(point)
     }

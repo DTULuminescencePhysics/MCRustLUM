@@ -5,13 +5,15 @@
 //! The selection types then dispatch to the generic implementations in
 //! [`crate::rate_equations`].
 
-use crate::numeric::{Float, ElementWise, ElementWiseUnary, PrecisionInput, TimeFloat, TimePrecision};
+use crate::numeric::{Float, ElementWise, ElementWiseUnary, PrecisionInput, TimePrecision};
 use crate::rate_equations;
 use crate::rate_equation_inputs::{
     DelocalisedTransitionInputs,
     FillingTransitionInputs,
     LocalisedTransitionInputs,
     TransitionInputs,
+    TransitionKind,
+    TransitionRate,
 };
 use std::str::FromStr;
 
@@ -433,28 +435,6 @@ pub enum Transitions{
     FillCbRetrapping{transitions:TransitionsTypes}
 }
 
-/// Identifies the physical pathway associated with a calculated rate.
-///
-/// Keeping the state in the identifier lets a Monte Carlo model attach a
-/// distinct event to every trial lifetime. A direct solver can instead ignore
-/// the identifier and sum the rates that contribute to the same population.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransitionKind {
-    LocalisedRecombinationGround,
-    LocalisedRetrappingGround,
-    LocalisedRecombinationExcited,
-    LocalisedRetrappingExcited,
-    DelocalisedGround,
-    DelocalisedExcited,
-    Filling,
-}
-
-/// One calculated rate together with the pathway that generated it.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TransitionRate<V = TimeFloat> {
-    pub kind: TransitionKind,
-    pub rate: V,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 /// Independent switches for the available retrapping pathways.
@@ -583,12 +563,12 @@ impl Transitions {
     /// `None` means one of the underlying element-wise operations could not
     /// produce an output, usually because input container shapes differ.
     pub fn calculate<
-        E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap, KT, ENeg, DRatio,
+        E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap, SE,SG, KT, ENeg, DRatio,
         DExp, DRaw, NegativeAlpha, LProduct, LExp, LRaw, LZero, WeightRaw,
         Weight, WeightedRaw, DoseRatio, Available, FillRaw, FillZero, V,
     >(
         &self,
-        inputs: &TransitionInputs<E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap>,
+        inputs: &TransitionInputs<E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap, SE, SG>,
     ) -> Option<[TransitionRate<V>; 7]>
     where
         Float: ElementWise<Float, Output = KT>,
@@ -725,6 +705,7 @@ mod tests {
         FillingTransitionInputs,
         LocalisedTransitionInputs,
     };
+    use crate::numeric::TimeFloat;
 
     fn scalar_transition_inputs() -> TransitionInputs {
         TransitionInputs {
@@ -762,6 +743,8 @@ mod tests {
                 total_population: 1.0,
             },
             excited_energy_gap: 0.045,
+            s_frequency_e: 1.0e12,
+            s_frequency_g: 1.0e12,
         }
     }
 
@@ -844,16 +827,16 @@ mod tests {
                 e_cb_excited: vec![0.25 as Float, 0.35],
                 frequency_excited: vec![2.0e12 as Float, 3.0e12],
                 temperature: 300.0,
-                ground_weight: vec![0.5 as Float, 0.5],
-                excited_weight: vec![0.5 as Float, 0.5],
+                ground_weight: vec![0.5 as TimeFloat, 0.5],
+                excited_weight: vec![0.5 as TimeFloat, 0.5],
             },
             localised_recombination: LocalisedTransitionInputs {
                 alpha_ground: 1.0 as Float,
                 frequency_ground: 2.0 as Float,
                 alpha_excited: 1.5 as Float,
                 frequency_excited: 3.0 as Float,
-                ground_weight: vec![0.5 as Float, 0.5],
-                excited_weight: vec![0.5 as Float, 0.5],
+                ground_weight: vec![0.5 as TimeFloat, 0.5],
+                excited_weight: vec![0.5 as TimeFloat, 0.5],
                 distance: vec![0.25 as Float, 0.5],
             },
             localised_retrapping: LocalisedTransitionInputs {
@@ -861,8 +844,8 @@ mod tests {
                 frequency_ground: 4.0 as Float,
                 alpha_excited: 1.2 as Float,
                 frequency_excited: 5.0 as Float,
-                ground_weight: vec![0.5 as Float, 0.5],
-                excited_weight: vec![0.5 as Float, 0.5],
+                ground_weight: vec![0.5 as TimeFloat, 0.5],
+                excited_weight: vec![0.5 as TimeFloat, 0.5],
                 distance: vec![0.25 as Float, 0.5],
             },
             filling: FillingTransitionInputs {
@@ -872,6 +855,8 @@ mod tests {
                 total_population: 1.0 as Float,
             },
             excited_energy_gap: vec![0.04 as Float, 0.05],
+            s_frequency_e: vec![1.0e12, 1.0e9],
+            s_frequency_g: vec![1.0e12, 1.0e9],
         };
         inputs
             .update_inputs(450.0, vec![0.4, 0.6])

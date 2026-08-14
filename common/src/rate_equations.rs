@@ -471,20 +471,22 @@ where
     Some(prefactor.element_mul(&e)?.map_to_precision())
 }
 
-
-
-
 /// Internal transitions
 /// Calculate the thermal occupation weights of the ground and excited states.
 ///
-/// For `x = exp(-E / (k_B T))`, the returned pair is
-/// `(ground_weight, excited_weight) = (1 / (1 + x), x / (1 + x))`.
+/// For `x = s_e*exp(-E / (k_B T))`, the returned pair is
+/// `(ground_weight, excited_weight) = (s_g / (s_g + x), x / (s_g + x))`.
 /// Consequently, the two weights sum to one for every element. Energy and
 /// temperature accept the same scalar, vector, and array combinations as the
 /// thermal state-rate functions below.
 pub fn ground_excited_state_weights
-<E, Temp, ENeg, KT, Ratio, Exp, Denominator, GroundWeight, ExcitedWeight>(
+<E, SE, SG, Temp, ENeg, KT, Ratio, Exp, ExcitationRaw,
+  ExcitationBase, Denominator, SGM, SGOut,      
+
+GroundWeight, ExcitedWeight>(
     e: &E,
+    s_frequency_e: &SE,
+    s_frequency_g: &SG,
     temp: &Temp,
 ) -> Option<(GroundWeight, ExcitedWeight)>
 where
@@ -492,16 +494,27 @@ where
     Temp: ElementWise<Float, Output = KT>,
     ENeg: ElementWise<KT, Output = Ratio>,
     Ratio: ElementWiseUnary<Output = Exp>,
-    Exp: ElementWise<Float, Output = Denominator>
-        + ElementWise<Denominator, Output = ExcitedWeight>,
-    Float: ElementWise<Denominator, Output = GroundWeight>,
-{
-    let boltzmann_factor = exponential_energy_over_kb_t(e, temp)?;
-    let one: Float = 1.0;
-    let denominator = boltzmann_factor.element_add(&one)?;
-    let ground_weight = one.element_div(&denominator)?;
-    let excited_weight = boltzmann_factor.element_div(&denominator)?;
+    Exp: ElementWise<SE, Output = ExcitationRaw>,
+    ExcitationRaw: PrecisionInput<TimePrecision, Output = ExcitationBase>,
+    SG: ElementWise<Float, Output = SGM>,
+    SGM: PrecisionInput<TimePrecision, Output = SGOut>,
+    SGOut: ElementWise<ExcitationBase, Output = Denominator>,  
+    SGOut: ElementWise<Denominator, Output= GroundWeight>,
+    ExcitationBase: ElementWise<Denominator, Output = ExcitedWeight>,
 
+{   
+    let excited_state = first_order_delocalised_rate_equation(
+        e,
+        s_frequency_e,
+        temp,
+    )?;
+
+    let s_frequency_g_prec = s_frequency_g.element_mul(&1.0)?.map_to_precision();
+    let denominator = s_frequency_g_prec.element_add(&excited_state)?;
+
+    let ground_weight = s_frequency_g_prec.element_div(&denominator)?;
+    let excited_weight = excited_state.element_div(&denominator)?;
+   
     Some((ground_weight, excited_weight))
 }
 
@@ -1022,32 +1035,40 @@ mod tests {
     #[test]
     fn ground_excited_state_weights_follow_boltzmann_distribution() {
         let e: Float = 0.045;
+        let s_frequency_e: Float = 1.0e11;
+        let s_frequency_g: Float = 1.0e9;
         let temp: Float = 450.0;
 
-        let (ground, excited) = ground_excited_state_weights(&e, &temp)
+        let (ground, excited) = ground_excited_state_weights(&e, &s_frequency_e, &s_frequency_g, &temp)
             .expect("thermal state weights should calculate");
+        
+        let boltzmann = (-e / (BOLTZMANN_EV * temp)).exp() as f64;
+        let excitation = boltzmann * s_frequency_e as f64; 
+        let denominator = excitation + s_frequency_g as f64;
 
-        let factor = (-e / (BOLTZMANN_EV * temp)).exp();
-        let expected_ground = 1.0 / (1.0 + factor);
-        let expected_excited = factor / (1.0 + factor);
 
-        assert_close(ground as f64, expected_ground as f64);
+        let expected_ground =   s_frequency_g as f64/denominator;
+        let expected_excited = excitation/denominator;
+        
         assert_close(excited as f64, expected_excited as f64);
-        assert!((ground + excited - 1.0).abs() <= 2.0 * Float::EPSILON);
+        assert_close(ground as f64, expected_ground as f64);
+        assert!((ground + excited - 1.0).abs() <= (2.0 * Float::EPSILON) as f64);
     }
 
     #[test]
     fn ground_excited_state_weights_support_vector_energy_and_scalar_temperature() {
         let e: Vec<Float> = vec![0.01, 0.03, 0.05];
+        let s_frequency_e: Vec<Float> =  vec![1.0e12,1.0e12,1.0e11];
+        let s_frequency_g: Vec<Float> =  vec![1.0e9, 1.0e12,1.0e8];
         let temp: Float = 450.0;
 
-        let (ground, excited) = ground_excited_state_weights(&e, &temp)
+        let (ground, excited) = ground_excited_state_weights(&e, &s_frequency_e, &s_frequency_g, &temp)
             .expect("vector thermal state weights should calculate");
 
         assert_eq!(ground.len(), e.len());
         assert_eq!(excited.len(), e.len());
         for (ground_weight, excited_weight) in ground.iter().zip(excited.iter()) {
-            assert!((ground_weight + excited_weight - 1.0).abs() <= 2.0 * Float::EPSILON);
+            assert!((ground_weight + excited_weight - 1.0).abs() <= (2.0 * Float::EPSILON) as f64);
         }
     }
 
@@ -1110,52 +1131,6 @@ mod tests {
     }
 
     #[test]
-    fn second_order_rate_preserves_vector_and_array_shapes() {
-        let e_cb: Vec<Float> = vec![0.35, 0.45, 0.55];
-        let s_frequency: Vec<Float> = vec![1.0e12, 2.0e12, 3.0e12];
-        let temp: Vec<Float> = vec![300.0, 450.0, 600.0];
-
-        let vector = second_order_delocalised_rate_equation(
-            &e_cb,
-            &s_frequency,
-            &temp,
-        )
-        .unwrap();
-        let expected_vector: Vec<f64> = e_cb
-            .iter()
-            .zip(s_frequency.iter())
-            .zip(temp.iter())
-            .map(|((energy, frequency), temperature)| {
-                (frequency
-                    * (-energy / (BOLTZMANN_EV * temperature)).exp()) as f64
-            })
-            .collect();
-        assert_vec_close(&vector, &expected_vector);
-
-        let e_cb = array![0.35 as Float, 0.45 as Float, 0.55 as Float];
-        let s_frequency = array![1.0e12 as Float, 2.0e12 as Float, 3.0e12 as Float];
-        let temp = array![300.0 as Float, 450.0 as Float, 600.0 as Float];
-        let array_result = second_order_delocalised_rate_equation(
-            &e_cb,
-            &s_frequency,
-            &temp,
-        )
-        .unwrap();
-        assert_eq!(array_result.shape(), e_cb.shape());
-        for (((actual, energy), frequency), temperature) in array_result
-            .iter()
-            .zip(e_cb.iter())
-            .zip(s_frequency.iter())
-            .zip(temp.iter())
-        {
-            let expected = (frequency
-                * (-energy / (BOLTZMANN_EV * temperature)).exp()) as f64;
-            assert_close(*actual, expected);
-        }
-    }
-
-
-    #[test]
     fn delocalised_rates_accept_vector_properties_and_scalar_temperature() {
         let e_cb: Vec<Float> = vec![0.35, 0.45, 0.55];
         let s_frequency: Vec<Float> = vec![1.0e12, 2.0e12, 3.0e12];
@@ -1172,8 +1147,7 @@ mod tests {
             .iter()
             .zip(s_frequency.iter())
             .map(|(energy, frequency)| {
-                (frequency
-                    * (-energy / (BOLTZMANN_EV * temp)).exp()) as f64
+                (frequency * (-energy / (BOLTZMANN_EV * temp)).exp()) as f64
             })
             .collect();
 

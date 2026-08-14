@@ -87,6 +87,14 @@ impl TimeAdvance {
         }
     }
 
+    /// Restore the interval to its starting time.
+    pub fn reset(&mut self) {
+        match self {
+            Self::Forward { start, current, .. }
+            | Self::Reverse { start, current, .. } => *current = *start,
+        }
+    }
+
     /// Move by `dt` and clamp the result to the terminal boundary.
     ///
     /// Forward intervals expect a non-negative value and reverse intervals a
@@ -395,6 +403,18 @@ impl TimeTemperature {
         self.step.current_max_dt
     }
 
+    /// Restore the profile to its first control point.
+    ///
+    /// The control points and precomputed interpolation data are reused. Only
+    /// the current time, temperature, section, and timestep limit are reset.
+    pub fn reset(&mut self) {
+        self.step.time_advance.reset();
+        self.current_temperature = self.temperatures[0];
+        self.section_index = 0;
+        self.step
+            .update_current_max_dt(&self.times, &self.section_index);
+    }
+
     /// Advance the profile by one timestep.
     ///
     /// The timestep must have the profile's direction and should not exceed
@@ -676,6 +696,25 @@ mod tests {
     }
 
     #[test]
+    fn reset_restores_forward_profile_starting_state() {
+        let mut profile = TimeTemperature::new(
+            vec![0.0, 10.0, 20.0],
+            vec![20.0, 30.0, 50.0],
+            "s",
+        )
+        .unwrap();
+
+        profile.advance(10.0);
+        profile.advance(2.0);
+        profile.reset();
+
+        assert_close(profile.current_time(), 0.0);
+        assert_close_f32(profile.current_temperature(), 20.0);
+        assert_eq!(profile.section_index, 0);
+        assert_close(profile.current_max_dt(), 1.0);
+    }
+
+    #[test]
     fn advance_ignores_dt_with_wrong_direction() {
         let mut profile = TimeTemperature::new(
             vec![0.0, 10.0],
@@ -704,5 +743,25 @@ mod tests {
         assert_close(profile.current_time(), start_time  - 1000000.0);
         assert!(profile.current_temperature() > 20.0);
         assert_close_f32(profile.current_temperature(), 20.00031689);
+    }
+
+    #[test]
+    fn reset_restores_reverse_profile_starting_state() {
+        let mut profile = TimeTemperature::new(
+            vec![2.0, 1.0, 0.0],
+            vec![20.0, 30.0, 40.0],
+            "ka",
+        )
+        .unwrap();
+        let starting_time = profile.current_time();
+        let starting_max_dt = profile.current_max_dt();
+
+        profile.advance(-1000000.0);
+        profile.reset();
+
+        assert_close(profile.current_time(), starting_time);
+        assert_close_f32(profile.current_temperature(), 20.0);
+        assert_eq!(profile.section_index, 0);
+        assert_close(profile.current_max_dt(), starting_max_dt);
     }
 }

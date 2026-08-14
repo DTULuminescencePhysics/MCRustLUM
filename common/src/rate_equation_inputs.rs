@@ -1,13 +1,37 @@
-/// Holds the structs that are used as inputs for the various rate equations.
+//! Holds the structs that are used as inputs for the various rate equations.
 
-use crate::numeric::{ElementWise, ElementWiseUnary, Float};
+use crate::numeric::{ElementWise, ElementWiseUnary, Float, TimeFloat, PrecisionInput, TimePrecision};
 use crate::rate_equations::ground_excited_state_weights;
+
+/// Identifies the physical pathway associated with a calculated rate.
+///
+/// Keeping the state in the identifier lets a Monte Carlo model attach a
+/// distinct event to every trial lifetime. A direct solver can instead ignore
+/// the identifier and sum the rates that contribute to the same population.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransitionKind {
+    LocalisedRecombinationGround,
+    LocalisedRetrappingGround,
+    LocalisedRecombinationExcited,
+    LocalisedRetrappingExcited,
+    DelocalisedGround,
+    DelocalisedExcited,
+    Filling,
+}
+
+/// One calculated rate together with the pathway that generated it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TransitionRate<V = TimeFloat> {
+    pub kind: TransitionKind,
+    pub rate: V,
+}
+
 /// Inputs shared by the ground- and excited-state delocalised equations.
 ///
 /// `E`, `S`, and `W` independently represent the energy, frequency, and
 /// weight containers. They default to [`Float`] but may be vectors or arrays.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DelocalisedTransitionInputs<E = Float, S = Float, W = Float> {
+pub struct DelocalisedTransitionInputs<E = Float, S = Float, W = TimeFloat> {
     pub e_cb_ground: E,
     pub frequency_ground: S,
     pub e_cb_excited: E,
@@ -25,7 +49,7 @@ pub struct DelocalisedTransitionInputs<E = Float, S = Float, W = Float> {
 /// `Alpha`, `B`, `W`, and `R` may each use any container combination supported
 /// by the element-wise rate-equation traits.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LocalisedTransitionInputs<Alpha = Float, B = Float, W = Float, R = Float> {
+pub struct LocalisedTransitionInputs<Alpha = Float, B = Float, W = TimeFloat, R = Float> {
     pub alpha_ground: Alpha,
     pub frequency_ground: B,
     pub alpha_excited: Alpha,
@@ -52,7 +76,7 @@ pub struct FillingTransitionInputs<D0 = Float, DDot = Float, N = Float, NTot = F
 pub struct TransitionInputs<
     E = Float,
     S = Float,
-    W = Float,
+    W = TimeFloat,
     Alpha = Float,
     B = Float,
     R = Float,
@@ -61,16 +85,20 @@ pub struct TransitionInputs<
     N = Float,
     NTot = Float,
     Gap = Float,
+    SE = Float,
+    SG = Float,
 > {
     pub delocalised: DelocalisedTransitionInputs<E, S, W>,
     pub localised_recombination: LocalisedTransitionInputs<Alpha, B, W, R>,
     pub localised_retrapping: LocalisedTransitionInputs<Alpha, B, W, R>,
     pub filling: FillingTransitionInputs<D0, DDot, N, NTot>,
     pub excited_energy_gap: Gap,
+    pub s_frequency_e: SE,
+    pub s_frequency_g: SG,
 }
 
-impl<E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap>
-    TransitionInputs<E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap>
+impl<E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap, SE, SG,>
+    TransitionInputs<E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap,SE, SG>
 {
     /// Update the state-dependent inputs before calculating transition rates.
     ///
@@ -79,24 +107,29 @@ impl<E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap>
     /// thermal state weights are recalculated only when `temp` differs from the
     /// stored temperature, then shared by the delocalised,
     /// localised-recombination, and localised-retrapping inputs.
-    pub fn update_inputs<ENeg, KT, Ratio, Exp, Denominator>(
+    pub fn update_inputs<ENeg, KT, Ratio, Exp, ExcitationRaw,
+            ExcitationBase, Denominator, SGM, SGOut,>(
         &mut self,
         temp: Float,
         population: N,
     ) -> Option<()>
     where
         Gap: ElementWise<Float, Output = ENeg>,
-        Float: ElementWise<Float, Output = KT>
-            + ElementWise<Denominator, Output = W>,
+        Float: ElementWise<Float, Output = KT>,
         ENeg: ElementWise<KT, Output = Ratio>,
         Ratio: ElementWiseUnary<Output = Exp>,
-        Exp: ElementWise<Float, Output = Denominator>
-            + ElementWise<Denominator, Output = W>,
+        Exp: ElementWise<SE, Output = ExcitationRaw>,
+        ExcitationRaw: PrecisionInput<TimePrecision, Output = ExcitationBase>,
+        SG: ElementWise<Float, Output = SGM>,
+        SGM: PrecisionInput<TimePrecision, Output = SGOut>,
+        SGOut: ElementWise<ExcitationBase, Output = Denominator>,  
+        SGOut: ElementWise<Denominator, Output= W>,
+        ExcitationBase: ElementWise<Denominator, Output = W>,
         W: Clone,
     {
         if temp != self.delocalised.temperature {
             let (ground_weight, excited_weight) =
-                ground_excited_state_weights(&self.excited_energy_gap, &temp)?;
+                ground_excited_state_weights(&self.excited_energy_gap, &self.s_frequency_e, &self.s_frequency_g, &temp)?;
 
             self.delocalised.temperature = temp;
             self.delocalised.ground_weight = ground_weight.clone();
@@ -155,6 +188,8 @@ mod tests {
                 total_population: 1.0,
             },
             excited_energy_gap: 0.045,
+            s_frequency_e: 1.0e12,
+            s_frequency_g: 1.0e12,
         }
     }
 
@@ -165,6 +200,8 @@ mod tests {
         let new_population = 0.35;
         let expected_weights = ground_excited_state_weights(
             &inputs.excited_energy_gap,
+            &inputs.s_frequency_e, 
+            &inputs.s_frequency_g,
             &new_temperature,
         )
         .unwrap();
@@ -251,11 +288,15 @@ mod tests {
                 total_population: 1.0,
             },
             excited_energy_gap: vec![0.04, 0.05],
+            s_frequency_e: vec![1.0e12, 1.0e9],
+            s_frequency_g: vec![1.0e12, 1.0e9],
         };
         let new_population = vec![0.4, 0.6];
         let new_temperature: Float = 450.0;
         let expected_weights = ground_excited_state_weights(
             &inputs.excited_energy_gap,
+            &inputs.s_frequency_e, 
+            &inputs.s_frequency_g,
             &new_temperature,
         )
         .unwrap();

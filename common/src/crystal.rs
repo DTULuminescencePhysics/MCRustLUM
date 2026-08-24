@@ -356,6 +356,25 @@ impl Cube {
     pub fn random_point(&self) -> Coord {
         Coord::random_in(self.boundary.x, self.boundary.y, self.boundary.z)
     }
+    pub fn randomise_positions( &mut self,) {
+        let x = self.boundary.x;
+        let y = self.boundary.y;
+        let z = self.boundary.z;
+
+        // Generate new random positions within the cube.
+        for trap in &mut self.places.traps {
+            trap.position = Coord::random_in(x, y, z);
+        }
+
+        for hole in &mut self.places.holes {
+            hole.position = Coord::random_in(x, y, z);
+        }
+
+        for bandtail in &mut self.places.bandtails {
+            bandtail.position = Coord::random_in(x, y, z);
+        }
+    }
+
 }
 
 #[cfg(test)]

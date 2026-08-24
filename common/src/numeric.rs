@@ -15,8 +15,7 @@ use rand::Rng;
 use ndarray::{Array, Array1, ArrayBase, ArrayD, Data, Dimension, Zip};
 
 /// Default floating-point precision used for model parameters and state.
-pub type Float = f32;
-// pub type Float = f64;
+pub type Float = f64;
 /// Higher precision used for rates, lifetimes, and time/temperature profiles.
 pub type TimeFloat = f64;
 

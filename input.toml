@@ -1,0 +1,52 @@
+# Edit this file to configure a simulation. Any omitted value uses the default
+# from the corresponding structure in io/src/inputs.rs.
+
+[cube]
+uc_h = 1.0e-10
+uc_w = 1.0e-10
+uc_l = 1.0e-10
+x = 7.5e-9
+y = 7.5e-9
+z = 7.5e-9
+density = 5.22e25
+hole_count = 1
+bandtail_count = 0
+periodic = true
+
+[time_temperature]
+times = [0.0, 160.0]
+temperatures = [0.0, 800.0]
+time_unit = "second"
+temp_unit = "celsius"
+
+[trap_energies]
+e_loc = [1.2]
+e_cb = [2.0]
+e_loc_sigma = [0.0]
+e_cb_sigma = [0.0]
+
+[localised]
+gs_tun = true
+es_tun = true
+retrap = true
+vrh = false
+b_gs = [1.2e12]
+b_es = [1.2e12]
+alpha_gs = [9.0e12]
+alpha_es = [9.0e9]
+
+[delocalised]
+gs_cb = true
+es_cb = true
+s_gs = [1.2e12]
+s_es = [1.2e12]
+mu = [0.1]
+retrap_ratio = [0.0]
+
+[filling]
+fill = true
+d0 = [400.0]
+d_dot = [1.0]
+dd_unit = "second"
+cmbn_whn_fll = false
+recm_pre_fll = [0.0]

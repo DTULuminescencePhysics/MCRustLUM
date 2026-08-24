@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 common = { path = "../common" }
+io = { path = "../io" }
 rand = "0.8"

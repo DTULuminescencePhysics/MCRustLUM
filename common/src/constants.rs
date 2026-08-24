@@ -1,4 +1,5 @@
-/// This module contains constants that can be used throughout the program
+//! This module contains constants that can be used throughout the program
+
 
 
 /// This module contains conversions for SI unit prefixes
@@ -50,39 +51,77 @@ pub mod metric{
 pub mod physical_constants{
     use crate::numeric::{Float};
     /// Boltzmann constant in J/K (kg·m²/s²·K)
-    pub const BOLTZMANN: Float = 1.380649e-23; 
+    pub const BOLTZMANN: Float = 1.380649e-23;
     /// Boltzmann constant in eV/K
-    pub const BOLTZMANN_EV: Float = 8.617333262e-5; 
+    pub const BOLTZMANN_EV: Float = 8.617333262e-5;
     /// Planck constant in J·s (kg·m²/s)
-    pub const PLANCK: Float = 6.62607015e-34;   
+    pub const PLANCK: Float = 6.62607015e-34;
     /// Reduced Planck constant in J·s (kg·m²/s)
-    pub const PLANCK_BAR: Float = 1.054571817e-34; 
+    pub const PLANCK_BAR: Float = 1.054571817e-34;
     /// Speed of light in m/s
-    pub const SPEED_LIGHT: Float = 299792458.0;       
+    pub const SPEED_LIGHT: Float = 299792458.0;
     /// Elementary charge in C
-    pub const ELEMENTARY_CHARGE: Float = 1.602176634e-19;  
+    pub const ELEMENTARY_CHARGE: Float = 1.602176634e-19;
     /// Electron mass in kg
-    pub const ELECTRON_MASS: Float = 9.10938356e-31; 
+    pub const ELECTRON_MASS: Float = 9.10938356e-31;
     /// Avogadro's number in 1/mol
-    pub const AVOGARDRO: Float = 6.02214076e23;  
+    pub const AVOGARDRO: Float = 6.02214076e23;
     /// Gas constant in J/(mol·K)
-    pub const GAS_CONSTANT: Float = 8.314462618;  
-    /// Vacuum permittivity in F/m 
-    pub const VACUUM_PERM: Float = 8.854187817e-12;  
+    pub const GAS_CONSTANT: Float = 8.314462618;
+    /// Vacuum permittivity in F/m
+    pub const VACUUM_PERM: Float = 8.854187817e-12;
     /// Conversion factor from eV to J
-    pub const EV_TO_J: Float = 1.602176634e-19;  
+    pub const EV_TO_J: Float = 1.602176634e-19;
 }
 
-/// Holds converstions from 
+/// Holds converstions from
 pub mod time{
-    use crate::numeric::{PrecisionInput, TimeFloat, TimePrecision};    
+    use std::fmt;    
+    use crate::numeric::{
+        ElementWise, Float, PrecisionInput, ProgramPrecision, TimeFloat, TimePrecision,
+    };
     const SECOND: u32 = 1;
     const MINUTE: u32 = 60;
     const HOUR: u32 = 60*MINUTE;
     const DAY: u32 = 24*HOUR;
     const YEAR: u32 = 31_556_952;
-    const K_ANNUM: u64 = 31_556_952_000; 
+    const K_ANNUM: u64 = 31_556_952_000;
     const MA_ANNUM: u64 = 31_556_952_000_000;
+
+    #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    pub enum TemperatureUnit {
+        Celsius,
+        Kelvin,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    pub enum TimeUnit {
+        Second,
+        Minute,
+        Hour,
+        Day,
+        Year,
+        KAnnum,
+        MaAnnum
+    }
+    impl fmt::Display for TimeUnit {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let name = match self {
+                TimeUnit::Second => "second",
+                TimeUnit::Minute => "minute",
+                TimeUnit::Hour => "hour",
+                TimeUnit::Day => "day",
+                TimeUnit::Year => "year",
+                TimeUnit::KAnnum => "Ka annum",
+                TimeUnit::MaAnnum => "Ma annum",
+            };
+
+            formatter.write_str(name)
+        }
+    }
+     
 
     #[derive(Debug, Clone, Copy)]
     pub enum TimeMultiplier {
@@ -99,31 +138,29 @@ pub mod time{
         }
     }
 
-    pub fn unit_multiplier(unit: &str) -> Option<TimeMultiplier> {
-        match unit.to_lowercase().as_str() {
-            "s" | "sec" | "second" | "seconds" => Some(TimeMultiplier::U32(SECOND)),
-            "m" | "min" | "minute" | "minutes" => Some(TimeMultiplier::U32(MINUTE)),
-            "h" | "hr" | "hour" | "hours" => Some(TimeMultiplier::U32(HOUR)),
-            "d" | "day" | "days" => Some(TimeMultiplier::U32(DAY)),
-            "y" | "yr" | "year" | "years" => Some(TimeMultiplier::U32(YEAR)),
-
-            "ka" | "k_annum" | "kannum" => Some(TimeMultiplier::U64(K_ANNUM)),
-            "ma" | "ma_annum" | "maannum" => Some(TimeMultiplier::U64(MA_ANNUM)),
-
-            _ => None,
-
+    pub fn unit_multiplier(unit: TimeUnit) -> Option<TimeMultiplier> {
+        match unit {
+            TimeUnit::Second  => Some(TimeMultiplier::U32(SECOND)),
+            TimeUnit::Minute  => Some(TimeMultiplier::U32(MINUTE)),
+            TimeUnit::Hour  => Some(TimeMultiplier::U32(HOUR)),
+            TimeUnit::Day  => Some(TimeMultiplier::U32(DAY)),
+            TimeUnit::Year  => Some(TimeMultiplier::U32(YEAR)),
+            TimeUnit::KAnnum  => Some(TimeMultiplier::U64(K_ANNUM)),
+            TimeUnit::MaAnnum  => Some(TimeMultiplier::U64(MA_ANNUM)),
         }
-    }
-    pub fn is_ka_or_ma(unit: &str) -> bool {
 
-        matches!(
-            unit.to_lowercase().as_str(),
-            "ka" | "k_annum" | "kannum" | "ma" | "ma_annum" | "maannum"
-        )
-
-        
+       
     }
-    pub fn convert_to_seconds<T>(unit: &str, value: T) -> Option<T::Output>
+    pub fn is_ka_or_ma(unit: TimeUnit) -> bool {
+        match unit {
+            TimeUnit::KAnnum  => true,
+            TimeUnit::MaAnnum  => true,
+            _ => false,
+        }
+    
+
+    }
+    pub fn convert_to_seconds<T>(unit: TimeUnit, value: T) -> Option<T::Output>
     where
         T: PrecisionInput<TimePrecision>,
     {
@@ -134,4 +171,65 @@ pub mod time{
         )
     }
 
+   
+    /// Convert a scalar or container of temperatures to kelvin at program precision.
+    pub fn convert_to_kelvin<T>(unit: TemperatureUnit, value: T) -> Option<T::Output>
+    where
+        T: PrecisionInput<ProgramPrecision>,
+        T::Output: ElementWise<Float, Output = T::Output>,
+    {
+        const CELSIUS_TO_KELVIN: Float = 273.15;
+
+        let value = value.map_to_precision();
+
+        match unit {
+            TemperatureUnit::Celsius => value.element_add(&CELSIUS_TO_KELVIN),
+            TemperatureUnit::Kelvin => Some(value),
+        }
+    }
+
+        /// Convert a scalar or container of temperatures to kelvin at program precision.
+    pub fn convert_to_celsius<T>(unit: TemperatureUnit, value: T) -> Option<T::Output>
+    where
+        T: PrecisionInput<ProgramPrecision>,
+        T::Output: ElementWise<Float, Output = T::Output>,
+    {
+        const CELSIUS_TO_KELVIN: Float = 273.15;
+
+        let value = value.map_to_precision();
+
+        match unit {
+            TemperatureUnit::Kelvin  => value.element_sub(&CELSIUS_TO_KELVIN),
+            TemperatureUnit::Celsius => Some(value),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn converts_celsius_to_kelvin_at_program_precision() {
+            let temperature = convert_to_kelvin(TemperatureUnit::Celsius, 20.0_f32).unwrap();
+
+            assert_eq!(temperature, 293.15 as Float);
+        }
+
+        #[test]
+        fn converts_temperature_vectors_to_kelvin() {
+            let temperatures =
+                convert_to_kelvin(TemperatureUnit::Celsius, vec![0_i32, 100_i32]).unwrap();
+
+            assert_eq!(temperatures, vec![273.15 as Float, 373.15 as Float]);
+        }
+
+        #[test]
+        fn preserves_kelvin_values_while_converting_precision() {
+            let temperature = convert_to_kelvin(TemperatureUnit::Kelvin, 300.0_f32).unwrap();
+
+            assert_eq!(temperature, 300.0 as Float);
+        }
+    }
+
 }
+

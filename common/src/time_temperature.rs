@@ -10,8 +10,9 @@
 //! run in reverse from the oldest supplied age toward zero, so their valid
 //! timesteps and timestep limits are negative.
 
+use crate::constants::time::{TemperatureUnit, TimeUnit,};
 use crate::constants::time;
-use crate::numeric::{TimeFloat};
+use crate::numeric::{TimeFloat, Float};
 
 /// Direction and current position of a bounded time interval.
 ///
@@ -170,7 +171,7 @@ impl Step {
     /// and must already be ordered in the direction of `time_advance`.
     pub fn new(
         times: &Vec<TimeFloat>,
-        temperatures: &Vec<f32>,
+        temperatures: &Vec<Float>,
         time_advance: TimeAdvance,
     ) -> Self {
         let direction = time_advance.direction();
@@ -237,7 +238,7 @@ impl Step {
     /// finished, returns zero without changing time. Callers should keep the
     /// magnitude within [`Step::current_max_dt`] so this calculation does not
     /// cross a section boundary.
-    pub fn advance(&mut self, dt: TimeFloat, section_index: &usize) -> f32{
+    pub fn advance(&mut self, dt: TimeFloat, section_index: &usize) -> Float{
 
         if !self.dt_check(&dt){ 
             return 0.0;
@@ -246,7 +247,7 @@ impl Step {
         if !self.time_advance.is_finished() {
             let temp_change = self.gradients[*section_index] * dt ;
             self.time_advance.advance(dt);
-            return temp_change as f32;
+            return temp_change as Float;
         } else {
             return 0.0;
         }
@@ -268,13 +269,13 @@ pub struct TimeTemperature {
     /// decreasing. There are at least two entries.
     pub times: Vec<TimeFloat>, 
     /// Temperatures corresponding one-to-one with [`Self::times`].
-    pub temperatures: Vec<f32>,
+    pub temperatures: Vec<Float>,
 
     /// Interpolation and time-advancement state.
     pub step: Step,
 
     /// Current interpolated temperature.
-    pub current_temperature: f32,
+    pub current_temperature: Float,
 
     /// Current section index.
     /// Section `i` is between:
@@ -296,9 +297,10 @@ impl TimeTemperature {
     /// points, or control points that are not strictly ordered after
     /// conversion.
     pub fn new(
-        times: Vec<f32>,
-        temperatures: Vec<f32>,
-        unit: &str,
+        times: Vec<TimeFloat>,
+        temperatures: Vec<Float>,
+        time_unit: TimeUnit,
+        temp_unit:TemperatureUnit
     ) -> Result<Self, String> {
         if times.len() != temperatures.len() {
             return Err("times and temperatures must have the same length".to_string());
@@ -307,7 +309,7 @@ impl TimeTemperature {
         if times.len() < 2 {
             return Err("at least two time/temperature points are required".to_string());
         }
-        let (times, time_advance) = Self::convert_time_temperature(times,unit)?;
+        let (times, time_advance) = Self::convert_time_temperature(times,time_unit)?;
         let is_forward = time_advance.is_forward();
 
         if is_forward {
@@ -327,7 +329,7 @@ impl TimeTemperature {
                 }
             }
         }
-
+        let temperatures = Self::convert_temperatures(temperatures,temp_unit)?;
         let step = Step::new(&times,&temperatures,time_advance);
 
         let section_index = 0;
@@ -352,8 +354,8 @@ impl TimeTemperature {
     /// of travel. This handles distinct input values that collapse to the same
     /// representable second after conversion.
     pub fn convert_time_temperature(
-        times: Vec<f32>,
-        unit: &str
+        times: Vec<TimeFloat>,
+        unit: TimeUnit
     ) -> Result<(Vec<TimeFloat>, TimeAdvance), String> {
          let mut times = time::convert_to_seconds(unit,times)
             .ok_or_else(|| format!("unknown time unit: {}", unit))?;
@@ -376,6 +378,13 @@ impl TimeTemperature {
 
         Ok((times, time_advance))
     }
+    pub fn convert_temperatures(temperatures: Vec<Float>, unit: TemperatureUnit) -> Result<Vec<Float>, String> {
+        Ok(time::convert_to_kelvin(unit, temperatures)
+            .ok_or_else(|| "temperature conversion failed".to_string())?)
+        
+     
+    }
+
     /// Separate adjacent duplicate times by the signed number of seconds.
     fn fix_duplicate_times(times: &mut Vec<TimeFloat>, sec: TimeFloat) {
         for i in 1..times.len() {
@@ -391,7 +400,7 @@ impl TimeTemperature {
     }
 
     /// Return the current interpolated temperature.
-    pub fn current_temperature(&self) -> f32 {
+    pub fn current_temperature(&self) -> Float {
         self.current_temperature
     }
 
@@ -454,7 +463,7 @@ mod tests {
         );
     }
 
-    fn assert_close_f32(actual: f32, expected: f32) {
+    fn assert_close_f32(actual: Float, expected: Float) {
         assert!(
             (actual - expected).abs() <= 1.0e-4,
             "expected {expected}, got {actual}"
@@ -504,7 +513,8 @@ mod tests {
         let result = TimeTemperature::new(
             vec![0.0, 1.0],
             vec![20.0],
-            "s",
+            TimeUnit::Second,
+            TemperatureUnit::Kelvin,
         );
 
         assert!(result.is_err());
@@ -519,7 +529,8 @@ mod tests {
         let result = TimeTemperature::new(
             vec![0.0],
             vec![20.0],
-            "s",
+            TimeUnit::Second,
+            TemperatureUnit::Kelvin,
         );
 
         assert!(result.is_err());
@@ -529,23 +540,13 @@ mod tests {
         );
     }
 
-    #[test]
-    fn new_rejects_unknown_time_units() {
-        let result = TimeTemperature::new(
-            vec![0.0, 1.0],
-            vec![20.0, 30.0],
-            "fortnight",
-        );
-
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "unknown time unit: fortnight");
-    }
+    
 
     #[test]
     fn convert_time_temperature_converts_forward_units_to_seconds() {
         let (times, time_advance) = TimeTemperature::convert_time_temperature(
             vec![0.0, 1.0, 2.0],
-            "h",
+            TimeUnit::Hour,
         )
         .unwrap();
 
@@ -560,7 +561,7 @@ mod tests {
     fn convert_time_temperature_adds_one_second_to_duplicate_forward_times() {
         let (times, time_advance) = TimeTemperature::convert_time_temperature(
             vec![0.0, 1.0, 1.0, 3.0],
-            "s",
+            TimeUnit::Second
         )
         .unwrap();
 
@@ -572,7 +573,7 @@ mod tests {
     fn convert_time_temperature_uses_reverse_time_for_ka_profiles() {
         let (times, time_advance) = TimeTemperature::convert_time_temperature(
             vec![2.0, 1.0, 0.0],
-            "ka",
+            TimeUnit::KAnnum
         )
         .unwrap();
 
@@ -586,7 +587,7 @@ mod tests {
     fn convert_time_temperature_adds_one_second_to_duplicate_reverse_times() {
         let (times, time_advance) = TimeTemperature::convert_time_temperature(
             vec![2.0, 1.0, 1.0, 0.0],
-            "ma",
+            TimeUnit::MaAnnum
         )
         .unwrap();
 
@@ -601,7 +602,8 @@ mod tests {
         let result = TimeTemperature::new(
             vec![0.0, 2.0, 1.0],
             vec![20.0, 30.0, 40.0],
-            "s",
+            TimeUnit::Second,
+            TemperatureUnit::Kelvin,
         );
 
         assert!(result.is_err());
@@ -616,7 +618,8 @@ mod tests {
         let result = TimeTemperature::new(
             vec![0.0, 1.0, 2.0],
             vec![20.0, 30.0, 40.0],
-            "ka",
+            TimeUnit::KAnnum,
+            TemperatureUnit::Kelvin,
         );
 
         assert!(result.is_err());
@@ -631,7 +634,8 @@ mod tests {
         let profile = TimeTemperature::new(
             vec![0.0, 10.0, 20.0],
             vec![20.0, 30.0, 50.0],
-            "s",
+            TimeUnit::Second,
+            TemperatureUnit::Kelvin,
         )
         .unwrap();
 
@@ -662,7 +666,8 @@ mod tests {
         let mut profile = TimeTemperature::new(
             vec![0.0, 0.5, 10.0],
             vec![20.0, 21.0, 30.0],
-            "s",
+            TimeUnit::Second,
+            TemperatureUnit::Kelvin,
         )
         .unwrap();
 
@@ -675,7 +680,8 @@ mod tests {
         let mut profile = TimeTemperature::new(
             vec![0.0, 10.0, 20.0],
             vec![20.0, 30.0, 50.0],
-            "s",
+            TimeUnit::Second,
+            TemperatureUnit::Kelvin,
         )
         .unwrap();
 
@@ -700,7 +706,8 @@ mod tests {
         let mut profile = TimeTemperature::new(
             vec![0.0, 10.0, 20.0],
             vec![20.0, 30.0, 50.0],
-            "s",
+            TimeUnit::Second,
+            TemperatureUnit::Kelvin,
         )
         .unwrap();
 
@@ -719,7 +726,8 @@ mod tests {
         let mut profile = TimeTemperature::new(
             vec![0.0, 10.0],
             vec![20.0, 30.0],
-            "s",
+            TimeUnit::Second,
+            TemperatureUnit::Kelvin,
         )
         .unwrap();
 
@@ -733,7 +741,8 @@ mod tests {
         let mut profile = TimeTemperature::new(
             vec![2.0, 1.0, 0.0],
             vec![20.0, 30.0, 40.0],
-            "ka",
+            TimeUnit::KAnnum,
+            TemperatureUnit::Kelvin,
         )
         .unwrap();
 
@@ -750,7 +759,8 @@ mod tests {
         let mut profile = TimeTemperature::new(
             vec![2.0, 1.0, 0.0],
             vec![20.0, 30.0, 40.0],
-            "ka",
+            TimeUnit::KAnnum,
+            TemperatureUnit::Kelvin,
         )
         .unwrap();
         let starting_time = profile.current_time();

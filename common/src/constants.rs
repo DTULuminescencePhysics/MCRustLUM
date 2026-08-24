@@ -1,7 +1,5 @@
 //! This module contains constants that can be used throughout the program
 
-
-
 /// This module contains conversions for SI unit prefixes
 pub mod metric{
     const GIGA: u32 = 1_000_000_000;
@@ -74,12 +72,10 @@ pub mod physical_constants{
     pub const EV_TO_J: Float = 1.602176634e-19;
 }
 
-/// Holds converstions from
+/// Holds code for conversion between time units and ensures the correct time precision 
 pub mod time{
     use std::fmt;    
-    use crate::numeric::{
-        ElementWise, Float, PrecisionInput, ProgramPrecision, TimeFloat, TimePrecision,
-    };
+    use crate::numeric::{PrecisionInput, TimeFloat, TimePrecision,};
     const SECOND: u32 = 1;
     const MINUTE: u32 = 60;
     const HOUR: u32 = 60*MINUTE;
@@ -87,13 +83,6 @@ pub mod time{
     const YEAR: u32 = 31_556_952;
     const K_ANNUM: u64 = 31_556_952_000;
     const MA_ANNUM: u64 = 31_556_952_000_000;
-
-    #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
-    #[serde(rename_all = "snake_case")]
-    pub enum TemperatureUnit {
-        Celsius,
-        Kelvin,
-    }
 
     #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
@@ -121,8 +110,7 @@ pub mod time{
             formatter.write_str(name)
         }
     }
-     
-
+    
     #[derive(Debug, Clone, Copy)]
     pub enum TimeMultiplier {
         U32(u32),
@@ -148,7 +136,6 @@ pub mod time{
             TimeUnit::KAnnum  => Some(TimeMultiplier::U64(K_ANNUM)),
             TimeUnit::MaAnnum  => Some(TimeMultiplier::U64(MA_ANNUM)),
         }
-
        
     }
     pub fn is_ka_or_ma(unit: TimeUnit) -> bool {
@@ -157,8 +144,6 @@ pub mod time{
             TimeUnit::MaAnnum  => true,
             _ => false,
         }
-    
-
     }
     pub fn convert_to_seconds<T>(unit: TimeUnit, value: T) -> Option<T::Output>
     where
@@ -170,8 +155,17 @@ pub mod time{
             )
         )
     }
+}
+/// Contains Temperature conversion behaviour 
+pub mod temperature {
+    use crate::numeric::{ElementWise, Float, PrecisionInput, ProgramPrecision,};
+    #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    pub enum TemperatureUnit {
+        Celsius,
+        Kelvin,
+    }
 
-   
     /// Convert a scalar or container of temperatures to kelvin at program precision.
     pub fn convert_to_kelvin<T>(unit: TemperatureUnit, value: T) -> Option<T::Output>
     where
@@ -204,32 +198,34 @@ pub mod time{
         }
     }
 
-    #[cfg(test)]
-    mod tests {
-        use super::*;
+}
 
-        #[test]
-        fn converts_celsius_to_kelvin_at_program_precision() {
-            let temperature = convert_to_kelvin(TemperatureUnit::Celsius, 20.0_f32).unwrap();
+#[cfg(test)]
+mod tests {
+    use super::temperature::{TemperatureUnit, convert_to_kelvin};
+    use crate::numeric::Float;
 
-            assert_eq!(temperature, 293.15 as Float);
-        }
+    #[test]
+    fn converts_celsius_to_kelvin_at_program_precision() {
+        let temperature = convert_to_kelvin(TemperatureUnit::Celsius, 20.0_f32).unwrap();
 
-        #[test]
-        fn converts_temperature_vectors_to_kelvin() {
-            let temperatures =
-                convert_to_kelvin(TemperatureUnit::Celsius, vec![0_i32, 100_i32]).unwrap();
-
-            assert_eq!(temperatures, vec![273.15 as Float, 373.15 as Float]);
-        }
-
-        #[test]
-        fn preserves_kelvin_values_while_converting_precision() {
-            let temperature = convert_to_kelvin(TemperatureUnit::Kelvin, 300.0_f32).unwrap();
-
-            assert_eq!(temperature, 300.0 as Float);
-        }
+        assert_eq!(temperature, 293.15 as Float);
     }
 
+    #[test]
+    fn converts_temperature_vectors_to_kelvin() {
+        let temperatures =
+            convert_to_kelvin(TemperatureUnit::Celsius, vec![0_i32, 100_i32]).unwrap();
+
+        assert_eq!(temperatures, vec![273.15 as Float, 373.15 as Float]);
+    }
+
+    #[test]
+    fn preserves_kelvin_values_while_converting_precision() {
+        let temperature = convert_to_kelvin(TemperatureUnit::Kelvin, 300.0_f32).unwrap();
+
+        assert_eq!(temperature, 300.0 as Float);
+    }
 }
+
 

@@ -1,12 +1,16 @@
-/// This module holds the simulation crystal
+//! This module holds the simulation crystal which has the location of 
+//! electron traps, hole traps and bandtail states. The type of boundary conditions
+//! are set here too.
 use crate::numeric::{Float, Numeric};
 
+/// Type of Boundary conditions either Periodic or Padded
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BoundaryCondition {
     Periodic,
     Padded,
 }
 
+/// Holds the maximum x, y, z value and the type of boundary condition
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Boundary {
     pub x: Float,
@@ -91,7 +95,7 @@ impl Boundary {
 }
 
 /// The coordinate struct holds the x, y, z coordinates and can either be set directly
-/// or randomly generated between some 0 and x,y,z limits
+/// or randomly generated between some 0 and x, y, z limits
 #[derive(Debug, Clone)]
 pub struct Coord {
     pub x: Float,

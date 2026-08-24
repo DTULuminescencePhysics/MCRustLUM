@@ -1,4 +1,5 @@
-use common::constants::time::{TemperatureUnit, TimeUnit};
+use common::constants::time::TimeUnit;
+use common::constants::temperature::TemperatureUnit;
 use common::numeric::{Float, TimeFloat};
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]

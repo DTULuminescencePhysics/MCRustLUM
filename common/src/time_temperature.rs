@@ -10,8 +10,9 @@
 //! run in reverse from the oldest supplied age toward zero, so their valid
 //! timesteps and timestep limits are negative.
 
-use crate::constants::time::{TemperatureUnit, TimeUnit,};
-use crate::constants::time;
+use crate::constants::time::TimeUnit;
+use crate::constants::temperature::TemperatureUnit;
+use crate::constants::{time, temperature};
 use crate::numeric::{TimeFloat, Float};
 
 /// Direction and current position of a bounded time interval.
@@ -379,7 +380,7 @@ impl TimeTemperature {
         Ok((times, time_advance))
     }
     pub fn convert_temperatures(temperatures: Vec<Float>, unit: TemperatureUnit) -> Result<Vec<Float>, String> {
-        Ok(time::convert_to_kelvin(unit, temperatures)
+        Ok(temperature::convert_to_kelvin(unit, temperatures)
             .ok_or_else(|| "temperature conversion failed".to_string())?)
         
      

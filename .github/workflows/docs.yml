@@ -3,30 +3,64 @@ name: Rust documentation
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
-  docs:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - uses: actions/checkout@v6
+      - name: Check out repository
+        uses: actions/checkout@v6
 
-      - name: Build documentation
-        run: cargo doc --no-deps
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - uses: actions/configure-pages@v5
+      - name: Build workspace documentation
+        run: cargo doc --workspace --no-deps
 
-      - uses: actions/upload-pages-artifact@v4
+      # Cargo does not create a root index page for a virtual workspace.
+      - name: Create documentation landing page
+        run: |
+          printf '%s\n' \
+            '<!doctype html>' \
+            '<html lang="en">' \
+            '  <head>' \
+            '    <meta charset="utf-8">' \
+            '    <meta http-equiv="refresh" content="0; url=luminescence/index.html">' \
+            '    <title>MCRustLUM documentation</title>' \
+            '  </head>' \
+            '  <body>' \
+            '    <p><a href="luminescence/index.html">Open the MCRustLUM documentation</a></p>' \
+            '  </body>' \
+            '</html>' \
+            > target/doc/index.html
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload documentation
+        uses: actions/upload-pages-artifact@v4
         with:
           path: target/doc
 
-      - id: deployment
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4

@@ -72,7 +72,7 @@ pub mod physical_constants{
     pub const EV_TO_J: Float = 1.602176634e-19;
 }
 
-/// Holds code for conversion between time units and ensures the correct time precision 
+/// Time-unit conversion at the precision used by the simulation clock.
 pub mod time{
     use std::fmt;    
     use crate::numeric::{PrecisionInput, TimeFloat, TimePrecision,};
@@ -86,13 +86,24 @@ pub mod time{
 
     #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    /// Unit used for time values supplied to the simulation.
+    ///
+    /// Geological ages use annum-based names: `KAnnum` is one thousand years
+    /// and `MaAnnum` is one million years.
     pub enum TimeUnit {
+        /// Seconds.
         Second,
+        /// Minutes.
         Minute,
+        /// Hours.
         Hour,
+        /// Days of 24 hours.
         Day,
+        /// Julian years of 365.2425 days.
         Year,
+        /// Thousands of Julian years (`ka`).
         KAnnum,
+        /// Millions of Julian years (`Ma`).
         MaAnnum
     }
     impl fmt::Display for TimeUnit {
@@ -112,12 +123,16 @@ pub mod time{
     }
     
     #[derive(Debug, Clone, Copy)]
+    /// Integer seconds represented without overflowing the smaller time units.
     pub enum TimeMultiplier {
+        /// A multiplier that fits in 32 bits.
         U32(u32),
+        /// A multiplier needed for geological-age units.
         U64(u64),
     }
 
     impl TimeMultiplier {
+        /// Convert the integer multiplier to the simulation's time precision.
         pub fn get_float_precision(self) -> TimeFloat {
             match self {
                 TimeMultiplier::U32(value) => value as TimeFloat,
@@ -126,6 +141,7 @@ pub mod time{
         }
     }
 
+    /// Return the number of seconds in one `unit`.
     pub fn unit_multiplier(unit: TimeUnit) -> Option<TimeMultiplier> {
         match unit {
             TimeUnit::Second  => Some(TimeMultiplier::U32(SECOND)),
@@ -138,6 +154,7 @@ pub mod time{
         }
        
     }
+    /// Return whether `unit` represents a geological age.
     pub fn is_ka_or_ma(unit: TimeUnit) -> bool {
         match unit {
             TimeUnit::KAnnum  => true,
@@ -145,6 +162,16 @@ pub mod time{
             _ => false,
         }
     }
+    /// Convert a scalar or supported container to seconds at time precision.
+    ///
+    /// The same function accepts scalar and vector values:
+    ///
+    /// ```
+    /// use common::constants::time::{convert_to_seconds, TimeUnit};
+    ///
+    /// let seconds = convert_to_seconds(TimeUnit::Minute, vec![1.0, 2.0]);
+    /// assert_eq!(seconds, Some(vec![60.0, 120.0]));
+    /// ```
     pub fn convert_to_seconds<T>(unit: TimeUnit, value: T) -> Option<T::Output>
     where
         T: PrecisionInput<TimePrecision>,
@@ -156,17 +183,27 @@ pub mod time{
         )
     }
 }
-/// Contains Temperature conversion behaviour 
+/// Temperature-unit conversion at the program's configured precision.
 pub mod temperature {
     use crate::numeric::{ElementWise, Float, PrecisionInput, ProgramPrecision,};
     #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    /// Unit used for temperature values supplied to the simulation.
     pub enum TemperatureUnit {
+        /// Degrees Celsius.
         Celsius,
+        /// Kelvin.
         Kelvin,
     }
 
     /// Convert a scalar or container of temperatures to kelvin at program precision.
+    ///
+    /// ```
+    /// use common::constants::temperature::{convert_to_kelvin, TemperatureUnit};
+    ///
+    /// let kelvin = convert_to_kelvin(TemperatureUnit::Celsius, 20.0_f32);
+    /// assert_eq!(kelvin, Some(293.15));
+    /// ```
     pub fn convert_to_kelvin<T>(unit: TemperatureUnit, value: T) -> Option<T::Output>
     where
         T: PrecisionInput<ProgramPrecision>,
@@ -182,7 +219,15 @@ pub mod temperature {
         }
     }
 
-        /// Convert a scalar or container of temperatures to kelvin at program precision.
+    /// Convert a scalar or container of temperatures to Celsius at program precision.
+    ///
+    /// ```
+    /// use common::constants::temperature::{convert_to_celsius, TemperatureUnit};
+    ///
+    /// let celsius = convert_to_celsius(TemperatureUnit::Kelvin, 273.15_f32)
+    ///     .expect("known temperature unit");
+    /// assert!(celsius.abs() < 1.0e-5);
+    /// ```
     pub fn convert_to_celsius<T>(unit: TemperatureUnit, value: T) -> Option<T::Output>
     where
         T: PrecisionInput<ProgramPrecision>,
@@ -202,7 +247,8 @@ pub mod temperature {
 
 #[cfg(test)]
 mod tests {
-    use super::temperature::{TemperatureUnit, convert_to_kelvin};
+    use super::temperature::{TemperatureUnit, convert_to_celsius, convert_to_kelvin};
+    use super::time::{TimeMultiplier, TimeUnit, convert_to_seconds, is_ka_or_ma, unit_multiplier};
     use crate::numeric::Float;
 
     #[test]
@@ -226,6 +272,62 @@ mod tests {
 
         assert_eq!(temperature, 300.0 as Float);
     }
+
+    #[test]
+    fn converts_kelvin_to_celsius_for_scalars_and_vectors() {
+        let scalar = convert_to_celsius(TemperatureUnit::Kelvin, 373.15_f64).unwrap();
+        let vector = convert_to_celsius(
+            TemperatureUnit::Kelvin,
+            vec![273.15_f64, 293.15, 373.15],
+        )
+        .unwrap();
+
+        assert!((scalar - 100.0).abs() < 1.0e-12);
+        assert_eq!(vector, vec![0.0, 20.0, 100.0]);
+        assert_eq!(
+            convert_to_celsius(TemperatureUnit::Celsius, 25_i32),
+            Some(25.0),
+        );
+    }
+
+    #[test]
+    fn time_units_display_with_human_readable_names() {
+        let names = [
+            (TimeUnit::Second, "second"),
+            (TimeUnit::Minute, "minute"),
+            (TimeUnit::Hour, "hour"),
+            (TimeUnit::Day, "day"),
+            (TimeUnit::Year, "year"),
+            (TimeUnit::KAnnum, "Ka annum"),
+            (TimeUnit::MaAnnum, "Ma annum"),
+        ];
+
+        for (unit, expected) in names {
+            assert_eq!(unit.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn time_multipliers_and_seconds_cover_short_and_geological_units() {
+        assert!(matches!(
+            unit_multiplier(TimeUnit::Hour),
+            Some(TimeMultiplier::U32(3_600)),
+        ));
+        assert!(matches!(
+            unit_multiplier(TimeUnit::KAnnum),
+            Some(TimeMultiplier::U64(31_556_952_000)),
+        ));
+        assert!(!is_ka_or_ma(TimeUnit::Year));
+        assert!(is_ka_or_ma(TimeUnit::KAnnum));
+        assert!(is_ka_or_ma(TimeUnit::MaAnnum));
+
+        assert_eq!(
+            convert_to_seconds(TimeUnit::Day, vec![0_i32, 1, 2]),
+            Some(vec![0.0, 86_400.0, 172_800.0]),
+        );
+        assert_eq!(
+            convert_to_seconds(TimeUnit::MaAnnum, 1.0_f64),
+            Some(31_556_952_000_000.0),
+        );
+    }
 }
-
-

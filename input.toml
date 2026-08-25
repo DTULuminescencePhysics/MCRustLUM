@@ -28,7 +28,8 @@ e_cb_sigma = [0.0]
 [localised]
 gs_tun = true
 es_tun = true
-retrap = true
+gs_retrap = true
+es_retrap = true
 vrh = false
 b_gs = [1.2e12]
 b_es = [1.2e12]
@@ -38,6 +39,7 @@ alpha_es = [9.0e9]
 [delocalised]
 gs_cb = true
 es_cb = true
+retrap = true
 s_gs = [1.2e12]
 s_es = [1.2e12]
 mu = [0.1]

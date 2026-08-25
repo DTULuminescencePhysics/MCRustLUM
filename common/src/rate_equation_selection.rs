@@ -24,9 +24,15 @@ use std::str::FromStr;
 /// kinetic order required by the general-order equation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DelocalisedRateEquationType {
+    /// First-order thermal release.
     FirstOrder,
+    /// Second-order thermal release.
     SecondOrder,
-    GeneralOrder { order: Float },
+    /// General-order thermal release.
+    GeneralOrder {
+        /// Positive kinetic order supplied to the general-order equation.
+        order: Float,
+    },
 }
 
 impl DelocalisedRateEquationType {
@@ -71,6 +77,7 @@ impl DelocalisedRateEquationType {
             }
         }
     }
+
 }
 
 impl FromStr for DelocalisedRateEquationType {
@@ -115,11 +122,20 @@ impl FromStr for DelocalisedRateEquationType {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DelocalisedRateEquation {
     /// Evaluate only the ground-state release rate.
-    Ground{re: DelocalisedRateEquationType},
+    Ground {
+        /// Kinetic model used for the active state.
+        re: DelocalisedRateEquationType,
+    },
     /// Evaluate only the excited-state release rate.
-    Excited{re: DelocalisedRateEquationType},
+    Excited {
+        /// Kinetic model used for the active state.
+        re: DelocalisedRateEquationType,
+    },
     /// Evaluate both ground- and excited-state release rates.
-    Both{re: DelocalisedRateEquationType},
+    Both {
+        /// Kinetic model used for both active states.
+        re: DelocalisedRateEquationType,
+    },
     /// Disable delocalised release from both states.
     None,
 }
@@ -227,6 +243,18 @@ impl DelocalisedRateEquation {
             )),
         }
     }
+    /// Select active delocalised states from boolean flags.
+    pub fn from_bool(gs: bool,es: bool, value2: &str) -> Result<Self, String> {
+        let rate_equation = value2.parse::<DelocalisedRateEquationType>()?;
+        match (gs, es){
+            (true, true)   => return Ok(Self::Both { re: rate_equation }),
+            (true, false)  => return Ok(Self::Ground { re: rate_equation }),
+            (false, true)  => return Ok(Self::Excited { re: rate_equation }),
+            (false, false) => return Ok(Self::None)
+        }
+
+    }
+
 }
 
 impl FromStr for DelocalisedRateEquation {
@@ -258,9 +286,13 @@ impl FromStr for DelocalisedRateEquation {
 /// zero values rather than being omitted from the returned pair.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LocalisedRateEquation {
+    /// Enable only ground-state tunnelling.
     Ground,
+    /// Enable only excited-state tunnelling.
     Excited,
+    /// Enable tunnelling from both states.
     Both,
+    /// Disable localised tunnelling.
     None,
 }
 
@@ -328,6 +360,19 @@ impl LocalisedRateEquation {
             Self::None => (zero(), zero()),
         }
     }
+
+    /// Select active ground and excited states from boolean flags.
+    pub fn from_bool(gs: bool,es: bool) -> Result<Self, String> {
+        match (gs, es){
+            (true, true)   => return Ok(Self::Both),
+            (true, false)  => return Ok(Self::Ground),
+            (false, true)  => return Ok(Self::Excited),
+            (false, false) => return Ok(Self::None)
+        }
+
+    }
+
+
 }
 impl FromStr for LocalisedRateEquation {
     type Err = String;
@@ -356,7 +401,9 @@ impl FromStr for LocalisedRateEquation {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FillingRateEquation {
+    /// Use the basic filling equation.
     Basic,
+    /// Disable filling and return a shape-preserving zero.
     None, 
 }
 
@@ -392,6 +439,15 @@ impl FillingRateEquation {
             ),
         }
     }
+    /// Enable or disable the basic filling equation.
+    pub fn from_bool(fill: bool) -> Result<Self, String> {
+        if fill == true {
+            return Ok(Self::Basic)
+        }else {
+            return Ok(Self::None)
+        }
+    }
+
 }
 
 impl FromStr for FillingRateEquation {
@@ -416,43 +472,80 @@ impl FromStr for FillingRateEquation {
 /// derived from the ground/excited flags in [`RetrappingSelection`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TransitionsTypes {
+    /// Delocalised state selection and kinetic model.
     pub delocalised: DelocalisedRateEquation,
+    /// Localised recombination state selection.
     pub localised_recomb: LocalisedRateEquation,
+    /// Localised retrapping state selection.
     pub localised_retrap: LocalisedRateEquation,
+    /// Filling-equation selection.
     pub filling: FillingRateEquation,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+
 /// Groups transition configurations by the two non-localised retrapping flags.
-///
 /// The contained [`TransitionsTypes`] retains the complete equation selection;
 /// the outer variant makes conduction-band and filling retrapping cheap to
 /// dispatch on in the simulation.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Transitions{
-    NoCbFillRetrapping{transitions:TransitionsTypes},
-    FillRetrapping{transitions:TransitionsTypes}, 
-    CbRetrapping{transitions:TransitionsTypes},
-    FillCbRetrapping{transitions:TransitionsTypes}
+    /// Neither conduction-band nor filling retrapping is enabled.
+    NoCbFillRetrapping {
+        /// Complete set of equation selections.
+        transitions: TransitionsTypes,
+    },
+    /// Only filling retrapping is enabled.
+    FillRetrapping {
+        /// Complete set of equation selections.
+        transitions: TransitionsTypes,
+    },
+    /// Only conduction-band retrapping is enabled.
+    CbRetrapping {
+        /// Complete set of equation selections.
+        transitions: TransitionsTypes,
+    },
+    /// Conduction-band and filling retrapping are both enabled.
+    FillCbRetrapping {
+        /// Complete set of equation selections.
+        transitions: TransitionsTypes,
+    }
 }
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 /// Independent switches for the available retrapping pathways.
-///
 /// Text configuration uses the abbreviations `cb` (conduction band), `fi`
 /// (filling), `gs` (ground state), and `es` (excited state). Components may be
 /// compact or separated with `-` and `_`, for example `cbfigs` and `cb_fi_gs`
 /// are equivalent.
+///
+/// ```
+/// use common::rate_equation_selection::RetrappingSelection;
+///
+/// let selection: RetrappingSelection = "cb_fi_gs".parse()?;
+/// assert!(selection.cb && selection.filling && selection.ground);
+/// assert!(!selection.excited);
+/// # Ok::<(), String>(())
+/// ```
 pub struct RetrappingSelection {
+    /// Enable retrapping from the conduction band.
     pub cb: bool,
+    /// Enable retrapping during filling.
     pub filling: bool,
+    /// Enable localised ground-state retrapping.
     pub ground: bool,
+    /// Enable localised excited-state retrapping.
     pub excited: bool,
 }
 
 impl RetrappingSelection {
+    /// Create a retrapping selection from independent pathway flags.
+    pub fn new(cb:bool,filling:bool,ground:bool,excited:bool) -> Self{
+        Self { cb, filling, ground, excited }
+    }
+
     /// Return a selection with every retrapping pathway disabled.
-    pub const fn none() -> Self {
+    pub fn none() -> Self {
         Self {
             cb: false,
             filling: false,
@@ -462,7 +555,7 @@ impl RetrappingSelection {
     }
 
     /// Collapse the two state flags into the corresponding localised mode.
-    pub const fn localised_rate_equation(&self) -> LocalisedRateEquation {
+    pub fn localised_rate_equation(&self) -> LocalisedRateEquation {
         match (self.ground, self.excited) {
             (true, true) => LocalisedRateEquation::Both,
             (true, false) => LocalisedRateEquation::Ground,
@@ -472,7 +565,7 @@ impl RetrappingSelection {
     }
 
     /// Choose the outer transition variant from the CB and filling flags.
-    pub const fn transitionselection(&self, transitions: TransitionsTypes) -> Transitions {
+    pub fn transitionselection(&self, transitions: TransitionsTypes) -> Transitions {
         match (self.cb, self.filling) {
             (true, true) => Transitions::FillCbRetrapping{transitions}, 
             (true, false) => Transitions::CbRetrapping{transitions},
@@ -692,6 +785,35 @@ impl Transitions {
         };
         Ok(retrapping.transitionselection(transitions)) 
 
+    }
+
+    /// Build a complete transition selection from input-file boolean flags.
+    ///
+    /// `value2` selects the delocalised kinetic model (`first`, `second`, or
+    /// `general:<order>`). The remaining values enable the corresponding
+    /// ground, excited, filling, and retrapping pathways.
+    pub fn from_bool(gs_tun: bool, es_tun:bool, gs_cb: bool, es_cb:bool,
+                     fill:bool, value2: &str, gs_retrap:bool, es_retrap:bool,
+                     cb_retrap:bool, fill_retrap:bool,
+    ) -> Result<Self, String> {
+
+        let delocalised = DelocalisedRateEquation::from_bool(gs_cb, es_cb, value2)?;
+        let localised_recomb = LocalisedRateEquation::from_bool(gs_tun, es_tun)?;
+        let filling = FillingRateEquation::from_bool(fill)?;
+        let localised_retrap = LocalisedRateEquation::from_bool(gs_retrap, es_retrap)?;
+         let transitions = TransitionsTypes{
+            delocalised,
+            localised_recomb,
+            localised_retrap,
+            filling
+        };
+
+        match (cb_retrap, fill_retrap) {
+            (true, true) => return Ok(Transitions::FillCbRetrapping{transitions}),
+            (true, false) => return Ok(Transitions::CbRetrapping{transitions}),
+            (false, true) => return Ok(Transitions::FillRetrapping{transitions}),
+            (false, false) => return Ok(Transitions::NoCbFillRetrapping{transitions}),
+        }
     }
 
 }
@@ -1222,5 +1344,39 @@ mod tests {
             "gses".parse::<RetrappingSelection>().unwrap().localised_rate_equation(),
             LocalisedRateEquation::Both,
         );
+    }
+
+    #[test]
+    fn boolean_transition_builder_keeps_filling_and_retrapping_flags_independent() {
+        let build = |cb_retrap, fill_retrap| {
+            Transitions::from_bool(
+                true,
+                false,
+                true,
+                false,
+                true,
+                "first",
+                false,
+                true,
+                cb_retrap,
+                fill_retrap,
+            )
+            .unwrap()
+        };
+
+        assert!(matches!(build(false, false), Transitions::NoCbFillRetrapping { .. }));
+        assert!(matches!(build(false, true), Transitions::FillRetrapping { .. }));
+        assert!(matches!(build(true, false), Transitions::CbRetrapping { .. }));
+        assert!(matches!(build(true, true), Transitions::FillCbRetrapping { .. }));
+    }
+
+    #[test]
+    fn equation_parsers_reject_invalid_or_non_positive_general_orders() {
+        assert!("general:0".parse::<DelocalisedRateEquationType>().is_err());
+        assert!("general:-1".parse::<DelocalisedRateEquationType>().is_err());
+        assert!("general:NaN".parse::<DelocalisedRateEquationType>().is_err());
+        assert!("both:unknown".parse::<DelocalisedRateEquation>().is_err());
+        assert!("unknown".parse::<LocalisedRateEquation>().is_err());
+        assert!("".parse::<RetrappingSelection>().is_err());
     }
 }

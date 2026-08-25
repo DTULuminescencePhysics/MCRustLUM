@@ -1,14 +1,16 @@
 //! Numeric types and element-wise operations shared by the simulation.
 //!
 //! Rate equations are written once and can then operate on a scalar, a
-//! [`Vec`], or an [`ndarray::ArrayBase`]. [`ElementWise`] supplies the binary
-//! arithmetic used by those equations, while [`ElementWiseUnary`] supplies
+//! [`Vec`], or an [`ndarray::ArrayBase`]. [`crate::numeric::ElementWise`]
+//! supplies the binary arithmetic used by those equations, while
+//! [`crate::numeric::ElementWiseUnary`] supplies
 //! operations such as `exp` and `powf`.
 //!
 //! Two floating-point precisions are intentionally available:
-//! [`Float`] is the normal simulation precision and [`TimeFloat`] is the
-//! higher precision used for rates and time calculations. [`PrecisionInput`]
-//! converts either individual values or complete containers between them.
+//! [`crate::numeric::Float`] is the normal simulation precision and
+//! [`crate::numeric::TimeFloat`] is the higher precision used for rates and
+//! time calculations. [`crate::numeric::PrecisionInput`] converts either
+//! individual values or complete containers between them.
 
 use std::ops::{Add, Div, Mul, Sub};
 use rand::Rng;
@@ -759,5 +761,75 @@ where
         let right = Array1::from(rhs.clone()).into_dyn();
         let right = right.broadcast(left.raw_dim())?;
         Some(Zip::from(left).and(right).map_collect(|left, right| *left / *right))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::array;
+
+    #[test]
+    fn precision_conversion_preserves_scalar_vector_and_array_shapes() {
+        let scalar = <i32 as PrecisionInput<ProgramPrecision>>::map_to_precision(3);
+        let vector = <Vec<i16> as PrecisionInput<TimePrecision>>::multiply_to_precision(
+            vec![1, 2, 3],
+            2.5,
+        );
+        let matrix = <ndarray::Array2<i32> as PrecisionInput<ProgramPrecision>>::map_to_precision(
+            array![[1, 2], [3, 4]],
+        );
+
+        assert_eq!(scalar, 3.0);
+        assert_eq!(vector, vec![2.5, 5.0, 7.5]);
+        assert_eq!(matrix, array![[1.0, 2.0], [3.0, 4.0]]);
+    }
+
+    #[test]
+    fn scalar_vector_operations_preserve_operand_order() {
+        let vector = vec![2.0_f64, 4.0];
+
+        assert_eq!(10.0_f32.element_sub(&vector), Some(vec![8.0, 6.0]));
+        assert_eq!(10.0_f32.element_div(&vector), Some(vec![5.0, 2.5]));
+        assert_eq!(vector.element_sub(&2.0_f32), Some(vec![0.0, 2.0]));
+        assert_eq!(vector.element_div(&2.0_f32), Some(vec![1.0, 2.0]));
+    }
+
+    #[test]
+    fn paired_containers_reject_incompatible_shapes() {
+        let short = vec![1.0_f64, 2.0];
+        let long = vec![1.0_f64, 2.0, 3.0];
+        let matrix = array![[1.0_f64, 2.0], [3.0, 4.0]];
+        let row = array![[1.0_f64, 2.0]];
+
+        assert!(short.element_add(&long).is_none());
+        assert!(matrix.element_mul(&row).is_none());
+    }
+
+    #[test]
+    fn vector_array_operations_broadcast_the_trailing_dimension() {
+        let vector = vec![10.0_f64, 20.0, 30.0];
+        let matrix = array![[1.0_f64, 2.0, 3.0], [4.0, 5.0, 6.0]];
+
+        let sum = vector.element_add(&matrix).expect("vector should broadcast");
+        let difference = matrix.element_sub(&vector).expect("vector should broadcast");
+
+        assert_eq!(sum, array![[11.0, 22.0, 33.0], [14.0, 25.0, 36.0]].into_dyn());
+        assert_eq!(
+            difference,
+            array![[-9.0, -18.0, -27.0], [-6.0, -15.0, -24.0]].into_dyn(),
+        );
+        assert!(vec![1.0_f64, 2.0].element_add(&matrix).is_none());
+    }
+
+    #[test]
+    fn unary_operations_apply_to_every_container_element() {
+        let vector = vec![1.0_f64, 2.0, 3.0];
+        let squared = vector.element_powf(2_i32);
+        let exponentials = array![0.0_f64, 1.0].element_exp();
+
+        assert_eq!(squared, vec![1.0, 4.0, 9.0]);
+        assert!((exponentials[0] - 1.0).abs() < 1.0e-12);
+        assert!((exponentials[1] - std::f64::consts::E).abs() < 1.0e-12);
     }
 }

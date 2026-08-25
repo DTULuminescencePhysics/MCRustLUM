@@ -1,10 +1,11 @@
 //! Piecewise-linear control of simulation time and temperature.
 //!
-//! A [`TimeTemperature`] profile is defined by matching time and temperature
-//! control points. Between adjacent points, temperature changes linearly.
-//! [`Step`] caches the gradient for each section and provides a signed maximum
-//! timestep that limits a temperature change to one degree and prevents a
-//! step from crossing the next control-point boundary.
+//! A [`crate::time_temperature::TimeTemperature`] profile is defined by
+//! matching time and temperature control points. Between adjacent points,
+//! temperature changes linearly. [`crate::time_temperature::Step`] caches the
+//! gradient for each section and provides a signed maximum timestep that
+//! limits a temperature change to one degree and prevents a step from crossing
+//! the next control-point boundary.
 //!
 //! Ordinary units run forward from zero. Geological-age units (`ka` and `ma`)
 //! run in reverse from the oldest supplied age toward zero, so their valid
@@ -24,14 +25,20 @@ use crate::numeric::{TimeFloat, Float};
 pub enum TimeAdvance {
     /// Advances from `start` to `end` using non-negative timesteps.
     Forward {
+        /// Initial time in seconds.
         start: TimeFloat,
+        /// Terminal time in seconds.
         end: TimeFloat,
+        /// Current time in seconds.
         current: TimeFloat,
     },
     /// Advances from `start` to `end` using non-positive timesteps.
     Reverse {
+        /// Initial geological age in seconds.
         start: TimeFloat,
+        /// Terminal time, normally zero seconds.
         end: TimeFloat,
+        /// Current geological age in seconds.
         current: TimeFloat,
     },
 }
@@ -279,8 +286,7 @@ pub struct TimeTemperature {
     pub current_temperature: Float,
 
     /// Current section index.
-    /// Section `i` is between:
-    /// times[i] and times[i + 1]
+    /// Section `i` lies between `times[i]` and `times[i + 1]`.
     pub section_index: usize,
 
 
@@ -297,6 +303,23 @@ impl TimeTemperature {
     /// Returns an error for an unknown unit, mismatched lengths, insufficient
     /// points, or control points that are not strictly ordered after
     /// conversion.
+    ///
+    /// ```
+    /// use common::constants::temperature::TemperatureUnit;
+    /// use common::constants::time::TimeUnit;
+    /// use common::time_temperature::TimeTemperature;
+    ///
+    /// let profile = TimeTemperature::new(
+    ///     vec![0.0, 60.0],
+    ///     vec![20.0, 30.0],
+    ///     TimeUnit::Second,
+    ///     TemperatureUnit::Celsius,
+    /// )?;
+    ///
+    /// assert_eq!(profile.current_time(), 0.0);
+    /// assert_eq!(profile.current_temperature(), 293.15);
+    /// # Ok::<(), String>(())
+    /// ```
     pub fn new(
         times: Vec<TimeFloat>,
         temperatures: Vec<Float>,
@@ -379,6 +402,7 @@ impl TimeTemperature {
 
         Ok((times, time_advance))
     }
+    /// Convert all profile temperatures to kelvin at program precision.
     pub fn convert_temperatures(temperatures: Vec<Float>, unit: TemperatureUnit) -> Result<Vec<Float>, String> {
         Ok(temperature::convert_to_kelvin(unit, temperatures)
             .ok_or_else(|| "temperature conversion failed".to_string())?)
@@ -774,5 +798,45 @@ mod tests {
         assert_close_f32(profile.current_temperature(), 20.0);
         assert_eq!(profile.section_index, 0);
         assert_close(profile.current_max_dt(), starting_max_dt);
+    }
+
+    #[test]
+    fn temperature_conversion_accepts_celsius_and_preserves_kelvin() {
+        let celsius = TimeTemperature::convert_temperatures(
+            vec![0.0, 20.0, 100.0],
+            TemperatureUnit::Celsius,
+        )
+        .unwrap();
+        let kelvin = TimeTemperature::convert_temperatures(
+            vec![273.15, 293.15],
+            TemperatureUnit::Kelvin,
+        )
+        .unwrap();
+
+        assert_eq!(celsius, vec![273.15, 293.15, 373.15]);
+        assert_eq!(kelvin, vec![273.15, 293.15]);
+    }
+
+    #[test]
+    fn constant_temperature_profile_stops_at_its_terminal_boundary() {
+        let mut profile = TimeTemperature::new(
+            vec![0.0, 10.0],
+            vec![300.0, 300.0],
+            TimeUnit::Second,
+            TemperatureUnit::Kelvin,
+        )
+        .unwrap();
+
+        assert!(profile.step.max_dt[0].is_infinite());
+        assert_close(profile.current_max_dt(), 10.0);
+
+        profile.advance(10.0);
+        assert_close(profile.current_time(), 10.0);
+        assert_close_f32(profile.current_temperature(), 300.0);
+        assert_close(profile.current_max_dt(), 0.0);
+
+        profile.advance(1.0);
+        assert_close(profile.current_time(), 10.0);
+        assert_close_f32(profile.current_temperature(), 300.0);
     }
 }

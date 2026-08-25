@@ -10,19 +10,38 @@ use crate::rate_equations::ground_excited_state_weights;
 /// the identifier and sum the rates that contribute to the same population.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionKind {
+    /// Ground-state tunnelling to a recombination centre.
     LocalisedRecombinationGround,
+    /// Ground-state tunnelling to another trap.
     LocalisedRetrappingGround,
+    /// Excited-state tunnelling to a recombination centre.
     LocalisedRecombinationExcited,
+    /// Excited-state tunnelling to another trap.
     LocalisedRetrappingExcited,
+    /// Ground-state release into the conduction band.
     DelocalisedGround,
+    /// Excited-state release into the conduction band.
     DelocalisedExcited,
+    /// Filling of an available trap.
     Filling,
 }
 
 /// One calculated rate together with the pathway that generated it.
+///
+/// ```
+/// use common::rate_equation_inputs::{TransitionKind, TransitionRate};
+///
+/// let transition = TransitionRate {
+///     kind: TransitionKind::Filling,
+///     rate: 2.5,
+/// };
+/// assert_eq!(transition.rate, 2.5);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TransitionRate<V = TimeFloat> {
+    /// Physical event represented by this rate.
     pub kind: TransitionKind,
+    /// Rate value, normally in inverse seconds.
     pub rate: V,
 }
 
@@ -32,12 +51,19 @@ pub struct TransitionRate<V = TimeFloat> {
 /// weight containers. They default to [`Float`] but may be vectors or arrays.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DelocalisedTransitionInputs<E = Float, S = Float, W = TimeFloat> {
+    /// Ground-state activation energy to the conduction band.
     pub e_cb_ground: E,
+    /// Ground-state attempt-frequency factor.
     pub frequency_ground: S,
+    /// Excited-state activation energy to the conduction band.
     pub e_cb_excited: E,
+    /// Excited-state attempt-frequency factor.
     pub frequency_excited: S,
+    /// Current temperature in kelvin.
     pub temperature: Float,
+    /// Fraction of particles in the ground state.
     pub ground_weight: W,
+    /// Fraction of particles in the excited state.
     pub excited_weight: W,
 }
 
@@ -50,12 +76,19 @@ pub struct DelocalisedTransitionInputs<E = Float, S = Float, W = TimeFloat> {
 /// by the element-wise rate-equation traits.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LocalisedTransitionInputs<Alpha = Float, B = Float, W = TimeFloat, R = Float> {
+    /// Ground-state tunnelling decay constant.
     pub alpha_ground: Alpha,
+    /// Ground-state tunnelling attempt frequency.
     pub frequency_ground: B,
+    /// Excited-state tunnelling decay constant.
     pub alpha_excited: Alpha,
+    /// Excited-state tunnelling attempt frequency.
     pub frequency_excited: B,
+    /// Fraction of particles in the ground state.
     pub ground_weight: W,
+    /// Fraction of particles in the excited state.
     pub excited_weight: W,
+    /// Separation between the initial and target sites.
     pub distance: R,
 }
 
@@ -65,9 +98,13 @@ pub struct LocalisedTransitionInputs<Alpha = Float, B = Float, W = TimeFloat, R 
 /// same scalar, vector, or array shape for all seven transition rates.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FillingTransitionInputs<D0 = Float, DDot = Float, N = Float, NTot = Float> {
+    /// Characteristic dose controlling the filling timescale.
     pub characteristic_dose: D0,
+    /// Applied dose per unit time.
     pub dose_rate: DDot,
+    /// Currently occupied trap population.
     pub occupied_population: N,
+    /// Total trap population available to be filled.
     pub total_population: NTot,
 }
 
@@ -88,12 +125,19 @@ pub struct TransitionInputs<
     SE = Float,
     SG = Float,
 > {
+    /// Inputs for release into the conduction band.
     pub delocalised: DelocalisedTransitionInputs<E, S, W>,
+    /// Inputs for localised recombination.
     pub localised_recombination: LocalisedTransitionInputs<Alpha, B, W, R>,
+    /// Inputs for localised retrapping.
     pub localised_retrapping: LocalisedTransitionInputs<Alpha, B, W, R>,
+    /// Inputs for trap filling.
     pub filling: FillingTransitionInputs<D0, DDot, N, NTot>,
+    /// Energy gap separating the ground and excited states.
     pub excited_energy_gap: Gap,
+    /// Excited-state frequency used to calculate thermal state weights.
     pub s_frequency_e: SE,
+    /// Ground-state frequency used to calculate thermal state weights.
     pub s_frequency_g: SG,
 }
 

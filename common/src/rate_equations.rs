@@ -1033,6 +1033,54 @@ mod tests {
     }
 
     #[test]
+    fn affinity_probabilities_are_complementary() {
+        let n: Float = 0.25;
+        let n_tot: Float = 1.0;
+        let m: Float = 0.5;
+        let retrap: Float = 2.0;
+        let recomb: Float = 1.0;
+
+        let retrapping = retrapping_by_affinity(&n, &n_tot, &m, &retrap, &recomb)
+            .expect("retrapping probability should calculate");
+        let recombination = recombination_by_affinity(&n, &n_tot, &m, &retrap, &recomb)
+            .expect("recombination probability should calculate");
+
+        assert_close(retrapping, 0.75);
+        assert_close(recombination, 0.25);
+        assert_close(retrapping + recombination, 1.0);
+    }
+
+    #[test]
+    fn affinity_probabilities_support_vector_populations() {
+        let n: Vec<Float> = vec![0.0, 0.5];
+        let n_tot: Float = 1.0;
+        let m: Float = 0.5;
+        let retrap: Float = 2.0;
+        let recomb: Float = 1.0;
+
+        let retrapping = retrapping_by_affinity(&n, &n_tot, &m, &retrap, &recomb)
+            .expect("mixed scalar and vector inputs should calculate");
+        let recombination = recombination_by_affinity(&n, &n_tot, &m, &retrap, &recomb)
+            .expect("mixed scalar and vector inputs should calculate");
+
+        assert_vec_close(&retrapping, &[0.8, 2.0 / 3.0]);
+        assert_vec_close(&recombination, &[0.2, 1.0 / 3.0]);
+    }
+
+    #[test]
+    fn distance_retrapping_factor_matches_documented_equation() {
+        let prefactor: Float = 2.0;
+        let mu: Float = 2.0;
+        let distance: Float = 4.0;
+
+        let actual = retrapping_probability_by_r(&prefactor, &mu, &distance)
+            .expect("distance retrapping factor should calculate");
+        let expected = prefactor * ((distance / mu).powi(2)).exp();
+
+        assert_close(actual, expected);
+    }
+
+    #[test]
     fn ground_excited_state_weights_follow_boltzmann_distribution() {
         let e: Float = 0.045;
         let s_frequency_e: Float = 1.0e11;

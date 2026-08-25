@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 <Oliver A. Bramley; Technical University of Denmark>
+//
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Command-line entry point for a luminescence Monte Carlo run.
 //!
 //! The program reads `input.toml` from the working directory when present and

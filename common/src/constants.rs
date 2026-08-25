@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 <Oliver A. Bramley; Technical University of Denmark>
+//
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! This module contains constants that can be used throughout the program
 
 /// This module contains conversions for SI unit prefixes

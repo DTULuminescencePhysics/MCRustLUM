@@ -1,3 +1,10 @@
+// SPDX-FileCopyrightText: 2026 <Oliver A. Bramley; Technical University of Denmark>
+//
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//! Contains various structs to store all input data. currently this is in a single module
+//! however as more functionality is added that may change. 
+
 use common::constants::time::TimeUnit;
 use common::constants::temperature::TemperatureUnit;
 use common::numeric::{Float, TimeFloat};

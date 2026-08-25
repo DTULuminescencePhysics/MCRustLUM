@@ -1,3 +1,4 @@
 [workspace]
 resolver = "3"
 members = ["mc","common","luminescence", "io"]
+license = "AGPL-3.0-only"

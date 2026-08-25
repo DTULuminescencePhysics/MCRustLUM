@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 <Oliver A. Bramley; Technical University of Denmark>
+//
+// SPDX-License-Identifier: AGPL-3.0-only 
+
 //! Creation and per-iteration reset of Monte Carlo state.
 
 use common::crystal::Cube;

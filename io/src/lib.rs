@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 <Oliver A. Bramley; Technical University of Denmark>
+//
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Loading and representing simulation configuration.
 //!
 //! Use [`read_inputs`] when a TOML file is supplied and [`default_inputs`]

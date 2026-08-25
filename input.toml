@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 <Oliver A. Bramley; Technical University of Denmark>
+#
+# SPDX-License-Identifier: AGPL-3.0-only
 # Edit this file to configure a simulation. Any omitted value uses the default
 # from the corresponding structure in io/src/inputs.rs.
 

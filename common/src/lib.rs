@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 <Oliver A. Bramley; Technical University of Denmark>
+//
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Shared simulation types and numerical models.
 //!
 //! This crate contains crystal geometry, time/temperature profiles, unit

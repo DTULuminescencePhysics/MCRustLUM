@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 <Oliver A. Bramley; Technical University of Denmark>
+//
+// SPDX-License-Identifier: AGPL-3.0-only 
+
 //! Kinetic Monte Carlo model setup and event-time generation.
 //!
 //! [`system_setup::MonteCarloSimulation`] turns the grouped input values from

@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+title: MCRustLum
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Oliver A.
+    family-names: Bramley
+    email: olaibr@dtu.dk
+    affiliation: Technical University of Denmark
+    orcid: 'https://orcid.org/0000-0002-1225-6244'
+  - name: Technical University of Denmark
+    address: Anker Engelunds Vej 101
+    city: Kongens Lyngby
+    post-code: '2800'
+    country: DK
+    website: 'https://www.dtu.dk'
+repository-code: 'https://github.com/DTULuminescencePhysics/MCRustLUM'
+url: >-
+  https://dtuluminescencephysics.github.io/MCRustLUM/luminescence
+license: AGPL-3.0-only
+version: 0.1.0

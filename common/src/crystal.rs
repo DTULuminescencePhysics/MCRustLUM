@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 <Oliver A. Bramley; Technical University of Denmark>
+//
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Spatial representation of the simulation crystal.
 //!
 //! A [`crate::crystal::Cube`] combines its boundary condition with the

@@ -20,7 +20,7 @@ fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
     } else {
         io::default_inputs()
     };
-    mc::system_setup::MonteCarloSimulation::new(inputs,10,1);
+    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs,10,1);
     
 
     Ok(())

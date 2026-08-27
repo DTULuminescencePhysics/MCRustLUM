@@ -96,6 +96,10 @@ pub struct TrapEnergies {
     pub e_loc_sigma: Vec<Float>,
     /// Standard deviation associated with each conduction-band energy.
     pub e_cb_sigma: Vec<Float>,
+    /// Rate of moving from ground to excited state
+    pub s_frequency_e: Vec<Float>, 
+    /// Rate of moving from excited to ground state
+    pub s_frequency_g: Vec<Float>, 
 }
 
 impl Default for TrapEnergies {
@@ -105,6 +109,8 @@ impl Default for TrapEnergies {
             e_cb: vec![2.0],
             e_loc_sigma: vec![0.0],
             e_cb_sigma: vec![0.0],
+            s_frequency_e: vec![9.0e10],
+            s_frequency_g: vec![9.0e10],
         }
     }
 }
@@ -163,7 +169,7 @@ pub struct DeLocalisedInputs {
     pub s_gs: Vec<Float>,
     /// Excited-state frequency factors.
     pub s_es: Vec<Float>,
-    /// General-order kinetic exponents.
+    /// 
     pub mu: Vec<Float>,
     /// Relative retrapping strengths for each configured trap family.
     pub retrap_ratio: Vec<Float>,
@@ -294,6 +300,8 @@ mod tests {
                 e_cb: vec![2.0],
                 e_loc_sigma: vec![0.0],
                 e_cb_sigma: vec![0.0],
+                s_frequency_e: vec![9.0e10],
+                s_frequency_g: vec![9.0e10],
             }
         );
 

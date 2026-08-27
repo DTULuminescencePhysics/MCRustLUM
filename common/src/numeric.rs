@@ -38,14 +38,14 @@ pub trait Numeric: Copy + Clone + PartialOrd + std::fmt::Debug {
     /// Return the additive identity for this numeric type.
     fn zero() -> Self;
     /// Generate a value in the inclusive range `0..=max`.
-    fn random_in(max: Self, rng: &mut rand::rngs::ThreadRng) -> Float;
+    fn random_in<R: Rng + ?Sized>(max: Self, rng: &mut R) -> Float;
 }
 
 impl Numeric for f32 {
     fn to_float(self) -> Float { self as Float }
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0.0 }
-    fn random_in(max: Self, rng: &mut rand::rngs::ThreadRng) -> Float {
+    fn random_in<R: Rng + ?Sized>(max: Self, rng: &mut R) -> Float {
        let out = rng.gen_range(0.0..=max).to_float();
        out
     }
@@ -54,7 +54,7 @@ impl Numeric for f64 {
     fn to_float(self) -> Float { self as Float }
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0.0 }
-    fn random_in(max: Self, rng: &mut rand::rngs::ThreadRng) -> Float {
+    fn random_in<R: Rng + ?Sized>(max: Self, rng: &mut R) -> Float {
         let out = rng.gen_range(0.0..=max).to_float();
         out
     }
@@ -63,7 +63,7 @@ impl Numeric for i8 {
     fn to_float(self) -> Float { self as Float }
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
-    fn random_in(max: Self, rng: &mut rand::rngs::ThreadRng) -> Float {
+    fn random_in<R: Rng + ?Sized>(max: Self, rng: &mut R) -> Float {
         let out = rng.gen_range(0..=max).to_float();
         out
     }
@@ -73,7 +73,7 @@ impl Numeric for i16 {
     fn to_float(self) -> Float { self as Float }
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
-    fn random_in(max: Self, rng: &mut rand::rngs::ThreadRng) -> Float {
+    fn random_in<R: Rng + ?Sized>(max: Self, rng: &mut R) -> Float {
         let out = rng.gen_range(0..=max).to_float();
         out
     }
@@ -83,7 +83,7 @@ impl Numeric for i32 {
     fn to_float(self) -> Float { self as Float }
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
-    fn random_in(max: Self, rng: &mut rand::rngs::ThreadRng) -> Float {
+    fn random_in<R: Rng + ?Sized>(max: Self, rng: &mut R) -> Float {
         let out = rng.gen_range(0..=max).to_float();
         out
     }
@@ -93,7 +93,7 @@ impl Numeric for i64 {
     fn to_float(self) -> Float { self as Float }
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
-    fn random_in(max: Self, rng: &mut rand::rngs::ThreadRng) -> Float {
+    fn random_in<R: Rng + ?Sized>(max: Self, rng: &mut R) -> Float {
         let out = rng.gen_range(0..=max).to_float();
         out
     }
@@ -103,7 +103,7 @@ impl Numeric for u8 {
     fn to_float(self) -> Float { self as Float }
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
-    fn random_in(max: Self, rng: &mut rand::rngs::ThreadRng) -> Float {
+    fn random_in<R: Rng + ?Sized>(max: Self, rng: &mut R) -> Float {
         let out = rng.gen_range(0..=max).to_float();
         out
     }
@@ -113,7 +113,7 @@ impl Numeric for u16 {
     fn to_float(self) -> Float { self as Float }
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
-    fn random_in(max: Self, rng: &mut rand::rngs::ThreadRng) -> Float {
+    fn random_in<R: Rng + ?Sized>(max: Self, rng: &mut R) -> Float {
         let out = rng.gen_range(0..=max).to_float();
         out
     }
@@ -123,7 +123,7 @@ impl Numeric for u32 {
     fn to_float(self) -> Float { self as Float }
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
-    fn random_in(max: Self, rng: &mut rand::rngs::ThreadRng) -> Float {
+    fn random_in<R: Rng + ?Sized>(max: Self, rng: &mut R) -> Float {
         let out = rng.gen_range(0..=max).to_float();
         out
     }
@@ -133,7 +133,7 @@ impl Numeric for u64 {
     fn to_float(self) -> Float { self as Float }
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
-    fn random_in(max: Self, rng: &mut rand::rngs::ThreadRng) -> Float {
+    fn random_in<R: Rng + ?Sized>(max: Self, rng: &mut R) -> Float {
         let out = rng.gen_range(0..=max).to_float();
         out
     }

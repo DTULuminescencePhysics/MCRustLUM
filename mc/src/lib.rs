@@ -10,6 +10,7 @@
 
 /// Construction and resetting of Monte Carlo simulation state.
 pub mod system_setup;
-
+/// Contains experiment specific code
+pub mod experiment;
 
 

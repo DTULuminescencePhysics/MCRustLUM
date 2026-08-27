@@ -27,7 +27,6 @@ pub struct MonteCarloSimulation{
     /// Number of independent experiments to run.
     pub experiments: usize,
 
-
 }
 
 impl MonteCarloSimulation {
@@ -72,7 +71,7 @@ impl MonteCarloSimulation {
     /// The trap count is derived from the configured density and volume. Hole
     /// and bandtail counts are interpreted as ratios per trap.
     pub fn generate_cube(inputs: &CubeSpecification) -> Result<Cube, String> {
-        Cube::new_random_from_density(
+        Cube::new_from_density(
             inputs.x,
             inputs.y,
             inputs.z,
@@ -106,14 +105,6 @@ impl MonteCarloSimulation {
                               inputs.delocalised.retrap,
                               inputs.filling.cmbn_whn_fll)
 
-    }
-
-    /// Replace the current cube with a new random spatial realisation.
-    ///
-    /// Counts, dimensions, and boundary conditions remain unchanged; cached
-    /// distance matrices are recalculated for the new positions.
-    pub fn regenerate_cube(&mut self) -> Result<(), String> {
-        self.cube.randomise_positions()
     }
 
     /// Restore the time/temperature profile to its first control point.
@@ -152,9 +143,9 @@ mod tests {
 
         assert_eq!(simulation.repetions, 12);
         assert_eq!(simulation.experiments, 3);
-        assert_eq!(simulation.cube.places.traps.len(), 3);
-        assert_eq!(simulation.cube.places.holes.len(), 6);
-        assert_eq!(simulation.cube.places.bandtails.len(), 3);
+        assert_eq!(simulation.cube.trap_total, 3);
+        assert_eq!(simulation.cube.hole_total, 6);
+        assert_eq!(simulation.cube.bandtail_total, 3);
         assert!(!simulation.inputs.cube.periodic);
         assert!((simulation.time_temperature.current_temperature() - 293.15).abs() < 1.0e-12);
         assert!(matches!(simulation.transitions, Transitions::CbRetrapping { .. }));
@@ -203,35 +194,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn regeneration_and_reset_preserve_configuration_but_replace_state() {
-        let mut simulation = MonteCarloSimulation::new(small_inputs(), 1, 1).unwrap();
-        let original: Vec<_> = simulation
-            .cube
-            .places
-            .traps
-            .iter()
-            .map(|point| (point.x, point.y, point.z))
-            .collect();
-
-        simulation.regenerate_cube().unwrap();
-        let changed = original
-            .iter()
-            .zip(&simulation.cube.places.traps)
-            .any(|(old, new)| old.0 != new.x || old.1 != new.y || old.2 != new.z);
-        assert!(changed);
-        assert_eq!(simulation.cube.places.traps.len(), original.len());
-        assert!(simulation
-            .cube
-            .places
-            .traps
-            .iter()
-            .all(|point| simulation.cube.contains(point)));
-
-        simulation.time_temperature.advance(1.0);
-        assert!(simulation.time_temperature.current_time() > 0.0);
-        simulation.reset_time_temperature();
-        assert_eq!(simulation.time_temperature.current_time(), 0.0);
-        assert!((simulation.time_temperature.current_temperature() - 293.15).abs() < 1.0e-12);
-    }
 }

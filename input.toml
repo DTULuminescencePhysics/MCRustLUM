@@ -27,6 +27,8 @@ e_loc = [1.2]
 e_cb = [2.0]
 e_loc_sigma = [0.0]
 e_cb_sigma = [0.0]
+s_frequency_e = [9.0e10]
+s_frequency_g = [9.0e10]
 
 [localised]
 gs_tun = true

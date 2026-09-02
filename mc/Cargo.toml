@@ -8,3 +8,4 @@ license = "AGPL-3.0-only"
 common = { path = "../common" }
 io = { path = "../io" }
 rand = "0.8"
+serde = { version = "1", features = ["derive"] }

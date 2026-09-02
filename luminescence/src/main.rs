@@ -9,9 +9,8 @@
 
 use std::{error::Error, path::Path};
 
-fn main() {
-    let mc_run = monte_carlo_run();
-   
+fn main() -> Result<(), Box<dyn Error>> {
+    monte_carlo_run()
 }
 
 fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
@@ -20,8 +19,9 @@ fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
     } else {
         io::default_inputs()
     };
-    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs,10,1);
-    
+    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 10, 1)?;
+
+    monte_carlo.run()?;
 
     Ok(())
 }

@@ -12,6 +12,8 @@
 /// Typed groups corresponding to the sections of an input TOML file.
 pub mod inputs;
 
+pub mod outputs;
+
 use std::error::Error;
 use std::fmt;
 use std::fs;

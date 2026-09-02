@@ -585,6 +585,12 @@ pub(crate) fn run_standard(
     output_file: &Path,
     mut results: Vec<RecordedEvent>,
 ) -> Result<(), String> {
+    results.push(RecordedEvent {
+                    time: time_temperature.current_time(),
+                    fill: trap_places.fill_ratio(),
+                    temperature: time_temperature.current_temperature(),
+                    event: Event::None,
+                });
     while time_temperature.current_max_dt() != 0.0 {
         let temperature = time_temperature.current_temperature();
 
@@ -639,7 +645,7 @@ pub(crate) fn run_standard(
                 });
             }
         }
-
+        print!("current fill {}", trap_places.fill_ratio());
         if results.len() == results.capacity() {
             append_monte_carlo_experiment_batch_to_file(output_file, &results)
                 .map_err(|error| error.to_string())?;

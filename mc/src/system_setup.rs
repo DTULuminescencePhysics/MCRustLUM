@@ -5,6 +5,7 @@
 //! Creation and per-iteration reset of Monte Carlo state.
 
 use crate::experiment::MCExperiment;
+use common::numeric::Float;
 use common::crystal::Cube;
 use common::rate_equation_selection::Transitions;
 use common::time_temperature::TimeTemperature;
@@ -121,7 +122,7 @@ impl MonteCarloSimulation {
     /// Every repetition receives a newly generated random spatial realization
     /// together with a reset copy of the time/temperature profile.
     pub fn run(&self) -> Result<(), String> {
-        self.run_to_directory(Path::new("."))
+        self.run_to_directory(Path::new("tmp"))
     }
 
     /// Run every configured experiment and repetition, placing temporary
@@ -130,6 +131,9 @@ impl MonteCarloSimulation {
         let output_directory = output_directory.as_ref();
         let batch_capacity: usize = 100;
         for experiment_index in 0..self.experiments {
+            let trap_available = (self.inputs.initial_conditions.trap_available[experiment_index] * self.cube.trap_total as Float) as usize;
+            let hole_available = (self.inputs.initial_conditions.hole_available[experiment_index] * self.cube.hole_total as Float) as usize;
+
             for repetition_index in 0..self.repetions {
                 let temp_file_path = output_directory.join(format!(
                     "experiment_results_{}_{}.bin.gz",
@@ -141,6 +145,8 @@ impl MonteCarloSimulation {
                 let mut experiment = MCExperiment::initialise(
                     &self.cube,
                     &self.inputs,
+                    &trap_available,
+                    &hole_available,
                     time_temperature,
                 )
                 .map_err(|error| {

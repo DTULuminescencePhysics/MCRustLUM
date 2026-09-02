@@ -12,6 +12,9 @@
 /// Typed groups corresponding to the sections of an input TOML file.
 pub mod inputs;
 
+/// Creation of per-run experiment and temporary-output directories.
+pub mod filesystem;
+
 pub mod outputs;
 
 use std::error::Error;
@@ -21,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 pub use inputs::{
     CubeSpecification, DeLocalisedInputs, FillingInputs, LocalisedInputs, SimulationInputs,
-    TimeTempSpecification, TrapEnergies,
+    TimeTempSpecification, TrapEnergies, InitialConditions,
 };
 
 /// An error produced while reading or parsing a simulation input file.

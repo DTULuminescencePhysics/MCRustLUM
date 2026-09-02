@@ -30,6 +30,10 @@ e_cb_sigma = [0.0]
 s_frequency_e = [9.0e10]
 s_frequency_g = [9.0e10]
 
+[initial_conditions]
+trap_available = [1]
+hole_available = [1]
+
 [localised]
 gs_tun = true
 es_tun = true

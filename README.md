@@ -37,9 +37,8 @@ cargo test --workspace
 
 ## Input configuration
 
-Simulation settings are grouped in [`input.toml`](input.toml). When that file
-is not present, the program can construct the same input structures using its
-built-in default values.
+Simulation settings are grouped in [`input.toml`](input.toml). The application
+copies this file into the experiment directory before starting a run.
 
 ## Workspace structure
 
@@ -52,8 +51,21 @@ built-in default values.
 
 ## Running
 
-The application entry point is still being developed. A complete simulation
-workflow and command-line interface will be documented here once available.
+Run with an automatically numbered experiment directory:
+
+```console
+cargo run -p luminescence
+```
+
+Or provide a folder name:
+
+```console
+cargo run -p luminescence -- my_experiment
+```
+
+The output layout is `run/<name>/`, containing the copied `input.toml` and a
+`tmp/` directory for the per-repetition Monte Carlo files. Automatic names use
+the first available `experiment_N`, starting with `experiment_1`.
 
 ## License
 

@@ -114,7 +114,25 @@ impl Default for TrapEnergies {
         }
     }
 }
+/// Initial trap/hole availability.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(default)]
+pub struct InitialConditions {
+    /// Percentage of traps available at start of simulation
+    pub trap_available: Vec<Float>,
+    /// Percentage of holes available at start of simulation
+    pub hole_available: Vec<Float>,
+    
+}
 
+impl Default for InitialConditions {
+    fn default() -> Self {
+        Self {
+            trap_available: vec![1.0],
+            hole_available: vec![1.0],
+        }
+    }
+}
 /// Selection and parameters for localised tunnelling transitions.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 #[serde(default)]
@@ -220,7 +238,6 @@ impl Default for FillingInputs {
     }
 }
 
-
 /// All input groups required to configure a simulation.
 ///
 /// This is the top-level structure represented by an input TOML file. Missing
@@ -240,6 +257,8 @@ pub struct SimulationInputs {
     pub time_temperature: TimeTempSpecification,
     /// Trap energy distributions.
     pub trap_energies: TrapEnergies,
+    /// Initial trap/hole availability.
+    pub initial_conditions: InitialConditions,
     /// Localised transition configuration.
     pub localised: LocalisedInputs,
     /// Delocalised transition configuration.
@@ -254,6 +273,7 @@ impl Default for SimulationInputs {
             cube: CubeSpecification::default(),
             time_temperature: TimeTempSpecification::default(),
             trap_energies: TrapEnergies::default(),
+            initial_conditions: InitialConditions::default(),
             localised: LocalisedInputs::default(),
             delocalised: DeLocalisedInputs::default(),
             filling: FillingInputs::default(),
@@ -344,5 +364,17 @@ mod tests {
                 recm_pre_fll: vec![0.0],
             }
         );
+
+        assert_eq!(
+            InitialConditions::default(),
+            InitialConditions {
+                trap_available: vec![1.0],
+                hole_available: vec![1.0],
+            }
+        );
     }
 }
+        
+
+    
+

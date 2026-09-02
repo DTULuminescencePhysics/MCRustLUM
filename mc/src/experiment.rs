@@ -382,11 +382,13 @@ impl MCExperiment {
     pub fn initialise(
         cube: &Cube,
         inputs: &SimulationInputs,
+        trap_available: &usize,
+        hole_available: &usize,
         time_temperature: TimeTemperature,
     ) -> Result<Self, String> {
         let places = ElectronPlaces::random_from_cube(cube)?;
-        let trap_places = PlaceAvailability::new(cube.trap_total)?;
-        let hole_places = PlaceAvailability::new(cube.hole_total)?;
+        let trap_places = PlaceAvailability::set_initial_condition(cube.trap_total, *trap_available)?;
+        let hole_places = PlaceAvailability::set_initial_condition(cube.hole_total, *hole_available)?;
         let trap_parameters = TrapParameterLayout::new_uniform(inputs);
 
         if cube.bandtail_total == 0 {
@@ -429,7 +431,6 @@ impl MCExperiment {
                 create_monte_carlo_experiment_file(output_file)
                     .map_err(|error| error.to_string())?;
                 let results: Vec<RecordedEvent> = Vec::with_capacity(*batch_capacity);
-
                 run_standard(
                     places,
                     trap_places,

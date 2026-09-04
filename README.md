@@ -63,9 +63,10 @@ Or provide a folder name:
 cargo run -p luminescence -- my_experiment
 ```
 
-The output layout is `run/<name>/`, containing the copied `input.toml` and a
-`tmp/` directory for the per-repetition Monte Carlo files. Automatic names use
-the first available `experiment_N`, starting with `experiment_1`.
+The output layout is `run/<name>/`, containing the copied `input.toml`, the
+consolidated `average_fill.csv`, and a `tmp/` directory for the per-repetition
+Monte Carlo files. Automatic names use the first available `experiment_N`,
+starting with `experiment_1`.
 
 ## License
 

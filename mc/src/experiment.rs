@@ -2,359 +2,68 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use crate::calculate_times::{RecordedEvent, run_standard};
+use crate::calculate_times::run_standard;
+use common::charge_transfer::RecordedEvent;
 use common::crystal::Cube;
 use common::numeric::Float;
+use common::place_ids::PlaceAvailability;
 use common::rate_equation_selection::Transitions;
 use common::time_temperature::TimeTemperature;
-use common::trap_hole_band_tail::ElectronPlaces;
+use common::trap_hole_band_tail::{ElectronPlaces, TrapParameterLayout};
 use io::inputs::SimulationInputs;
 use io::outputs::create_monte_carlo_experiment_file;
-
-use rand::Rng;
-use serde::{Deserialize, Serialize};
 use std::path::Path;
-/// Holds the unique id of each trap. This currently is set to u16
-/// limiting the number of traps to just over 65,000 which
-/// should for now be sufficient.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PlaceId(u16);
+use rand::rngs::StdRng;
+use common::random::get_std_rng_for_rep;
 
-impl PlaceId {
-    pub fn new(index: usize) -> Result<Self, String> {
-        let index = u16::try_from(index).map_err(|_| "trap count exceeds u16::MAX".to_string())?;
-
-        Ok(Self(index))
-    }
-
-    pub fn index(self) -> usize {
-        self.0 as usize
-    }
-}
-
-/// Holds the PlaceIds for traps, holes or bandtail states.
-/// Available places are kept at the front of the ids list and
-/// currently unavailable places are at the back
-/// [ available Ids | unavailable Ids ]
-///                 ^
-///           available_count
-/// The two extremes of this are then
-/// [ unavailable Ids ] and [ available Ids ]
-/// ^                    |                  ^
-/// available_count      |                  available_count
-#[derive(Debug)]
-pub struct PlaceAvailability {
-    /// A permutation containing every PlaceIf exactly once.
-    ids: Box<[PlaceId]>,
-    /// positions[position_id] gives that place's current index in `ids`.
-    positions: Box<[u16]>,
-    /// ids[..available_count] are available.
-    available_count: usize,
-}
-
-impl PlaceAvailability {
-    /// Function that makes all places initially unavailable
-    pub fn new(count: usize) -> Result<Self, String> {
-        if count >= u16::MAX as usize {
-            return Err("too many traps for u16 IDs".to_string());
-        }
-
-        let ids = (0..count)
-            .map(PlaceId::new)
-            .collect::<Result<Vec<_>, _>>()?
-            .into_boxed_slice();
-
-        let positions = (0..count)
-            .map(|index| index as u16)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-
-        Ok(Self {
-            ids,
-            positions,
-            available_count: 0,
-        })
-    }
-
-    /// Randomly selects Ids to make them available at the beginning of an experiment
-    pub fn set_initial_condition(count: usize, available_count: usize) -> Result<Self, String> {
-        let mut places = PlaceAvailability::new(count)?;
-        if available_count == 0 {
-            return Ok(places);
-        } else if available_count == count {
-            places.mark_all_available();
-            return Ok(places);
-        } else {
-            places.randomly_make_available(available_count)?;
-            return Ok(places);
-        }
-    }
-    pub fn randomly_make_available(&mut self, n: usize) -> Result<(), String> {
-        let unavailable_count = self.ids.len() - self.available_count;
-        if n > unavailable_count {
-            return Err(format!(
-                "cannot make {n} places available: only \
-                {unavailable_count} places remain"
-            ));
-        }
-
-        let first_new = self.available_count;
-        let new_available_end = first_new + n;
-        let mut rng = common::random::rng();
-        for destination in first_new..new_available_end {
-            let selected = rng.gen_range(destination..self.ids.len());
-            self.swap_positions(destination, selected);
-        }
-
-        self.available_count = new_available_end;
-
-        Ok(())
-    }
-
-    pub fn mark_all_occupied(&mut self) {
-        self.available_count = 0;
-    }
-
-    pub fn mark_all_available(&mut self) {
-        self.available_count = self.ids.len();
-    }
-    /// Gives Ids available for reaction
-    /// i.e. an occupied trap or unoccupied hole
-    pub fn available(&self) -> &[PlaceId] {
-        &self.ids[..self.available_count]
-    }
-    /// Gives Ids not currently available for reaction
-    /// i.e. an unoccupied trap or occupied hole
-    pub fn unavailable(&self) -> &[PlaceId] {
-        &self.ids[self.available_count..]
-    }
-
-    /// Checks if a given PlaceId is available to the program
-    pub fn is_available(&self, place: PlaceId) -> bool {
-        if (self.positions[place.index()] as usize) < self.available_count {
-            return true;
-        } else {
-            return false;
-        }
-    }
-    /// Returns the availability count
-    pub fn available_count(&self) -> usize {
-        self.available_count
-    }
-
-    pub fn fill_ratio(&self) -> Float {
-        self.available_count() as Float / self.ids.len() as Float
-    }
-
-    /// Swaps the two entries
-    fn swap_positions(&mut self, first: usize, second: usize) {
-        if first == second {
-            return;
-        }
-
-        self.ids.swap(first, second);
-
-        let first_id = self.ids[first];
-        let second_id = self.ids[second];
-
-        self.positions[first_id.index()] = first as u16;
-        self.positions[second_id.index()] = second as u16;
-    }
-
-    /// To make a PlaceId available it needs to be swapped with the first
-    /// unavailable id and the available count increased
-    /// [ available Ids | A, C, ... unavailable Ids... B, ... ]
-    ///                   ^                            ^
-    ///            first unavailable Id             Id to move
-    /// [ available Ids | B, C, ... unavailable Ids... A, ... ]
-    ///                   ^                            ^
-    ///               moved Id                former first unavailable Id
-    /// [ available Ids B | C, ... unavailable Ids... A, ... ]
-    ///                 ^   ^
-    ///          moved Id   new first unavailable Id
-    pub fn make_available(&mut self, place: PlaceId) -> bool {
-        let current = self.positions[place.index()] as usize;
-
-        if current < self.available_count {
-            return false; // Already available
-        }
-
-        let first_occupied = self.available_count;
-        self.swap_positions(current, first_occupied);
-        self.available_count += 1;
-
-        true
-    }
-    /// To make a PlaceId unavailable it needs to be swapped with the last
-    /// available id and the available count decreased
-    /// [ B, ... available Ids ... C, A | unavailable Ids ]
-    ///   ^                           ^
-    ///   Id to move         last available Id
-    /// [ A, ... available Ids ... C, B | unavailable Ids ]
-    ///   ^                           ^
-    /// former last available Id   moved Id    
-    /// [ A, ... available Ids ... C | B, ... unavailable Ids ]
-    ///                            ^   ^
-    ///        new last available Id   moved Id              
-    pub fn make_unavailable(&mut self, trap: PlaceId) -> bool {
-        let current = self.positions[trap.index()] as usize;
-
-        if current >= self.available_count {
-            return false; // Already occupied
-        }
-
-        let last_available = self.available_count - 1;
-        self.swap_positions(current, last_available);
-        self.available_count = last_available;
-
-        true
+pub fn experiment_value(
+    values: &[Float],
+    experiment_index: usize,
+    field: &str,
+) -> Result<Float, String> {
+    match values {
+        [] => Err(format!("{field} must contain at least one value")),
+        [value] => Ok(*value),
+        _ => values.get(experiment_index).copied().ok_or_else(|| {
+            format!(
+                "{field} contains {} values, but experiment {} was requested",
+                values.len(),
+                experiment_index + 1,
+            )
+        }),
     }
 }
 
-/// The trap parameters
-#[derive(Debug, Clone, Copy)]
-pub struct TrapParameters {
-    pub(crate) excited_energy_gap: Float,
-    pub(crate) s_frequency_e: Float,
-    pub(crate) s_frequency_g: Float,
-    pub(crate) e_cb_ground: Float,
-    pub(crate) e_cb_excited: Float,
-    pub(crate) de_frequency_ground: Float,
-    pub(crate) de_frequency_excited: Float,
-    pub(crate) lo_frequency_ground: Float,
-    pub(crate) lo_frequency_excited: Float,
-    pub(crate) alpha_ground: Float,
-    pub(crate) alpha_excited: Float,
-    pub(crate) delocalised_mu: Float,
-    pub(crate) retrap_ratio: Float,
-}
-impl TrapParameters {
-    pub fn new(
-        excited_energy_gap: Float,
-        s_frequency_e: Float,
-        s_frequency_g: Float,
-        e_cb_ground: Float,
-        e_cb_excited: Float,
-        de_frequency_ground: Float,
-        de_frequency_excited: Float,
-        lo_frequency_ground: Float,
-        lo_frequency_excited: Float,
-        alpha_ground: Float,
-        alpha_excited: Float,
-        delocalised_mu: Float,
-        retrap_ratio: Float,
-    ) -> Self {
-        Self {
-            excited_energy_gap,
-            s_frequency_e,
-            s_frequency_g,
-            e_cb_ground,
-            e_cb_excited,
-            de_frequency_ground,
-            de_frequency_excited,
-            lo_frequency_ground,
-            lo_frequency_excited,
-            alpha_ground,
-            alpha_excited,
-            delocalised_mu,
-            retrap_ratio,
-        }
-    }
-}
-
-pub enum TrapParameterLayout {
-    /// Every trap uses exactly the same parameters.
-    Uniform(TrapParameters),
-
-    /// Every trap has its own parameters.
-    ///
-    /// parameters[trap_id]
-    Direct(Box<[TrapParameters]>),
-
-    /// Traps reference a table of shared parameter records.
-    ///
-    /// Useful for families and mixtures of shared/individual parameters.
-    Indexed {
-        records: Box<[TrapParameters]>,
-        by_trap: Box<[PlaceId]>,
-    },
-}
-
-impl TrapParameterLayout {
-    pub fn new_uniform(inputs: &SimulationInputs) -> Self {
-        let parameters = TrapParameters::new(
-            inputs.trap_energies.e_loc[0],
-            inputs.trap_energies.s_frequency_e[0],
-            inputs.trap_energies.s_frequency_g[0],
-            inputs.trap_energies.e_cb[0],
-            inputs.trap_energies.e_cb[0] - inputs.trap_energies.e_loc[0],
-            inputs.delocalised.s_gs[0],
-            inputs.delocalised.s_es[0],
-            inputs.localised.b_gs[0],
-            inputs.localised.b_es[0],
-            inputs.localised.alpha_gs[0],
-            inputs.localised.alpha_es[0],
-            inputs.delocalised.mu[0],
-            inputs.delocalised.retrap_ratio[0],
-        );
-        TrapParameterLayout::uniform(parameters)
-    }
-
-    pub fn uniform(parameters: TrapParameters) -> Self {
-        Self::Uniform(parameters)
-    }
-
-    pub fn direct(parameters: Vec<TrapParameters>, trap_count: usize) -> Result<Self, String> {
-        if parameters.len() != trap_count {
-            return Err(format!(
-                "expected {trap_count} trap parameter records, found {}",
-                parameters.len(),
-            ));
-        }
-
-        Ok(Self::Direct(parameters.into_boxed_slice()))
-    }
-
-    pub fn indexed(
-        records: Vec<TrapParameters>,
-        assignments: Vec<PlaceId>,
-        trap_count: usize,
-    ) -> Result<Self, String> {
-        if records.is_empty() {
-            return Err("at least one parameter record is required".to_string());
-        }
-
-        if assignments.len() != trap_count {
-            return Err(format!(
-                "expected {trap_count} parameter assignments, found {}",
-                assignments.len(),
-            ));
-        }
-
-        for (trap_index, parameter_id) in assignments.iter().enumerate() {
-            if parameter_id.index() >= records.len() {
-                return Err(format!(
-                    "trap {trap_index} references missing parameter {}",
-                    parameter_id.index(),
-                ));
-            }
-        }
-
-        Ok(Self::Indexed {
-            records: records.into_boxed_slice(),
-            by_trap: assignments.into_boxed_slice(),
-        })
-    }
-
-    pub fn get(&self, trap: PlaceId) -> &TrapParameters {
-        match self {
-            Self::Uniform(parameters) => parameters,
-
-            Self::Direct(parameters) => &parameters[trap.index()],
-
-            Self::Indexed { records, by_trap } => &records[by_trap[trap.index()].index()],
-        }
-    }
+pub fn new_uniform_trap_layout(
+    inputs: &SimulationInputs,
+    exp: &usize,
+) -> Result<TrapParameterLayout, String> {
+    Ok(TrapParameterLayout::new_uniform(
+        experiment_value(&inputs.trap_energies.e_loc, *exp, "trap_energies.e_loc")?,
+        experiment_value(
+            &inputs.trap_energies.s_frequency_e,
+            *exp,
+            "trap_energies.s_frequency_e",
+        )?,
+        experiment_value(
+            &inputs.trap_energies.s_frequency_g,
+            *exp,
+            "trap_energies.s_frequency_g",
+        )?,
+        experiment_value(&inputs.trap_energies.e_cb, *exp, "trap_energies.e_cb")?,
+        experiment_value(&inputs.delocalised.s_gs, *exp, "delocalised.s_gs")?,
+        experiment_value(&inputs.delocalised.s_es, *exp, "delocalised.s_es")?,
+        experiment_value(&inputs.localised.b_gs, *exp, "localised.b_gs")?,
+        experiment_value(&inputs.localised.b_es, *exp, "localised.b_es")?,
+        experiment_value(&inputs.localised.alpha_gs, *exp, "localised.alpha_gs")?,
+        experiment_value(&inputs.localised.alpha_es, *exp, "localised.alpha_es")?,
+        experiment_value(&inputs.delocalised.mu, *exp, "delocalised.mu")?,
+        experiment_value(
+            &inputs.delocalised.retrap_ratio,
+            *exp,
+            "delocalised.retrap_ratio",
+        )?,
+    ))
 }
 
 /// Holds
@@ -366,6 +75,7 @@ pub enum MCExperiment {
         hole_places: PlaceAvailability,
         trap_parameters: TrapParameterLayout,
         time_temperature: TimeTemperature,
+        rng: StdRng,
     },
     /// Contains parts for experiment with bandtails
     WithBandtail {
@@ -375,6 +85,7 @@ pub enum MCExperiment {
         bandtail_places: PlaceAvailability,
         trap_parameters: TrapParameterLayout,
         time_temperature: TimeTemperature,
+        rng: StdRng,
     },
 }
 
@@ -385,11 +96,18 @@ impl MCExperiment {
         trap_available: &usize,
         hole_available: &usize,
         time_temperature: TimeTemperature,
+        exp: &usize,
+        rep: &usize,
+        
     ) -> Result<Self, String> {
-        let places = ElectronPlaces::random_from_cube(cube)?;
-        let trap_places = PlaceAvailability::set_initial_condition(cube.trap_total, *trap_available)?;
-        let hole_places = PlaceAvailability::set_initial_condition(cube.hole_total, *hole_available)?;
-        let trap_parameters = TrapParameterLayout::new_uniform(inputs);
+
+        let mut rng = get_std_rng_for_rep(*rep);
+        let places = ElectronPlaces::random_from_cube(cube, &mut rng)?;
+        let trap_places =
+            PlaceAvailability::set_initial_condition(cube.trap_total, *trap_available, &mut rng)?;
+        let hole_places =
+            PlaceAvailability::set_initial_condition(cube.hole_total, *hole_available, &mut rng)?;
+        let trap_parameters = new_uniform_trap_layout(inputs, exp)?;
 
         if cube.bandtail_total == 0 {
             Ok(Self::Standard {
@@ -398,6 +116,7 @@ impl MCExperiment {
                 hole_places,
                 trap_parameters,
                 time_temperature,
+                rng
             })
         } else {
             let bandtail_places = PlaceAvailability::new(cube.bandtail_total)?;
@@ -408,6 +127,7 @@ impl MCExperiment {
                 bandtail_places,
                 trap_parameters,
                 time_temperature,
+                rng
             })
         }
     }
@@ -427,6 +147,7 @@ impl MCExperiment {
                 hole_places,
                 trap_parameters,
                 time_temperature,
+                rng
             } => {
                 create_monte_carlo_experiment_file(output_file)
                     .map_err(|error| error.to_string())?;
@@ -442,6 +163,7 @@ impl MCExperiment {
                     transitions,
                     output_file,
                     results,
+                    rng,
                 )
             }
             Self::WithBandtail { .. } => {
@@ -454,7 +176,7 @@ impl MCExperiment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::calculate_times::Event;
+    use common::charge_transfer::Event;
     use common::constants::temperature::TemperatureUnit;
     use common::constants::time::TimeUnit;
     use io::outputs::read_all_batches;
@@ -489,7 +211,7 @@ mod tests {
             false, false, false, false, false, "first", false, false, false, false,
         )
         .unwrap();
-        let mut experiment = MCExperiment::initialise(&cube, &inputs, profile).unwrap();
+        let mut experiment = MCExperiment::initialise(&cube, &inputs, &0, &0, profile, &0, &0).unwrap();
         let output_file = temporary_output_path("standard_experiment");
 
         experiment
@@ -502,8 +224,32 @@ mod tests {
         fs::remove_file(output_file).unwrap();
 
         assert_eq!(batches.len(), 1);
-        assert_eq!(batches[0].len(), 1);
+        assert_eq!(batches[0].len(), 2);
         assert_eq!(batches[0][0].event, Event::None);
-        assert_eq!(batches[0][0].time, 1.0);
+        assert_eq!(batches[0][0].time, 0.0);
+        assert_eq!(batches[0][1].event, Event::None);
+        assert_eq!(batches[0][1].time, 1.0);
+    }
+
+    #[test]
+    fn singleton_parameters_are_shared_between_experiments() {
+        let inputs = SimulationInputs::default();
+
+        assert!(new_uniform_trap_layout(&inputs, &1).is_ok());
+    }
+
+    #[test]
+    fn short_parameter_vectors_return_an_error_instead_of_panicking() {
+        let mut inputs = SimulationInputs::default();
+        inputs.trap_energies.e_loc = vec![1.0, 2.0];
+
+        let error = new_uniform_trap_layout(&inputs, &2)
+            .err()
+            .expect("a short parameter vector should be rejected");
+
+        assert_eq!(
+            error,
+            "trap_energies.e_loc contains 2 values, but experiment 3 was requested"
+        );
     }
 }

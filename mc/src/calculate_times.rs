@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: 2026 <Oliver A. Bramley; Technical University of Denmark>
 //
 // SPDX-License-Identifier: AGPL-3.0-only
-use crate::experiment::{PlaceAvailability, PlaceId, TrapParameterLayout, TrapParameters};
+
+use common::charge_transfer::{ElectronicState, Event, Candidate,TimedDelocalisedOutcome,DelocalisedOutcome, TimedCandidate, RecordedEvent}; 
+use common::place_ids::{PlaceAvailability, PlaceId};
+use common::trap_hole_band_tail::{TrapParameterLayout, TrapParameters};
 use common::crystal::Cube;
 use common::rate_equation_inputs::{
     DelocalisedTransitionInputs, FillingTransitionInputs, LocalisedTransitionInputs,
@@ -18,65 +21,7 @@ use common::numeric::{Float, TimeFloat};
 use io::SimulationInputs;
 use io::outputs::append_monte_carlo_experiment_batch_to_file;
 use rand::Rng;
-use serde::{Deserialize, Serialize};
 use std::path::Path;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ElectronicState {
-    Ground,
-    Excited,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Event {
-    LocalisedRecombination {
-        source: PlaceId,
-        hole: PlaceId,
-        state: ElectronicState,
-    },
-    LocalisedRetrapping {
-        source: PlaceId,
-        destination: PlaceId,
-        state: ElectronicState,
-    },
-    Delocalised {
-        source: PlaceId,
-        state: ElectronicState,
-    },
-    DelocalisedRecombination {
-        source: PlaceId,
-        hole: PlaceId,
-        state: ElectronicState,
-    },
-    DelocalisedRetrapping {
-        source: PlaceId,
-        destination: PlaceId,
-        state: ElectronicState,
-    },
-    Filling {
-        trap: PlaceId,
-        hole: PlaceId,
-    },
-    None,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DelocalisedOutcome {
-    Recombination { hole: PlaceId },
-    Retrapping { destination: PlaceId },
-}
-
-#[derive(Debug, Clone, Copy)]
-struct TimedDelocalisedOutcome {
-    outcome: DelocalisedOutcome,
-    time: TimeFloat,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Candidate {
-    event: Event,
-    rate: TimeFloat,
-}
 
 fn transition_types(transitions: &Transitions) -> &TransitionsTypes {
     match transitions {
@@ -389,21 +334,8 @@ fn build_candidates(
     Ok(candidates)
 }
 
-#[derive(Debug, Clone, Copy)]
-struct TimedCandidate {
-    event: Event,
-    time: TimeFloat,
-}
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RecordedEvent {
-    pub time: TimeFloat,
-    pub fill: Float,
-    pub temperature: Float,
-    pub event: Event,
-}
-
-fn lifetime<R: Rng + ?Sized>(rate: TimeFloat, rng: &mut R) -> Result<TimeFloat, String> {
+fn lifetime(rate: TimeFloat, rng: &mut impl Rng) -> Result<TimeFloat, String> {
     if !rate.is_finite() {
         return Err(format!("non-finite transition rate: {rate}"));
     }
@@ -427,9 +359,9 @@ fn cb_retrapping_enabled(transitions: &Transitions) -> bool {
     )
 }
 
-fn reciprocal_rate_lifetime<R: Rng + ?Sized>(
+fn reciprocal_rate_lifetime(
     reciprocal_rate: TimeFloat,
-    rng: &mut R,
+    rng: &mut impl Rng,
 ) -> Result<TimeFloat, String> {
     if reciprocal_rate.is_nan() || reciprocal_rate < 0.0 {
         return Err(format!(
@@ -444,13 +376,13 @@ fn reciprocal_rate_lifetime<R: Rng + ?Sized>(
     Ok(-u.ln() * reciprocal_rate)
 }
 
-fn push_delocalised_outcome<R: Rng + ?Sized>(
+fn push_delocalised_outcome(
     candidates: &mut Vec<TimedDelocalisedOutcome>,
     outcome: DelocalisedOutcome,
     prefactor: Float,
     mu: Float,
     distance: Float,
-    rng: &mut R,
+    rng: &mut impl Rng,
 ) -> Result<(), String> {
     let reciprocal_rate: Option<TimeFloat> =
         retrapping_probability_by_r(&prefactor, &mu, &distance);
@@ -474,6 +406,7 @@ fn choose_delocalised_outcome(
     parameters: &TrapParameters,
     cube: &Cube,
     transitions: &Transitions,
+    rng: &mut impl Rng,
 ) -> Result<Option<DelocalisedOutcome>, String> {
     let mu = parameters.delocalised_mu;
     let recombination_prefactor = parameters.retrap_ratio;
@@ -491,7 +424,6 @@ fn choose_delocalised_outcome(
 
     let retrapping_prefactor = 1.0 - recombination_prefactor;
     let source_position = &places.traps()[source.index()];
-    let mut rng = common::random::rng();
     let mut candidates = Vec::with_capacity(
         hole_places.available().len()
             + if cb_retrapping_enabled(transitions) {
@@ -509,7 +441,7 @@ fn choose_delocalised_outcome(
             recombination_prefactor,
             mu,
             distance,
-            &mut *rng,
+            rng,
         )?;
     }
 
@@ -522,7 +454,7 @@ fn choose_delocalised_outcome(
                 retrapping_prefactor,
                 mu,
                 distance,
-                &mut *rng,
+                rng,
             )?;
         }
     }
@@ -549,14 +481,14 @@ fn choose_delocalised_outcome(
 fn calculate_candidate_times(
     candidates: &[Candidate],
     max_dt: TimeFloat,
+    rng: &mut impl Rng,
 ) -> Result<Vec<TimedCandidate>, String> {
-    let mut rng = common::random::rng();
     let mut timed = Vec::with_capacity(candidates.len());
 
     for candidate in candidates {
         timed.push(TimedCandidate {
             event: candidate.event,
-            time: lifetime(candidate.rate, &mut *rng)?,
+            time: lifetime(candidate.rate, rng)?,
         });
     }
     timed.push(TimedCandidate {
@@ -584,6 +516,7 @@ pub(crate) fn run_standard(
     transitions: &Transitions,
     output_file: &Path,
     mut results: Vec<RecordedEvent>,
+    rng: &mut impl Rng,
 ) -> Result<(), String> {
     results.push(RecordedEvent {
                     time: time_temperature.current_time(),
@@ -611,7 +544,7 @@ pub(crate) fn run_standard(
             transitions,
         )?;
 
-        let timed_candidates = calculate_candidate_times(&rate_candidates, max_dt)?;
+        let timed_candidates = calculate_candidate_times(&rate_candidates, max_dt, rng)?;
 
         let earliest = earliest_candidate(&timed_candidates);
 
@@ -627,6 +560,7 @@ pub(crate) fn run_standard(
                     trap_parameters,
                     cube,
                     transitions,
+                    rng,
                 )?;
                 results.push(RecordedEvent {
                     time: time_temperature.current_time(),
@@ -645,7 +579,6 @@ pub(crate) fn run_standard(
                 });
             }
         }
-        print!("current fill {}", trap_places.fill_ratio());
         if results.len() == results.capacity() {
             append_monte_carlo_experiment_batch_to_file(output_file, &results)
                 .map_err(|error| error.to_string())?;
@@ -670,6 +603,7 @@ fn apply_event(
     trap_parameters: &TrapParameterLayout,
     cube: &Cube,
     transitions: &Transitions,
+    rng: &mut impl Rng,
 ) -> Result<Event, String> {
     match event {
         Event::LocalisedRecombination { source, hole, .. }
@@ -709,6 +643,7 @@ fn apply_event(
                 trap_parameters.get(source),
                 cube,
                 transitions,
+                rng
             )?;
 
             if !trap_places.make_unavailable(source) {
@@ -750,7 +685,6 @@ fn apply_event(
                     return Err("filling selected when no empty traps remain".to_string());
                 }
 
-                let mut rng = common::random::rng();
                 empty_traps[rng.gen_range(0..empty_traps.len())]
             };
 
@@ -764,7 +698,6 @@ fn apply_event(
                     return Err("filling selected when no available holes remain".to_string());
                 }
 
-                let mut rng = common::random::rng();
                 empty_holes[rng.gen_range(0..empty_holes.len())]
             };
 
@@ -892,8 +825,8 @@ mod tests {
             }
         );
         assert_eq!(candidates[0].rate, 0.025);
-
-        let timed = calculate_candidate_times(&candidates, 1.0).unwrap();
+        let mut rng = common::random::get_std_rng_for_rep(0);
+        let timed = calculate_candidate_times(&candidates, 1.0, &mut rng).unwrap();
         assert_eq!(timed.len(), 2);
         assert_eq!(timed[0].event, candidates[0].event);
         assert!(timed[0].time.is_finite() && timed[0].time > 0.0);
@@ -924,6 +857,7 @@ mod tests {
         recombination_parameters.delocalised_mu = 1.0;
         recombination_parameters.retrap_ratio = 0.0;
         let recombination_layout = TrapParameterLayout::uniform(recombination_parameters);
+        let mut rng = common::random::get_std_rng_for_rep(0);
 
         let event = apply_event(
             Event::Delocalised {
@@ -936,6 +870,7 @@ mod tests {
             &recombination_layout,
             &cube,
             &transitions,
+            &mut rng,
         )
         .unwrap();
 
@@ -967,6 +902,7 @@ mod tests {
             &retrapping_layout,
             &cube,
             &transitions,
+            &mut rng,
         )
         .unwrap();
 

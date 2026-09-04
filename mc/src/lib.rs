@@ -14,3 +14,5 @@ pub mod experiment;
 pub mod system_setup;
 
 pub mod calculate_times;
+
+pub mod average;

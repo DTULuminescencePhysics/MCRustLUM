@@ -15,6 +15,7 @@ pub mod inputs;
 /// Creation of per-run experiment and temporary-output directories.
 pub mod filesystem;
 
+/// Writing consolidated, user-facing simulation output.
 pub mod outputs;
 
 use std::error::Error;

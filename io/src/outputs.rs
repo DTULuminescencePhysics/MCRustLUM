@@ -8,6 +8,7 @@
 //! bincode-encoded batch as a new gzip member. [`read_all_batches`] decodes
 //! those members as a stream, keeping only the current batch in memory.
 
+use common::numeric::{Float, TimeFloat};
 use std::error::Error;
 use std::fmt;
 use std::fs::{File, OpenOptions};
@@ -239,13 +240,109 @@ pub fn read_all_batches<T: DeserializeOwned>(
     })
 }
 
+/// One row in the consolidated continuous-value output.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ContinuousValueRow {
+    pub time: TimeFloat,
+    pub temperature: Float,
+    pub fill: Float,
+}
+
+/// An error produced while writing consolidated CSV output.
+#[derive(Debug)]
+pub enum CsvOutputError {
+    Create {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    SourceData {
+        path: PathBuf,
+        message: String,
+    },
+    Write {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+}
+
+impl fmt::Display for CsvOutputError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Create { path, source } => {
+                write!(formatter, "failed to create {}: {source}", path.display())
+            }
+            Self::SourceData { path, message } => write!(
+                formatter,
+                "failed to produce a row for {}: {message}",
+                path.display()
+            ),
+            Self::Write { path, source } => {
+                write!(formatter, "failed to write {}: {source}", path.display())
+            }
+        }
+    }
+}
+
+impl Error for CsvOutputError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Create { source, .. } | Self::Write { source, .. } => Some(source),
+            Self::SourceData { .. } => None,
+        }
+    }
+}
+
+/// Write consolidated time, temperature, and fill rows to a CSV file.
+///
+/// Rows are consumed one at a time, allowing the caller to consolidate large
+/// temporary files without first collecting the final output in memory.
+pub fn write_continuous_values_csv<I, E>(
+    path: impl AsRef<Path>,
+    rows: I,
+) -> Result<(), CsvOutputError>
+where
+    I: IntoIterator<Item = Result<ContinuousValueRow, E>>,
+    E: fmt::Display,
+{
+    let path = path.as_ref();
+    let file = File::create(path).map_err(|source| CsvOutputError::Create {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut writer = BufWriter::new(file);
+
+    writeln!(writer, "time,temperature,fill").map_err(|source| CsvOutputError::Write {
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    for row in rows {
+        let row = row.map_err(|error| CsvOutputError::SourceData {
+            path: path.to_path_buf(),
+            message: error.to_string(),
+        })?;
+        writeln!(writer, "{},{},{}", row.time, row.temperature, row.fill).map_err(|source| {
+            CsvOutputError::Write {
+                path: path.to_path_buf(),
+                source,
+            }
+        })?;
+    }
+
+    writer.flush().map_err(|source| CsvOutputError::Write {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde::{Deserialize, Serialize};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
-
+    use std::convert::Infallible;
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct TestRecord {
         id: u16,
@@ -324,4 +421,47 @@ mod tests {
         assert!(error.to_string().contains(path.to_string_lossy().as_ref()));
         assert!(matches!(error, OutputError::Open { .. }));
     }
+
+   
+
+    fn temporary_output_path_2() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should follow the Unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "mcrustlum_continuous_{}_{}.csv",
+            std::process::id(),
+            unique,
+        ))
+    }
+
+    #[test]
+    fn writes_header_and_continuous_rows() {
+        let path = temporary_output_path_2();
+        let rows = [
+            ContinuousValueRow {
+                time: 0.0,
+                temperature: 273.15,
+                fill: 0.25,
+            },
+            ContinuousValueRow {
+                time: 1.0,
+                temperature: 283.15,
+                fill: 0.5,
+            },
+        ]
+        .into_iter()
+        .map(Ok::<_, Infallible>);
+
+        write_continuous_values_csv(&path, rows).unwrap();
+        let contents = fs::read_to_string(&path).unwrap();
+        fs::remove_file(path).unwrap();
+
+        assert_eq!(
+            contents,
+            "time,temperature,fill\n0,273.15,0.25\n1,283.15,0.5\n"
+        );
+    }
+
 }

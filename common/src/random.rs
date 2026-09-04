@@ -4,19 +4,14 @@
 
 //! Program-wide deterministic random number generation.
 
-use std::sync::{
-    LazyLock, Mutex, MutexGuard,
-    atomic::{AtomicU64, Ordering},
-};
-
-use rand::{SeedableRng, rngs::StdRng};
+use std::sync::atomic::{AtomicU64, Ordering};
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 /// Seed used when [`set_seed`] is not called during program startup.
 pub const DEFAULT_SEED: u64 = 0;
 
 static SEED: AtomicU64 = AtomicU64::new(DEFAULT_SEED);
-static RNG: LazyLock<Mutex<StdRng>> =
-    LazyLock::new(|| Mutex::new(StdRng::seed_from_u64(DEFAULT_SEED)));
 
 /// Set the program-wide random seed and restart the random sequence.
 ///
@@ -24,7 +19,6 @@ static RNG: LazyLock<Mutex<StdRng>> =
 /// random values. If it is never called, [`DEFAULT_SEED`] is used.
 pub fn set_seed(seed: u64) {
     SEED.store(seed, Ordering::Relaxed);
-    *rng() = StdRng::seed_from_u64(seed);
 }
 
 /// Return the seed most recently supplied to [`set_seed`].
@@ -32,9 +26,17 @@ pub fn seed() -> u64 {
     SEED.load(Ordering::Relaxed)
 }
 
-/// Lock and return the program-wide random number generator.
-///
-/// Other modules can use the returned value with methods from [`rand::Rng`].
-pub fn rng() -> MutexGuard<'static, StdRng> {
-    RNG.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+pub fn seed_for_rep(rep: usize) -> u64 {
+    let rep = rep as u64;
+    let mut x = seed().wrapping_add(rep);
+    x = x.wrapping_add(0x9E3779B97F4A7C15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94D049BB133111EB);
+    x ^ (x >> 31)
+}
+
+pub fn get_std_rng_for_rep(rep: usize) -> StdRng  {
+    let random_seed = seed_for_rep(rep);
+    StdRng::seed_from_u64(random_seed)
+
 }

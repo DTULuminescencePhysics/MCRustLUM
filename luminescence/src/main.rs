@@ -11,17 +11,19 @@ use std::error::Error;
 use std::ffi::OsString;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let folder_name = folder_name_from_arguments()?;
+    io::filesystem::prepare_experiment_directory(folder_name.as_deref())?;
+    common::random::set_seed(0);
     monte_carlo_run()
 }
 
 fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
-    let folder_name = folder_name_from_arguments()?;
-    io::filesystem::prepare_experiment_directory(folder_name.as_deref())?;
 
     let inputs = io::read_inputs("input.toml")?;
     let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 10, 1)?;
 
     monte_carlo.run()?;
+    mc::average::average_fill()?;
 
     Ok(())
 }

@@ -17,6 +17,8 @@ pub mod constants;
 pub mod crystal;
 /// Electron trap, hole trap and band tail states. 
 pub mod trap_hole_band_tail;
+/// Ids for traps, holes and band tail states.
+pub mod place_ids;
 /// Piecewise-linear time and temperature profiles.
 pub mod time_temperature;
 /// Runtime selection and composition of rate equations.
@@ -25,6 +27,8 @@ pub mod rate_equation_selection;
 pub mod rate_equations;
 /// Typed parameter groups consumed by rate-equation selections.
 pub mod rate_equation_inputs;
+/// Holds the results of charge transfer processes
+pub mod charge_transfer;
 /// Module that holds the random seed generation, additional seeds
 /// and all the random number generation.
 pub mod random;
@@ -36,14 +40,16 @@ mod tests {
     #[test]
     fn cube_contains_random_point() {
         let cube = crystal::Cube::new(10.0, 20.0, 30.0, 0, 0, 0, true).unwrap();
-        let point = trap_hole_band_tail::Coord::random_in(10.0,20.0,30.0).unwrap();
+        let mut rng = random::get_std_rng_for_rep(0);
+        let point = trap_hole_band_tail::Coord::random_in(10.0,20.0,30.0, &mut rng).unwrap();
         assert!(cube.contains(&point));
     }
 
     #[test]
     fn filled_random_creates_features() {
         let cube = crystal::Cube::new(5.0, 5.0, 5.0, 2, 3, 1, true).unwrap();
-        let places = trap_hole_band_tail::ElectronPlaces::random_from_cube(&cube).unwrap();
+        let mut rng = random::get_std_rng_for_rep(0);
+        let places = trap_hole_band_tail::ElectronPlaces::random_from_cube(&cube, &mut rng).unwrap();
         assert_eq!(places.traps().len(), 2);
         assert_eq!(places.holes().len(), 3);
         assert_eq!(places.bandtails().unwrap().len(), 1);

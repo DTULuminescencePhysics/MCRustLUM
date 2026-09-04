@@ -4,9 +4,9 @@
 
 //! Creation and per-iteration reset of Monte Carlo state.
 
-use crate::experiment::MCExperiment;
-use common::numeric::Float;
+use crate::experiment::{MCExperiment, experiment_value};
 use common::crystal::Cube;
+use common::numeric::Float;
 use common::rate_equation_selection::Transitions;
 use common::time_temperature::TimeTemperature;
 use io::inputs::{CubeSpecification, SimulationInputs, TimeTempSpecification};
@@ -131,9 +131,17 @@ impl MonteCarloSimulation {
         let output_directory = output_directory.as_ref();
         let batch_capacity: usize = 100;
         for experiment_index in 0..self.experiments {
-            let trap_available = (self.inputs.initial_conditions.trap_available[experiment_index] * self.cube.trap_total as Float) as usize;
-            let hole_available = (self.inputs.initial_conditions.hole_available[experiment_index] * self.cube.hole_total as Float) as usize;
-
+            let trap_available = (experiment_value(
+                &self.inputs.initial_conditions.trap_available,
+                experiment_index,
+                "initial_conditions.trap_available",
+            )? * self.cube.trap_total as Float) as usize;
+            let hole_available = (experiment_value(
+                &self.inputs.initial_conditions.hole_available,
+                experiment_index,
+                "initial_conditions.hole_available",
+            )? * self.cube.hole_total as Float) as usize;
+            let experiment_offset = experiment_index*self.repetions; 
             for repetition_index in 0..self.repetions {
                 let temp_file_path = output_directory.join(format!(
                     "experiment_results_{}_{}.bin.gz",
@@ -141,13 +149,16 @@ impl MonteCarloSimulation {
                 ));
                 let mut time_temperature = self.time_temperature.clone();
                 time_temperature.reset();
-
+                let randrep = &experiment_offset + repetition_index;
                 let mut experiment = MCExperiment::initialise(
                     &self.cube,
                     &self.inputs,
                     &trap_available,
                     &hole_available,
                     time_temperature,
+                    &experiment_index,
+                    &randrep,
+
                 )
                 .map_err(|error| {
                     format!(
@@ -185,7 +196,7 @@ impl MonteCarloSimulation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::calculate_times::{Event, RecordedEvent};
+    use common::charge_transfer::{Event, RecordedEvent};
     use common::rate_equation_selection::{
         DelocalisedRateEquation, DelocalisedRateEquationType, FillingRateEquation,
         LocalisedRateEquation,
@@ -296,6 +307,8 @@ mod tests {
         inputs.cube.bandtail_count = 0;
         inputs.time_temperature.times = vec![0.0, 1.0];
         inputs.time_temperature.temperatures = vec![20.0, 20.0];
+        inputs.initial_conditions.trap_available = vec![1.0, 1.0];
+        inputs.initial_conditions.hole_available = vec![1.0, 1.0];
         inputs.localised.gs_tun = false;
         inputs.localised.es_tun = false;
         inputs.localised.gs_retrap = false;
@@ -323,8 +336,9 @@ mod tests {
                     .unwrap();
 
                 assert_eq!(batches.len(), 1);
-                assert_eq!(batches[0].len(), 1);
+                assert_eq!(batches[0].len(), 2);
                 assert_eq!(batches[0][0].event, Event::None);
+                assert_eq!(batches[0][1].event, Event::None);
                 fs::remove_file(output_file).unwrap();
             }
         }

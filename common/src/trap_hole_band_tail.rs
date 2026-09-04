@@ -10,7 +10,8 @@
 //! Constructors validate geometry before allocating or randomly generating
 //! site coordinates.
 use crate::numeric::{Float, Numeric};
-
+use crate::place_ids::PlaceId;
+use rand::Rng;
 /// A three-dimensional site position.
 ///
 /// Coordinates can be supplied directly or generated within positive x, y,
@@ -38,10 +39,11 @@ impl Coord {
     }
 
     /// Generate a coordinate in the inclusive ranges `[0, x]`, `[0, y]`, and `[0, z]`.
-    pub fn random_in<X: Numeric, Y: Numeric, Z: Numeric>(
+    pub fn random_in<X: Numeric, Y: Numeric, Z: Numeric,>(
         x: X,
         y: Y,
         z: Z,
+        rng: &mut impl Rng,
     ) -> Result<Self, String> {
         let x = x.to_float();
         let y = y.to_float();
@@ -51,7 +53,6 @@ impl Coord {
         Coord::validate_dimension("y", y)?;
         Coord::validate_dimension("z", z)?;
 
-        let mut rng = crate::random::rng();
         Ok(Coord {
             x: Float::random_in(x, &mut *rng),
             y: Float::random_in(y, &mut *rng),
@@ -221,24 +222,25 @@ impl ElectronPlaces {
     }
 
     /// Create site collections populated with random coordinates.
-    pub fn random_new<X: Numeric, Y: Numeric, Z: Numeric>(
+    pub fn random_new<X: Numeric, Y: Numeric, Z: Numeric,>(
         t_no: usize,
         h_no: usize,
         b_no: usize,
         x: X,
         y: Y,
         z: Z,
+        rng: & mut impl Rng,
     ) -> Result<Self, String> {
         let traps = (0..t_no)
-            .map(|_| Coord::random_in(x, y, z))
+            .map(|_| Coord::random_in(x, y, z, rng))
             .collect::<Result<Vec<_>, _>>()?;
 
         let holes = (0..h_no)
-            .map(|_| Coord::random_in(x, y, z))
+            .map(|_| Coord::random_in(x, y, z, rng))
             .collect::<Result<Vec<_>, _>>()?;
         if b_no > 0 {
             let bandtails = (0..b_no)
-                .map(|_| Coord::random_in(x, y, z))
+                .map(|_| Coord::random_in(x, y, z, rng))
                 .collect::<Result<Vec<_>, _>>()?;
             ElectronPlaces::new_bandtail(traps, holes, bandtails)
         } else {
@@ -246,7 +248,7 @@ impl ElectronPlaces {
         }
     }
 
-    pub fn random_from_cube(cube: &crate::crystal::Cube) -> Result<Self, String> {
+    pub fn random_from_cube(cube: &crate::crystal::Cube, rng: & mut impl Rng,) -> Result<Self, String> {
         let x = cube.boundary.x;
         let y = cube.boundary.y;
         let z = cube.boundary.z;
@@ -254,7 +256,7 @@ impl ElectronPlaces {
         let h_no = cube.hole_total;
         let b_no = cube.bandtail_total;
 
-        ElectronPlaces::random_new(t_no, h_no, b_no, x, y, z)
+        ElectronPlaces::random_new(t_no, h_no, b_no, x, y, z, rng)
     }
 
     fn reserved_vec<T>(capacity: usize, name: &str) -> Result<Vec<T>, String> {
@@ -389,19 +391,20 @@ impl ElectronPlaces {
         x: &X,
         y: &Y,
         z: &Z,
+        rng: & mut impl Rng,
     ) -> Result<(), String> {
         // Generate new random positions within the cube.
         for trap in self.traps_mut() {
-            *trap = Coord::random_in(*x, *y, *z)?;
+            *trap = Coord::random_in(*x, *y, *z, rng)?;
         }
 
         for hole in self.holes_mut() {
-            *hole = Coord::random_in(*x, *y, *z)?;
+            *hole = Coord::random_in(*x, *y, *z, rng)?;
         }
 
         if let Some(bandtails) = self.bandtails_mut() {
             for bandtail in bandtails {
-                *bandtail = Coord::random_in(*x, *y, *z)?;
+                *bandtail = Coord::random_in(*x, *y, *z, rng)?;
             }
         }
 
@@ -409,9 +412,162 @@ impl ElectronPlaces {
     }
 }
 
+/// The trap parameters
+#[derive(Debug, Clone, Copy)]
+pub struct TrapParameters {
+    pub excited_energy_gap: Float,
+    pub s_frequency_e: Float,
+    pub s_frequency_g: Float,
+    pub e_cb_ground: Float,
+    pub e_cb_excited: Float,
+    pub de_frequency_ground: Float,
+    pub de_frequency_excited: Float,
+    pub lo_frequency_ground: Float,
+    pub lo_frequency_excited: Float,
+    pub alpha_ground: Float,
+    pub alpha_excited: Float,
+    pub delocalised_mu: Float,
+    pub retrap_ratio: Float,
+}
+impl TrapParameters {
+    pub fn new(
+        excited_energy_gap: Float,
+        s_frequency_e: Float,
+        s_frequency_g: Float,
+        e_cb_ground: Float,
+        e_cb_excited: Float,
+        de_frequency_ground: Float,
+        de_frequency_excited: Float,
+        lo_frequency_ground: Float,
+        lo_frequency_excited: Float,
+        alpha_ground: Float,
+        alpha_excited: Float,
+        delocalised_mu: Float,
+        retrap_ratio: Float,
+    ) -> Self {
+        Self {
+            excited_energy_gap,
+            s_frequency_e,
+            s_frequency_g,
+            e_cb_ground,
+            e_cb_excited,
+            de_frequency_ground,
+            de_frequency_excited,
+            lo_frequency_ground,
+            lo_frequency_excited,
+            alpha_ground,
+            alpha_excited,
+            delocalised_mu,
+            retrap_ratio,
+        }
+    }
+}
+
+pub enum TrapParameterLayout {
+    /// Every trap uses exactly the same parameters.
+    Uniform(TrapParameters),
+
+    /// Every trap has its own parameters.
+    ///
+    /// parameters[trap_id]
+    Direct(Box<[TrapParameters]>),
+
+    /// Traps reference a table of shared parameter records.
+    ///
+    /// Useful for families and mixtures of shared/individual parameters.
+    Indexed {
+        records: Box<[TrapParameters]>,
+        by_trap: Box<[PlaceId]>,
+    },
+}
+
+impl TrapParameterLayout {
+    pub fn new_uniform(excited_energy_gap: Float, s_frequency_e: Float, 
+                       s_frequency_g: Float, e_cb: Float, 
+                       s_gs: Float, s_es: Float, 
+                       b_gs: Float, b_es: Float, 
+                       alpha_gs: Float, alpha_es: Float, 
+                       mu: Float, retrap_ratio: Float) -> Self {
+
+        let parameters = TrapParameters::new(excited_energy_gap,
+                                                             s_frequency_e,
+                                                             s_frequency_g,
+                                                             e_cb,
+                                                             e_cb - excited_energy_gap,
+                                                             s_gs,
+                                                             s_es,
+                                                             b_gs,
+                                                             b_es,
+                                                             alpha_gs,
+                                                             alpha_es,
+                                                             mu,
+                                                             retrap_ratio,);
+        TrapParameterLayout::uniform(parameters)
+    }
+
+    pub fn uniform(parameters: TrapParameters) -> Self {
+        Self::Uniform(parameters)
+    }
+
+    pub fn direct(parameters: Vec<TrapParameters>, trap_count: usize) -> Result<Self, String> {
+        if parameters.len() != trap_count {
+            return Err(format!(
+                "expected {trap_count} trap parameter records, found {}",
+                parameters.len(),
+            ));
+        }
+
+        Ok(Self::Direct(parameters.into_boxed_slice()))
+    }
+
+    pub fn indexed(
+        records: Vec<TrapParameters>,
+        assignments: Vec<PlaceId>,
+        trap_count: usize,
+    ) -> Result<Self, String> {
+        if records.is_empty() {
+            return Err("at least one parameter record is required".to_string());
+        }
+
+        if assignments.len() != trap_count {
+            return Err(format!(
+                "expected {trap_count} parameter assignments, found {}",
+                assignments.len(),
+            ));
+        }
+
+        for (trap_index, parameter_id) in assignments.iter().enumerate() {
+            if parameter_id.index() >= records.len() {
+                return Err(format!(
+                    "trap {trap_index} references missing parameter {}",
+                    parameter_id.index(),
+                ));
+            }
+        }
+
+        Ok(Self::Indexed {
+            records: records.into_boxed_slice(),
+            by_trap: assignments.into_boxed_slice(),
+        })
+    }
+
+    pub fn get(&self, trap: PlaceId) -> &TrapParameters {
+        match self {
+            Self::Uniform(parameters) => parameters,
+
+            Self::Direct(parameters) => &parameters[trap.index()],
+
+            Self::Indexed { records, by_trap } => &records[by_trap[trap.index()].index()],
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::random;
+
+use super::*;
     fn print_coordinates(label: &str, coordinates: &[Coord]) {
         println!("{label}:");
         for (index, coordinate) in coordinates.iter().enumerate() {
@@ -432,8 +588,9 @@ mod tests {
     }
      #[test]
     fn generation_rejects_invalid_coordinates() {
+        let mut rng = random::get_std_rng_for_rep(0);
         assert!(Coord::new(-1.0, 0.0, 0.0).is_err());
-        assert!(Coord::random_in(10.0, -1.0, 10.0).is_err());
+        assert!(Coord::random_in(10.0, -1.0, 10.0, &mut rng).is_err());
     }
 
     #[test]
@@ -446,7 +603,8 @@ mod tests {
 
     #[test]
     fn randomising_cube_positions_changes_traps_holes_and_bandtails() {
-        let mut places = ElectronPlaces::random_new(3, 3, 3, 10.0, 10.0, 10.0).unwrap();
+        let mut rng = random::get_std_rng_for_rep(0);
+        let mut places = ElectronPlaces::random_new(3, 3, 3, 10.0, 10.0, 10.0, &mut rng).unwrap();
         let cube = crate::crystal::Cube::new(10.0,10.0,10.0,3,3,3,true).unwrap();
         let original_places = places.clone();
 
@@ -455,7 +613,7 @@ mod tests {
         print_coordinates("Holes", original_places.holes());
         print_coordinates("Bandtails", original_places.bandtails().unwrap());
 
-        places.randomise_positions(&cube.boundary.x, &cube.boundary.y, &cube.boundary.z).unwrap();
+        places.randomise_positions(&cube.boundary.x, &cube.boundary.y, &cube.boundary.z, &mut rng).unwrap();
 
         println!("Randomised coordinates");
         print_coordinates("Traps", places.traps());
@@ -539,8 +697,8 @@ mod tests {
             }
             ElectronPlaces::Standard { .. } => panic!("expected band-tail storage"),
         }
-
-        let populated = ElectronPlaces::random_new(3, 6, 9, 2.0, 1.0, 1.0)
+        let mut rng = random::get_std_rng_for_rep(0);
+        let populated = ElectronPlaces::random_new(3, 6, 9, 2.0, 1.0, 1.0, &mut rng)
             .expect("small random cube should be generated");
         assert_eq!(populated.traps().len(), 3);
         assert_eq!(populated.holes().len(), 6);

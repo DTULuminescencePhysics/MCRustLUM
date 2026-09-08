@@ -167,6 +167,7 @@ impl ElectronPlaces {
         }
     }
 
+    /// Return mutable trap storage independent of the outer layout variant.
     fn traps_mut(&mut self) -> &mut Vec<Coord> {
         match self {
             Self::Standard { traps, .. } | Self::WithBandtail { traps, .. } => traps,
@@ -180,6 +181,7 @@ impl ElectronPlaces {
         }
     }
 
+    /// Return mutable hole storage independent of the outer layout variant.
     fn holes_mut(&mut self) -> &mut Vec<Coord> {
         match self {
             Self::Standard { holes, .. } | Self::WithBandtail { holes, .. } => holes,
@@ -194,6 +196,7 @@ impl ElectronPlaces {
         }
     }
 
+    /// Return mutable band-tail storage when the current layout provides it.
     fn bandtails_mut(&mut self) -> Option<&mut Vec<Coord>> {
         match self {
             Self::Standard { .. } => None,
@@ -248,6 +251,10 @@ impl ElectronPlaces {
         }
     }
 
+    /// Generate every site requested by a cube at an independent uniform position.
+    ///
+    /// The coordinates occupy the full rectangular volume. Correlations,
+    /// exclusion radii, and crystallographic site constraints are not applied.
     pub fn random_from_cube(cube: &crate::crystal::Cube, rng: & mut impl Rng,) -> Result<Self, String> {
         let x = cube.boundary.x;
         let y = cube.boundary.y;
@@ -259,6 +266,7 @@ impl ElectronPlaces {
         ElectronPlaces::random_new(t_no, h_no, b_no, x, y, z, rng)
     }
 
+    /// Reserve exact fallible storage and attach a site-category name to errors.
     fn reserved_vec<T>(capacity: usize, name: &str) -> Result<Vec<T>, String> {
         let mut values = Vec::new();
         values
@@ -412,24 +420,52 @@ impl ElectronPlaces {
     }
 }
 
-/// The trap parameters
+/// Physical parameters assigned to one family of electron traps.
+///
+/// A trapped electron is represented by thermally coupled ground and excited
+/// states. Each state has its own conduction-band activation energy,
+/// delocalised attempt frequency, localised tunnelling prefactor, and spatial
+/// decay constant. All energies are in electronvolts, frequencies and rates
+/// are in inverse seconds, and inverse-length parameters must use units
+/// reciprocal to the coordinate units.
 #[derive(Debug, Clone, Copy)]
 pub struct TrapParameters {
+    /// Energy separation between the localised ground and excited states, in eV.
     pub excited_energy_gap: Float,
+    /// Attempt frequency for thermal excitation from ground to excited state, in s⁻¹.
     pub s_frequency_e: Float,
+    /// Relaxation frequency from excited to ground state, in s⁻¹.
     pub s_frequency_g: Float,
+    /// Ground-state activation energy for release to the conduction band, in eV.
     pub e_cb_ground: Float,
+    /// Excited-state activation energy for release to the conduction band, in eV.
     pub e_cb_excited: Float,
+    /// Ground-state delocalised-release attempt frequency, in s⁻¹.
     pub de_frequency_ground: Float,
+    /// Excited-state delocalised-release attempt frequency, in s⁻¹.
     pub de_frequency_excited: Float,
+    /// Ground-state localised-tunnelling prefactor, in s⁻¹.
     pub lo_frequency_ground: Float,
+    /// Excited-state localised-tunnelling prefactor, in s⁻¹.
     pub lo_frequency_excited: Float,
+    /// Ground-state tunnelling decay constant in inverse coordinate units.
     pub alpha_ground: Float,
+    /// Excited-state tunnelling decay constant in inverse coordinate units.
     pub alpha_excited: Float,
+    /// Delocalised destination length scale in the same units as coordinates.
     pub delocalised_mu: Float,
+    /// Factor multiplying the delocalised retrapping mean waiting time.
+    ///
+    /// With the current reciprocal-rate model, larger positive values make
+    /// retrapping slower relative to the unit recombination factor; zero
+    /// disables conduction-band retrapping destinations.
     pub retrap_ratio: Float,
 }
 impl TrapParameters {
+    /// Construct a complete trap-family parameter record without validation.
+    ///
+    /// The caller must keep energies, frequencies, and length scales in the
+    /// units described by [`TrapParameters`] and ensure they are physically valid.
     pub fn new(
         excited_energy_gap: Float,
         s_frequency_e: Float,
@@ -463,25 +499,36 @@ impl TrapParameters {
     }
 }
 
+/// Maps spatial trap identifiers to their physical parameter records.
+///
+/// Uniform layouts avoid duplicating a record for homogeneous crystals,
+/// while direct and indexed layouts support heterogeneous trap populations.
 pub enum TrapParameterLayout {
     /// Every trap uses exactly the same parameters.
     Uniform(TrapParameters),
 
     /// Every trap has its own parameters.
     ///
-    /// parameters[trap_id]
+    /// `parameters[trap_id]`
     Direct(Box<[TrapParameters]>),
 
     /// Traps reference a table of shared parameter records.
     ///
     /// Useful for families and mixtures of shared/individual parameters.
     Indexed {
+        /// Table of distinct parameter records shared between traps.
         records: Box<[TrapParameters]>,
+        /// Parameter-record identifier assigned to each trap identifier.
         by_trap: Box<[PlaceId]>,
     },
 }
 
 impl TrapParameterLayout {
+    /// Build a homogeneous layout from the individual model parameters.
+    ///
+    /// The excited-state conduction-band barrier is derived as
+    /// `e_cb - excited_energy_gap`; every trap subsequently borrows the same
+    /// resulting [`TrapParameters`] record.
     pub fn new_uniform(excited_energy_gap: Float, s_frequency_e: Float, 
                        s_frequency_g: Float, e_cb: Float, 
                        s_gs: Float, s_es: Float, 
@@ -505,10 +552,14 @@ impl TrapParameterLayout {
         TrapParameterLayout::uniform(parameters)
     }
 
+    /// Assign one parameter record to every trap identifier.
     pub fn uniform(parameters: TrapParameters) -> Self {
         Self::Uniform(parameters)
     }
 
+    /// Assign one parameter record per trap in identifier order.
+    ///
+    /// Returns an error unless `parameters.len()` equals `trap_count`.
     pub fn direct(parameters: Vec<TrapParameters>, trap_count: usize) -> Result<Self, String> {
         if parameters.len() != trap_count {
             return Err(format!(
@@ -520,6 +571,10 @@ impl TrapParameterLayout {
         Ok(Self::Direct(parameters.into_boxed_slice()))
     }
 
+    /// Assign traps to a shared table of parameter records.
+    ///
+    /// `assignments[trap.index()]` identifies the entry in `records`. The
+    /// constructor validates both the trap count and every table reference.
     pub fn indexed(
         records: Vec<TrapParameters>,
         assignments: Vec<PlaceId>,
@@ -551,6 +606,10 @@ impl TrapParameterLayout {
         })
     }
 
+    /// Return the physical parameters assigned to `trap`.
+    ///
+    /// Layout constructors guarantee valid indexing; passing a trap ID from a
+    /// different crystal can therefore panic.
     pub fn get(&self, trap: PlaceId) -> &TrapParameters {
         match self {
             Self::Uniform(parameters) => parameters,

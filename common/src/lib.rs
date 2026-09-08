@@ -9,15 +9,17 @@
 //! equations. File parsing and Monte Carlo orchestration live in the sibling
 //! `io` and `mc` crates.
 
+#![warn(missing_docs)]
+
 /// Numeric precision aliases and shape-aware arithmetic traits.
 pub mod numeric;
 /// Physical constants and unit conversions.
 pub mod constants;
 /// Crystal geometry and randomly generated electron-site positions.
 pub mod crystal;
-/// Electron trap, hole trap and band tail states. 
+/// Spatial sites and the physical parameters assigned to electron traps.
 pub mod trap_hole_band_tail;
-/// Ids for traps, holes and band tail states.
+/// Compact identifiers and occupancy partitions for traps, holes, and band tails.
 pub mod place_ids;
 /// Piecewise-linear time and temperature profiles.
 pub mod time_temperature;
@@ -27,10 +29,9 @@ pub mod rate_equation_selection;
 pub mod rate_equations;
 /// Typed parameter groups consumed by rate-equation selections.
 pub mod rate_equation_inputs;
-/// Holds the results of charge transfer processes
+/// Charge-transfer events, rate candidates, and sampled lifetimes.
 pub mod charge_transfer;
-/// Module that holds the random seed generation, additional seeds
-/// and all the random number generation.
+/// Deterministic base-seed handling and independent repetition generators.
 pub mod random;
 
 #[cfg(test)]

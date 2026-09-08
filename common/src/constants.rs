@@ -2,54 +2,94 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! This module contains constants that can be used throughout the program
+//! SI conversions and physical constants used by the transport equations.
 
-/// This module contains conversions for SI unit prefixes
+/// Internal scalar, square, and cubic SI prefix factors.
+///
+/// These constants are currently reserved for future unit-aware geometry.
 pub mod metric{
+    /// Factor represented by the SI prefix giga.
     const GIGA: u32 = 1_000_000_000;
+    /// Factor represented by the SI prefix mega.
     const MEGA: u32 = 1_000_000;
+    /// Factor represented by the SI prefix kilo.
     const KILO: u32 = 1_000;
+    /// Factor represented by the SI prefix hecto.
     const HECTO: u32 = 100;
+    /// Factor represented by the SI prefix deca.
     const DECA: u32 = 10;
+    /// Factor represented by the SI prefix deci.
     const DECI: f32 = 0.1;
+    /// Factor represented by the SI prefix centi.
     const CENTI: f32 = 0.01;
+    /// Factor represented by the SI prefix milli.
     const MILLI: f32 = 0.001;
+    /// Factor represented by the SI prefix micro.
     const MICRO: f32 = 0.000_001;
+    /// Factor represented by the SI prefix nano.
     const NANO: f32 = 0.000_000_001;
+    /// Length factor for one ångström in metres.
     const ANG: f32 = 0.0_000_000_001;
+    /// Factor represented by the SI prefix pico.
     const PICO: f32 = 0.000_000_000_001;
+    /// Factor represented by the SI prefix femto.
     const FEMTO: f32 = 0.000_000_000_000_001;
 
+    /// Squared giga factor for area conversions.
     const GIGA_SQ: u64 = GIGA as u64*GIGA as u64;
+    /// Squared mega factor for area conversions.
     const MEGA_SQ: u64 = MEGA as u64*MEGA as u64;
+    /// Squared kilo factor for area conversions.
     const KILO_SQ: u32 = KILO*KILO;
+    /// Squared hecto factor for area conversions.
     const HECTO_SQ: u32 = HECTO*HECTO;
+    /// Squared deca factor for area conversions.
     const DECA_SQ: u32 = DECA*DECA;
+    /// Squared deci factor for area conversions.
     const DECI_SQ: f32 = DECI*DECI;
+    /// Squared centi factor for area conversions.
     const CENTI_SQ: f32 = CENTI*CENTI;
+    /// Squared milli factor for area conversions.
     const MILLI_SQ: f32 = MILLI*MILLI;
+    /// Squared micro factor for area conversions.
     const MICRO_SQ: f32 = MICRO*MICRO;
+    /// Squared nano factor for area conversions.
     const NANO_SQ: f32 = NANO*NANO;
+    /// Squared ångström factor for area conversions.
     const ANG_SQ: f32 = ANG*ANG;
+    /// Squared pico factor for area conversions.
     const PICO_SQ: f32 = PICO*PICO;
+    /// Squared femto factor for area conversions.
     const FEMTO_SQ: f32 = FEMTO*FEMTO;
 
+    /// Cubed mega factor for volume conversions.
     const MEGA_CUBE: u64 = MEGA_SQ*MEGA as u64;
+    /// Cubed kilo factor for volume conversions.
     const KILO_CUBE: u32 = KILO_SQ*KILO;
+    /// Cubed hecto factor for volume conversions.
     const HECTO_CUBE: u32 = HECTO_SQ*HECTO;
+    /// Cubed deca factor for volume conversions.
     const DECA_CUBE: u32 = DECA_SQ*DECA;
+    /// Cubed deci factor for volume conversions.
     const DECI_CUBE: f32 = DECI_SQ*DECI;
+    /// Cubed centi factor for volume conversions.
     const CENTI_CUBE: f32 = CENTI_SQ*CENTI;
+    /// Cubed milli factor for volume conversions.
     const MILLI_CUBE: f32 = MILLI_SQ*MILLI;
+    /// Cubed micro factor for volume conversions.
     const MICRO_CUBE: f32 = MICRO_SQ*MICRO;
+    /// Cubed nano factor for volume conversions.
     const NANO_CUBE: f32 = NANO_SQ*NANO;
+    /// Cubed ångström factor for volume conversions.
     const ANG_CUBE: f32 = ANG_SQ*ANG;
+    /// Cubed pico factor for volume conversions.
     const PICO_CUBE: f32 = PICO_SQ*PICO;
+    /// Cubed femto factor for volume conversions.
     const FEMTO_CUBE: f32 = FEMTO_SQ*FEMTO;
 
 }
 
-/// This module contains useful Physical constants to be used throughout the program
+/// Fundamental constants expressed in SI units, plus Boltzmann's constant in eV/K.
 pub mod physical_constants{
     use crate::numeric::{Float};
     /// Boltzmann constant in J/K (kg·m²/s²·K)
@@ -80,12 +120,19 @@ pub mod physical_constants{
 pub mod time{
     use std::fmt;    
     use crate::numeric::{PrecisionInput, TimeFloat, TimePrecision,};
+    /// Seconds in one second.
     const SECOND: u32 = 1;
+    /// Seconds in one minute.
     const MINUTE: u32 = 60;
+    /// Seconds in one hour.
     const HOUR: u32 = 60*MINUTE;
+    /// Seconds in one 24-hour day.
     const DAY: u32 = 24*HOUR;
+    /// Seconds in one Julian year of 365.2425 days.
     const YEAR: u32 = 31_556_952;
+    /// Seconds in one thousand Julian years.
     const K_ANNUM: u64 = 31_556_952_000;
+    /// Seconds in one million Julian years.
     const MA_ANNUM: u64 = 31_556_952_000_000;
 
     #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]

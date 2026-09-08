@@ -120,9 +120,9 @@ impl FromStr for DelocalisedRateEquationType {
 
 /// Selects the states from which delocalised release is enabled.
 ///
-/// Active states use the embedded kinetic model. Inactive states still return
-/// a zero with the same shape as that state's energy input, so callers can
-/// combine both outputs without special-casing the selection.
+/// Active states use the embedded kinetic model. Inactive states return the
+/// shape-preserving sentinel [`crate::charge_transfer::DISABLED_RATE`], so the
+/// Monte Carlo sampler can omit them without losing the output layout.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DelocalisedRateEquation {
     /// Evaluate only the ground-state release rate.
@@ -148,8 +148,9 @@ impl DelocalisedRateEquation {
     /// Calculate the weighted `(ground, excited)` release rates.
     ///
     /// Each tuple entry preserves the shape associated with its state. An
-    /// inactive state produces a shape-preserving zero; `None` is reserved for
-    /// failed element-wise operations such as incompatible input shapes.
+    /// inactive state produces a shape-preserving disabled-rate sentinel;
+    /// `None` is reserved for failed element-wise operations such as
+    /// incompatible input shapes.
     pub fn calculate<E, S, W, ENeg, KT, Ratio, Exp, WeightRaw, Weight,
         Weighted, RateRaw, V,
     >(
@@ -290,7 +291,7 @@ impl FromStr for DelocalisedRateEquation {
 /// Selects the states from which localised tunnelling is enabled.
 ///
 /// As with delocalised selection, disabled states produce shape-preserving
-/// zero values rather than being omitted from the returned pair.
+/// `-1` sentinel values rather than being omitted from the returned pair.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LocalisedRateEquation {
     /// Enable only ground-state tunnelling.
@@ -420,8 +421,8 @@ pub enum FillingRateEquation {
 }
 
 impl FillingRateEquation {
-    /// Evaluate filling, or return a zero matching the characteristic-dose
-    /// shape when filling is disabled.
+    /// Evaluate filling, or return the disabled-rate sentinel matching the
+    /// characteristic-dose shape when filling is disabled.
     pub fn calculate<
         D0, DDot, N, NTot, DoseRatio, Available, Zero, V, >(
         &self,
@@ -525,6 +526,7 @@ pub enum Transitions{
 
 }
 impl Transitions {
+    /// Borrow the equation selections shared by every outer retrapping variant.
     fn transition_types(&self) -> &TransitionsTypes {
         match self {
             Transitions::NoCbFillRetrapping { transitions }
@@ -533,22 +535,27 @@ impl Transitions {
             | Transitions::FillCbRetrapping { transitions } => transitions,
         }
     }
+    /// Return the configured ground/excited conduction-band release equation.
     pub fn get_delocaised_transitions(&self) -> &DelocalisedRateEquation {
         let t = self.transition_types(); 
         &t.delocalised
     }
+    /// Return the configured localised trap-to-hole tunnelling selection.
     pub fn get_locaised_recomb_transitions(&self) -> &LocalisedRateEquation {
         let t = self.transition_types(); 
         &t.localised_recomb
     }
+    /// Return the configured localised trap-to-trap tunnelling selection.
     pub fn get_locaised_retrap_transitions(&self) -> &LocalisedRateEquation {
         let t = self.transition_types(); 
         &t.localised_retrap
     }
+    /// Return the configured irradiation-driven filling equation.
     pub fn get_filling_transitions(&self) -> &FillingRateEquation {
         let t = self.transition_types(); 
         &t.filling
     }
+    /// Return whether thermal release to the conduction band is enabled.
     pub fn get_delocalised(&self) -> bool {
         let transitions = self.transition_types();
     
@@ -558,6 +565,7 @@ impl Transitions {
             return true
         }
     }
+    /// Return whether direct trap-to-hole tunnelling is enabled.
     pub fn get_localised_recombination(&self) -> bool {
        let transitions = self.transition_types();
         if matches!(transitions.localised_recomb, LocalisedRateEquation::None){
@@ -566,6 +574,7 @@ impl Transitions {
             return true
         }
     }
+    /// Return whether direct trap-to-trap tunnelling is enabled.
     pub fn get_localised_retrapping(&self) -> bool {
         let transitions = self.transition_types();
         if matches!(transitions.localised_retrap, LocalisedRateEquation::None){
@@ -574,6 +583,7 @@ impl Transitions {
             return true
         }
     }
+    /// Return whether external-dose filling is enabled.
     pub fn get_filling(&self) -> bool {
         let transitions = self.transition_types();
         if matches!(transitions.filling, FillingRateEquation::None){
@@ -582,6 +592,7 @@ impl Transitions {
             return true
         }
     }
+    /// Return whether released conduction-band electrons may be retrapped.
     pub fn get_conduction_band_retrapping(&self) -> bool {
         match self {
               Transitions::NoCbFillRetrapping { .. } => false,
@@ -590,6 +601,7 @@ impl Transitions {
               Transitions::FillCbRetrapping   { .. } => true,
         }
     }
+    /// Return whether a filling event may take the recombination branch.
     pub fn get_filling_retrapping(&self) -> bool {
         match self {
               Transitions::NoCbFillRetrapping { .. } => false,
@@ -599,6 +611,11 @@ impl Transitions {
         }
     }
 
+    /// Return an upper-bound count of candidates for the supplied site counts.
+    ///
+    /// The count includes two state-resolved candidates for each enabled
+    /// microscopic source/destination pairing, one aggregate filling
+    /// candidate when enabled, and one inert profile-boundary candidate.
     pub fn number_transitions(&self, traps: usize, holes:usize) -> usize {
 
         let mut total: usize = 1;
@@ -760,7 +777,7 @@ impl Transitions {
     /// The returned array always has the same order: ground recombination,
     /// ground retrapping, excited recombination, excited retrapping, ground
     /// delocalisation, excited delocalisation, and filling. A disabled pathway
-    /// occupies its normal position with a zero rate.
+    /// occupies its normal position with the `-1` disabled-rate sentinel.
     ///
     /// Conduction-band retrapping is intentionally not a separate rate. The
     /// outer `Transitions` variant records whether it should be applied later

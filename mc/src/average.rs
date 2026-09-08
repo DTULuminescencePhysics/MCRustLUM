@@ -2,7 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Consolidation of repeated Monte Carlo trajectories.
+//! Streaming consolidation of repeated Monte Carlo trajectories.
+//!
+//! Fill trajectories are step functions because occupancy changes only at
+//! discrete events. Their union of record times is traversed without loading
+//! complete files, carrying each repetition's last fill forward before
+//! calculating ensemble statistics. Event trajectories are instead grouped
+//! into fixed-width bins and normalized into observed frequencies.
 
 use common::charge_transfer::{ElectronicState, Event, RecordedEvent};
 use common::numeric::{Float, TimeFloat};
@@ -15,18 +21,27 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::vec::IntoIter;
 
+/// Default directory containing per-repetition compressed trajectories.
 const TEMPORARY_DIRECTORY: &str = "tmp";
+/// Default destination for ensemble fill statistics.
 const AVERAGE_FILL_FILE: &str = "average_fill.csv";
+/// Default destination for ensemble event frequencies.
 const AVERAGE_EVENT_FILE: &str = "average_event.csv";
+/// Width of event-frequency bins in seconds.
 const EVENT_BIN_WIDTH: TimeFloat = 0.1;
 
+/// Flattens the compressed batches in one result file into individual records.
 struct RecordStream {
+    /// Source path used when reporting malformed trajectory data.
     path: PathBuf,
+    /// Lazy iterator over compressed serialized batches.
     batches: BatchReader<RecordedEvent>,
+    /// Remaining records in the currently decoded batch.
     records: IntoIter<RecordedEvent>,
 }
 
 impl RecordStream {
+    /// Open a trajectory and prepare to decode its first batch lazily.
     fn open(path: PathBuf) -> Result<Self, String> {
         let batches = read_all_batches(&path).map_err(|error| error.to_string())?;
         Ok(Self {
@@ -36,6 +51,7 @@ impl RecordStream {
         })
     }
 
+    /// Return the next record, transparently advancing across batch boundaries.
     fn next_record(&mut self) -> Result<Option<RecordedEvent>, String> {
         loop {
             if let Some(record) = self.records.next() {
@@ -51,20 +67,29 @@ impl RecordStream {
     }
 }
 
+/// Streaming state for one repetition during a multiway time merge.
 struct TrajectoryCursor {
+    /// Flattened record source for this repetition.
     stream: RecordStream,
+    /// Most recent time incorporated into the ensemble state.
     last_time: TimeFloat,
+    /// Fill value carried forward from the most recent record.
     fill: Float,
+    /// Look-ahead record used to find the next union time.
     next: Option<RecordedEvent>,
 }
 
+/// Monotonic direction shared by all trajectories being averaged.
 #[derive(Debug, Clone, Copy)]
 enum Direction {
+    /// Ordinary experimental time increasing from zero.
     Forward,
+    /// Geological age decreasing toward zero.
     Reverse,
 }
 
 impl Direction {
+    /// Select the earliest next union time in the direction of travel.
     fn next_time(self, current: Option<TimeFloat>, candidate: TimeFloat) -> TimeFloat {
         match current {
             None => candidate,
@@ -76,6 +101,7 @@ impl Direction {
         }
     }
 
+    /// Return whether two consecutive times preserve this direction.
     fn accepts(self, previous: TimeFloat, next: TimeFloat) -> bool {
         match self {
             Self::Forward => next >= previous,
@@ -84,22 +110,34 @@ impl Direction {
     }
 }
 
+/// Iterator that merges repetitions and emits ensemble fill rows incrementally.
 struct AverageFillRows {
+    /// One look-ahead cursor per repetition.
     cursors: Vec<TrajectoryCursor>,
+    /// Shared monotonic direction inferred from the first changing trajectory.
     direction: Direction,
+    /// Initial state, emitted before processing look-ahead records.
     first: Option<ContinuousValueRow>,
+    /// Whether all records have been consumed or an error has terminated iteration.
     finished: bool,
 }
 
+/// Ensemble summary of fill fractions at one union time.
 struct FillStatistics {
+    /// Arithmetic mean across repetitions.
     mean: Float,
+    /// Population standard deviation across repetitions.
     standard_deviation: Float,
+    /// Linearly interpolated 50th percentile.
     median: Float,
+    /// Linearly interpolated 10th percentile.
     quantile_0_1: Float,
+    /// Linearly interpolated 90th percentile.
     quantile_0_9: Float,
 }
 
 impl FillStatistics {
+    /// Sort fill values and calculate population statistics.
     fn from_values(mut values: Vec<Float>) -> Self {
         debug_assert!(!values.is_empty());
         values.sort_by(Float::total_cmp);
@@ -120,6 +158,7 @@ impl FillStatistics {
         }
     }
 
+    /// Combine these fill statistics with their physical time and temperature.
     fn row(self, time: TimeFloat, temperature: Float) -> ContinuousValueRow {
         ContinuousValueRow {
             time,
@@ -133,6 +172,7 @@ impl FillStatistics {
     }
 }
 
+/// Calculate a linearly interpolated quantile from a non-empty sorted slice.
 fn quantile(sorted_values: &[Float], probability: Float) -> Float {
     let position = probability * (sorted_values.len() - 1) as Float;
     let lower_index = position.floor() as usize;
@@ -143,6 +183,11 @@ fn quantile(sorted_values: &[Float], probability: Float) -> Float {
 }
 
 impl AverageFillRows {
+    /// Open all trajectories, validate their initial states, and infer direction.
+    ///
+    /// Every trajectory must begin at exactly the same time. Temperature is
+    /// averaged only over records present at a union time, whereas fill is
+    /// carried forward independently for every repetition.
     fn new(paths: Vec<PathBuf>) -> Result<Self, String> {
         let mut cursors = Vec::with_capacity(paths.len());
         let mut initial_time = None;
@@ -220,6 +265,10 @@ impl AverageFillRows {
         })
     }
 
+    /// Consume all consecutive records for one cursor at an exact union time.
+    ///
+    /// The last fill at that time becomes the carried state; temperatures from
+    /// all same-time records contribute to the returned sum and count.
     fn advance_cursor_at(
         cursor: &mut TrajectoryCursor,
         time: TimeFloat,
@@ -302,30 +351,51 @@ impl Iterator for AverageFillRows {
     }
 }
 
+/// Raw event counters for one fixed interval of simulation time.
+///
+/// Events at a positive boundary are assigned to the bin ending at that
+/// boundary. Counters are converted to per-second, per-repetition frequencies
+/// only after every trajectory has been read.
 struct EventBin {
+    /// Inclusive left edge of the bin, in seconds.
     start_time: TimeFloat,
+    /// Right edge and output timestamp of the bin, in seconds.
     end_time: TimeFloat,
 
+    /// Ground-state localised recombination events.
     localised_recombination_ground_count: usize,
+    /// Excited-state localised recombination events.
     localised_recombination_excited_count: usize,
+    /// Ground-state conduction-band recombination events.
     delocalised_recombination_ground_count: usize,
+    /// Excited-state conduction-band recombination events.
     delocalised_recombination_excited_count: usize,
 
+    /// Ground-state localised trap-to-trap events.
     localised_retrapping_ground_count: usize,
+    /// Excited-state localised trap-to-trap events.
     localised_retrapping_excited_count: usize,
+    /// Ground-state conduction-band retrapping events.
     delocalised_retrapping_ground_count: usize,
+    /// Excited-state conduction-band retrapping events.
     delocalised_retrapping_excited_count: usize,
 
+    /// Total events whose electron originated from a ground state.
     ground_count: usize,
+    /// Total events whose electron originated from an excited state.
     excited_count: usize,
 
+    /// Total localised and delocalised recombination events.
     recombination_count: usize,
+    /// Total localised and delocalised retrapping events.
     retrapping_count: usize,
 
+    /// Total irradiation-driven filling events.
     filling_count: usize,
 }
 
 impl EventBin {
+    /// Create an empty bin at `index * EVENT_BIN_WIDTH`.
     fn new(index: usize) -> Self {
         Self {
             start_time: index as TimeFloat * EVENT_BIN_WIDTH,
@@ -346,6 +416,7 @@ impl EventBin {
         }
     }
 
+    /// Increment the specific pathway and its aggregate state/category counters.
     fn record(&mut self, event: Event) {
         match event {
             Event::LocalisedRecombination {
@@ -419,6 +490,7 @@ impl EventBin {
         }
     }
 
+    /// Normalize raw counts by repetition count and bin duration.
     fn averaged(self, repetition_count: usize) -> AverageEventRow {
         debug_assert!(self.end_time > self.start_time);
         let repetitions = repetition_count as Float * EVENT_BIN_WIDTH as Float;
@@ -454,6 +526,7 @@ impl EventBin {
     }
 }
 
+/// Return the all-zero event-frequency row at time zero.
 fn initial_event_row() -> AverageEventRow {
     AverageEventRow {
         time: 0.0,
@@ -472,6 +545,7 @@ fn initial_event_row() -> AverageEventRow {
         filling_count: 0.0,
     }
 }
+/// Validate finite physical coordinates and a bounded fill fraction.
 fn validate_record(path: &Path, record: &RecordedEvent) -> Result<(), String> {
     if !record.time.is_finite() {
         return Err(format!("{} contains a non-finite time", path.display()));
@@ -492,6 +566,7 @@ fn validate_record(path: &Path, record: &RecordedEvent) -> Result<(), String> {
     Ok(())
 }
 
+/// Discover and sort all per-repetition result files in a temporary directory.
 fn temporary_result_paths(directory: &Path) -> Result<Vec<PathBuf>, String> {
     let entries = fs::read_dir(directory).map_err(|error| {
         format!(
@@ -535,6 +610,10 @@ pub fn average_fill() -> Result<(), String> {
 
 /// Average temporary trajectories from `temporary_directory` into
 /// `output_file`.
+///
+/// Output times are the union of all repetition timestamps. A repetition with
+/// no event at a particular union time contributes its most recently observed
+/// fill, reflecting piecewise-constant occupancy between events.
 pub fn average_fill_in(
     temporary_directory: impl AsRef<Path>,
     output_file: impl AsRef<Path>,
@@ -552,6 +631,10 @@ pub fn average_events() -> Result<(), String> {
 
 /// Average temporary event trajectories from `temporary_directory` into
 /// `output_file`.
+///
+/// Events are placed in `EVENT_BIN_WIDTH`-second bins. Counts are divided by
+/// both the number of input trajectories and the bin width, producing observed
+/// frequencies rather than total event counts.
 pub fn average_events_in(
     temporary_directory: impl AsRef<Path>,
     output_file: impl AsRef<Path>,

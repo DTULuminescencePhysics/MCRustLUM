@@ -4,8 +4,9 @@
 
 //! Streaming temporary output for Monte Carlo experiments.
 //!
-//! Each call to [`append_monte_carlo_experiment_batch_to_file`] adds one
-//! bincode-encoded batch as a new gzip member. [`read_all_batches`] decodes
+//! Each call to [`crate::outputs::append_monte_carlo_experiment_batch_to_file`]
+//! adds one bincode-encoded batch as a new gzip member.
+//! [`crate::outputs::read_all_batches`] decodes
 //! those members as a stream, keeping only the current batch in memory.
 
 use common::numeric::{Float, TimeFloat};
@@ -28,27 +29,37 @@ use serde::de::DeserializeOwned;
 pub enum OutputError {
     /// The temporary output file could not be opened.
     Open {
+        /// File that could not be opened.
         path: PathBuf,
+        /// Underlying filesystem error.
         source: std::io::Error,
     },
     /// A batch could not be encoded or written.
     Write {
+        /// File to which serialization failed.
         path: PathBuf,
+        /// Bincode serialization or output error.
         source: Box<bincode::ErrorKind>,
     },
     /// The final bytes of a gzip member could not be written.
     Finish {
+        /// File whose gzip member could not be finalized.
         path: PathBuf,
+        /// Underlying compression or filesystem error.
         source: std::io::Error,
     },
     /// Compressed data could not be read.
     Read {
+        /// Compressed file that could not be read.
         path: PathBuf,
+        /// Underlying decompression or filesystem error.
         source: std::io::Error,
     },
     /// A batch was incomplete or did not match the requested record type.
     Decode {
+        /// File containing the malformed or type-incompatible batch.
         path: PathBuf,
+        /// Bincode deserialization error.
         source: Box<bincode::ErrorKind>,
     },
 }
@@ -96,6 +107,7 @@ impl Error for OutputError {
     }
 }
 
+/// Return the stable bincode configuration shared by the writer and reader.
 fn bincode_options() -> impl Options {
     bincode::DefaultOptions::new().with_fixint_encoding()
 }
@@ -158,6 +170,7 @@ pub fn append_monte_carlo_experiment_batch_to_file<T: Serialize>(
     Ok(())
 }
 
+/// Buffered decoder that treats concatenated gzip members as one byte stream.
 type CompressedReader = BufReader<MultiGzDecoder<BufReader<File>>>;
 
 /// Iterator over the batches stored in one temporary experiment file.
@@ -166,9 +179,13 @@ type CompressedReader = BufReader<MultiGzDecoder<BufReader<File>>>;
 /// caller does not retain it. After the first read or decode error the iterator
 /// is exhausted.
 pub struct BatchReader<T> {
+    /// Source path retained for contextual read and decode errors.
     path: PathBuf,
+    /// Streaming decoder positioned at the next bincode batch.
     reader: CompressedReader,
+    /// Whether end-of-file or an unrecoverable error has been observed.
     finished: bool,
+    /// Associates the iterator with the deserialized record type.
     record: PhantomData<T>,
 }
 
@@ -241,49 +258,86 @@ pub fn read_all_batches<T: DeserializeOwned>(
 }
 
 /// One row in the consolidated continuous-value output.
+///
+/// Fill statistics are calculated across independent repetitions at the same
+/// profile time. Temperature is the mean of records that occur at that time.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ContinuousValueRow {
+    /// Absolute profile time in seconds.
     pub time: TimeFloat,
+    /// Mean temperature of contributing records, in kelvin.
     pub temperature: Float,
+    /// Arithmetic mean trap filling fraction.
     pub fill: Float,
+    /// Population standard deviation of the filling fraction.
     pub fill_standard_deviation: Float,
+    /// Median filling fraction, using linearly interpolated quantiles.
     pub fill_median: Float,
+    /// Linearly interpolated 10th percentile of the filling fraction.
     pub fill_quantile_0_1: Float,
+    /// Linearly interpolated 90th percentile of the filling fraction.
     pub fill_quantile_0_9: Float,
 }
 
 /// One row in the averaged event-count output.
+///
+/// Every count is normalized by both repetition count and bin width and is
+/// therefore an observed event frequency in s⁻¹, not a microscopic rate
+/// equation evaluated at the row time.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AverageEventRow {
+    /// Right-hand edge of the event bin, in seconds.
     pub time: TimeFloat,
+    /// Ground-state localised recombinations per second per repetition.
     pub localised_recombination_ground_count: Float,
+    /// Excited-state localised recombinations per second per repetition.
     pub localised_recombination_excited_count: Float,
+    /// Ground-state delocalised recombinations per second per repetition.
     pub delocalised_recombination_ground_count: Float,
+    /// Excited-state delocalised recombinations per second per repetition.
     pub delocalised_recombination_excited_count: Float,
+    /// Ground-state localised retrapping events per second per repetition.
     pub localised_retrapping_ground_count: Float,
+    /// Excited-state localised retrapping events per second per repetition.
     pub localised_retrapping_excited_count: Float,
+    /// Ground-state delocalised retrapping events per second per repetition.
     pub delocalised_retrapping_ground_count: Float,
+    /// Excited-state delocalised retrapping events per second per repetition.
     pub delocalised_retrapping_excited_count: Float,
+    /// All events originating from ground states per second per repetition.
     pub ground_count: Float,
+    /// All events originating from excited states per second per repetition.
     pub excited_count: Float,
+    /// All recombination events per second per repetition.
     pub recombination_count: Float,
+    /// All retrapping events per second per repetition.
     pub retrapping_count: Float,
+    /// All irradiation-driven filling events per second per repetition.
     pub filling_count: Float,
 }
 
 /// An error produced while writing consolidated CSV output.
 #[derive(Debug)]
 pub enum CsvOutputError {
+    /// The destination CSV file could not be created.
     Create {
+        /// Destination path.
         path: PathBuf,
+        /// Underlying filesystem error.
         source: std::io::Error,
     },
+    /// The input iterator could not produce a valid output row.
     SourceData {
+        /// Destination path for which rows were being generated.
         path: PathBuf,
+        /// Display form of the upstream row-generation error.
         message: String,
     },
+    /// A header, row, or buffered tail could not be written.
     Write {
+        /// Destination path.
         path: PathBuf,
+        /// Underlying filesystem error.
         source: std::io::Error,
     },
 }
@@ -371,7 +425,11 @@ where
     })
 }
 
-/// Write averaged event counts to a CSV file.
+/// Write normalized event-frequency rows to a CSV file.
+///
+/// Rows are streamed and preserve the category breakdown in
+/// [`AverageEventRow`]. The function writes column names before requesting the
+/// first row, so an upstream error may leave a header-only partial file.
 pub fn write_average_events_csv<I, E>(path: impl AsRef<Path>, rows: I) -> Result<(), CsvOutputError>
 where
     I: IntoIterator<Item = Result<AverageEventRow, E>>,

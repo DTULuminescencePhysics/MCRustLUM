@@ -11,6 +11,7 @@ use rand::rngs::StdRng;
 /// Seed used when [`set_seed`] is not called during program startup.
 pub const DEFAULT_SEED: u64 = 0;
 
+/// Base seed from which independent repetition streams are derived.
 static SEED: AtomicU64 = AtomicU64::new(DEFAULT_SEED);
 
 /// Set the program-wide random seed and restart the random sequence.
@@ -26,6 +27,11 @@ pub fn seed() -> u64 {
     SEED.load(Ordering::Relaxed)
 }
 
+/// Derive a deterministic, well-mixed seed for one repetition index.
+///
+/// SplitMix64 finalization prevents neighbouring repetition numbers from
+/// creating visibly correlated seeds while preserving exact reproducibility
+/// for a fixed base seed and index.
 pub fn seed_for_rep(rep: usize) -> u64 {
     let rep = rep as u64;
     let mut x = seed().wrapping_add(rep);
@@ -35,6 +41,7 @@ pub fn seed_for_rep(rep: usize) -> u64 {
     x ^ (x >> 31)
 }
 
+/// Construct the independent standard random-number stream for a repetition.
 pub fn get_std_rng_for_rep(rep: usize) -> StdRng  {
     let random_seed = seed_for_rep(rep);
     StdRng::seed_from_u64(random_seed)

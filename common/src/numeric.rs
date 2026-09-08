@@ -12,8 +12,10 @@
 //!
 //! Two floating-point precisions are intentionally available:
 //! [`crate::numeric::Float`] is the normal simulation precision and
-//! [`crate::numeric::TimeFloat`] is the higher precision used for rates and
-//! time calculations. [`crate::numeric::PrecisionInput`] converts either
+//! [`crate::numeric::TimeFloat`] is the dedicated alias used for rates and
+//! time calculations. Both aliases currently resolve to `f64`, but keeping
+//! their roles distinct lets precision policy change centrally.
+//! [`crate::numeric::PrecisionInput`] converts either
 //! individual values or complete containers between them.
 
 use std::ops::{Add, Div, Mul, Sub};
@@ -22,7 +24,9 @@ use ndarray::{Array, Array1, ArrayBase, ArrayD, Data, Dimension, Zip};
 
 /// Default floating-point precision used for model parameters and state.
 pub type Float = f64;
-/// Higher precision used for rates, lifetimes, and time/temperature profiles.
+/// Dedicated floating-point type used for rates, lifetimes, and profile time.
+///
+/// This is currently the same `f64` representation as [`Float`].
 pub type TimeFloat = f64;
 
 /// Common behaviour required from scalar values accepted by numeric helpers.
@@ -154,7 +158,7 @@ pub trait PrecisionTarget {
 
 /// Marker selecting the program-wide [`Float`] precision.
 pub struct ProgramPrecision;
-/// Marker selecting the higher-precision [`TimeFloat`] representation.
+/// Marker selecting the rate-and-time [`TimeFloat`] representation.
 pub struct TimePrecision;
 
 impl PrecisionTarget for ProgramPrecision {

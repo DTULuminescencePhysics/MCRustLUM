@@ -10,6 +10,7 @@
 use std::error::Error;
 use std::ffi::OsString;
 
+/// Prepare the requested run directory and execute the default simulation workflow.
 fn main() -> Result<(), Box<dyn Error>> {
     let folder_name = folder_name_from_arguments()?;
     io::filesystem::prepare_experiment_directory(folder_name.as_deref())?;
@@ -17,6 +18,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     monte_carlo_run()
 }
 
+/// Load the copied input, run all repetitions, and consolidate their outputs.
+///
+/// The current executable requests ten repetitions, one parameter experiment,
+/// and a minimum spatial ensemble of 25 traps.
 fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
     let inputs = io::read_inputs("input.toml")?;
     let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 10, 1,25)?;
@@ -28,6 +33,7 @@ fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Parse the optional single experiment-directory name from command-line arguments.
 fn folder_name_from_arguments() -> Result<Option<OsString>, Box<dyn Error>> {
     let mut arguments = std::env::args_os().skip(1);
     let folder_name = arguments.next();

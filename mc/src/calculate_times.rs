@@ -2,6 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
+//! Gillespie-style event selection for the standard trap-and-hole model.
+//!
+//! At each profile state, the engine constructs every enabled microscopic
+//! pathway, samples an exponential waiting time for each independent 
+//! process, and advances to the shortest lifetime. The temperature profile's
+//! maximum step competes as an inert [`common::charge_transfer::Event::None`]
+//! candidate so rates are
+//! rebuilt whenever temperature changes by one kelvin or a control-point
+//! boundary is reached.
+
 use common::charge_transfer::{ElectronicState, Event, Candidate, TimedCandidate, RecordedEvent}; 
 use common::place_ids::{PlaceAvailability, PlaceId};
 use common::trap_hole_band_tail::{TrapParameterLayout, TrapParameters};
@@ -18,6 +28,10 @@ use io::outputs::append_monte_carlo_experiment_batch_to_file;
 use rand::Rng;
 use std::path::Path;
 
+/// Calculate thermal ground/excited occupation probabilities for one trap family.
+///
+/// The weights follow the two-state balance between Arrhenius excitation and
+/// the configured excited-to-ground relaxation frequency.
 fn state_weights(
     parameters: &TrapParameters,
     temperature: Float,
@@ -31,6 +45,11 @@ fn state_weights(
     .ok_or_else(|| "could not calculate ground/excited-state weights".to_string())
 }
 
+/// Construct the one system-wide irradiation-filling candidate.
+///
+/// Dose rate is converted from the configured denominator to dose per second.
+/// The total hazard scales with the number of empty traps; a concrete target
+/// is deliberately deferred until the aggregate event wins.
 fn aggregate_filling_candidate(
     occupied_population: usize,
     total_population: usize,
@@ -62,6 +81,14 @@ fn aggregate_filling_candidate(
     )
 }
 
+/// Sample all enabled events and update the current minimum lifetime.
+///
+/// Localised tunnelling candidates are created for every occupied-source/
+/// available-destination pair using boundary-aware distances. Thermal release
+/// contributes two candidates per occupied trap, and filling contributes one
+/// population-level candidate.
+/// Trial [Candidate] rates are calculated from [common::charge_transfer::Candidate]
+/// These are converted to [TimedCandidate] and only retained if a shorter time is generated.
 fn build_candidates(
     places: &ElectronPlaces,
     trap_places: &PlaceAvailability,
@@ -138,6 +165,12 @@ fn build_candidates(
     Ok(())
 }
 
+/// Apply the selected event to trap and hole occupancy partitions.
+///
+/// Direct tunnelling has a destination already attached. A thermal-release
+/// event first performs a second distance-weighted competition between
+/// conduction-band recombination and retrapping destinations. The returned
+/// event is the fully resolved transition stored in output.
 fn apply_event(
     event: Event,
     places: &ElectronPlaces,
@@ -228,6 +261,13 @@ fn apply_event(
     Ok(event)
 }
 
+/// Choose where a conduction-band electron is captured.
+///
+/// Each active hole and, when enabled, each empty trap receives a sampled
+/// time proportional to `exp((r / mu)^2)`. The smallest time favours nearby
+/// centres. The current reciprocal-rate convention multiplies trap waiting
+/// times by `retrap_ratio`; larger positive ratios therefore make retrapping
+/// slower relative to the unit recombination factor.
 fn choose_delocalised_outcome(
     source: PlaceId,
     places: &ElectronPlaces,
@@ -289,6 +329,12 @@ fn choose_delocalised_outcome(
     
 }
 
+/// Resolve an aggregate irradiation event into population changes.
+///
+/// Irradiation first activates one previously inactive hole site. Normally it
+/// also occupies a uniformly selected empty trap. When filling-time
+/// recombination is enabled, a fixed 0.5 branch instead consumes an active
+/// hole; the returned [`Event::Filling`] records the selected identifiers.
 pub fn choose_filling_outcome(
     trap_places: &mut PlaceAvailability,
     hole_places: &mut PlaceAvailability,
@@ -338,6 +384,12 @@ pub fn choose_filling_outcome(
 
 }
 
+/// Run one standard kinetic Monte Carlo trajectory to the profile endpoint.
+///
+/// Competing exponential lifetimes are resampled after every physical event
+/// and temperature-profile boundary. The initial state and every resulting
+/// state are written as [`RecordedEvent`] values in batches using
+/// `results.capacity()` as the flush threshold.
 pub fn run_standard(
     places: &ElectronPlaces,
     trap_places: &mut PlaceAvailability,

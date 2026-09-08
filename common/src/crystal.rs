@@ -145,9 +145,11 @@ impl Boundary {
 ///
 #[derive(Debug, Clone)]
 pub struct Cube {
-    /// Trap, hole, and bandtail coordinates in this realization.
+    /// Number of localised electron traps in each spatial realisation.
     pub trap_total: usize,
+    /// Number of hole recombination sites in each spatial realisation.
     pub hole_total: usize,
+    /// Number of shallow band-tail states in each spatial realisation.
     pub bandtail_total: usize,
     /// Dimensions and boundary condition used by distance calculations.
     pub boundary: Boundary,
@@ -167,9 +169,12 @@ impl Cube {
         let boundary = Boundary::new(x, y, z, periodic)?;
         Ok(Self { trap_total, hole_total, bandtail_total, boundary })
     }
-    /// Create an empty cube whose capacities are derived from trap density.
+    /// Create a cube whose site counts are derived from trap density.
     ///
     /// `h_no` and `b_no` are counts per trap, not absolute counts.
+    /// If the requested volume contains fewer than `minimum_t` traps, every
+    /// dimension is scaled equally to preserve shape and density while making
+    /// the simulated ensemble large enough for Monte Carlo sampling.
     pub fn new_from_density<X: Numeric, Y: Numeric, Z: Numeric>(
         x: X,
         y: Y,

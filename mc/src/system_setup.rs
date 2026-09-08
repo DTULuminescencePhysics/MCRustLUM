@@ -20,13 +20,17 @@ use std::path::Path;
 pub struct MonteCarloSimulation {
     /// Original grouped configuration, retained for regeneration and reset.
     pub inputs: SimulationInputs,
-    /// Current spatial realisation of traps, holes, and bandtail states.
+    /// Simulation boundary and the numbers of traps, holes, and band-tail states.
+    ///
+    /// Actual coordinates are generated independently for each repetition.
     pub cube: Cube,
     /// Current time and temperature state.
     pub time_temperature: TimeTemperature,
     /// Enabled physical pathways and their rate equations.
     pub transitions: Transitions,
-    /// Number of repetitions performed within each experiment.
+    /// Number of independent stochastic repetitions performed per experiment.
+    ///
+    /// The field name preserves the crate's existing `repetions` spelling.
     pub repetions: usize,
     /// Number of independent experiments to run.
     pub experiments: usize,
@@ -68,10 +72,12 @@ impl MonteCarloSimulation {
         })
     }
 
-    /// Generate a cube with new random site coordinates.
+    /// Generate the simulation boundary and derive its site counts.
     ///
     /// The trap count is derived from the configured density and volume. Hole
-    /// and bandtail counts are interpreted as ratios per trap.
+    /// and bandtail counts are interpreted as ratios per trap. If this would
+    /// create fewer than `minimum_t` traps, the volume is enlarged isotropically
+    /// while preserving the requested density.
     pub fn generate_cube(inputs: &CubeSpecification,  minimum_t:usize,) -> Result<Cube, String> {
         Cube::new_from_density(
             inputs.x,

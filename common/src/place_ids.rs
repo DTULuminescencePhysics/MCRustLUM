@@ -2,46 +2,52 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Place Ids are used to uniquely identify each trap, hole or bandtail state 
-//! 
+//! Compact identifiers and constant-time occupancy partitions for physical sites.
+//!
+//! A [`crate::place_ids::PlaceAvailability`] stores one population as a permutation split into
+//! available and unavailable prefixes. Swapping an identifier across that
+//! split changes occupancy without scanning the full crystal, which is
+//! important when every Monte Carlo event updates multiple site populations.
 
 use crate::numeric::Float;
 use serde::{Deserialize, Serialize};
 use rand::Rng;
 
-/// Holds the unique id of each trap. This currently is set to u16
-/// limiting the number of traps to just over 65,000 which
-/// should for now be sufficient.
+/// Compact zero-based identifier for a trap, hole, or band-tail site.
+///
+/// The `u16` representation limits each site collection to fewer than 65,536
+/// entries and keeps serialized event records small.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlaceId(u16);
 
 impl PlaceId {
+    /// Convert a zero-based site index into the compact on-disk identifier.
+    ///
+    /// Returns an error when the index cannot be represented by `u16`.
     pub fn new(index: usize) -> Result<Self, String> {
         let index = u16::try_from(index).map_err(|_| "trap count exceeds u16::MAX".to_string())?;
 
         Ok(Self(index))
     }
 
+    /// Return this identifier as a zero-based collection index.
     pub fn index(self) -> usize {
         self.0 as usize
     }
 }
 
-/// Holds the PlaceIds for traps, holes or bandtail states.
-/// Available places are kept at the front of the ids list and
-/// currently unavailable places are at the back
-/// [ available Ids | unavailable Ids ]
-///                 ^
-///           available_count
-/// The two extremes of this are then
-/// [ unavailable Ids ] and [ available Ids ]
-/// ^                    |                  ^
-/// available_count      |                  available_count
+/// Constant-time partition of site identifiers by their current availability.
+///
+/// Available identifiers occupy `ids[..available_count]`; unavailable ones
+/// occupy the remaining suffix. A reverse-position table lets an event move a
+/// known identifier across the boundary with a single swap. The physical
+/// meaning is population-specific: an available trap is electron occupied,
+/// while an available hole site contains a hole that can recombine.
 #[derive(Debug)]
 pub struct PlaceAvailability {
-    /// A permutation containing every PlaceIf exactly once.
+    /// A permutation containing every [`PlaceId`] exactly once.
     ids: Box<[PlaceId]>,
-    /// positions[position_id] gives that place's current index in `ids`.
+    /// `positions[position_id]` gives that place's current index in `ids`.
     positions: Box<[u16]>,
     /// ids[..available_count] are available.
     available_count: usize,
@@ -84,6 +90,10 @@ impl PlaceAvailability {
             return Ok(places);
         }
     }
+    /// Uniformly sample `n` currently unavailable sites without replacement.
+    ///
+    /// The selected identifiers are moved into the available partition. This
+    /// is used to realise fractional initial trap and hole populations.
     pub fn randomly_make_available(&mut self, n: usize, rng: &mut impl Rng) -> Result<(), String> {
         let unavailable_count = self.ids.len() - self.available_count;
         if n > unavailable_count {
@@ -105,13 +115,19 @@ impl PlaceAvailability {
         Ok(())
     }
 
+    /// Move every identifier into the unavailable partition.
+    ///
+    /// For traps this represents an empty occupied-electron set; the meaning
+    /// of availability is intentionally supplied by the calling population.
     pub fn mark_all_occupied(&mut self) {
         self.available_count = 0;
     }
 
+    /// Move every identifier into the available partition.
     pub fn mark_all_available(&mut self) {
         self.available_count = self.ids.len();
     }
+    /// Return the fixed number of sites represented by this partition.
     pub fn total(&self) -> usize {
         self.ids.len()
     }
@@ -140,6 +156,11 @@ impl PlaceAvailability {
         self.available_count
     }
 
+    /// Return the available population as a fraction of the total population.
+    ///
+    /// In the Monte Carlo trap collection, available identifiers are occupied
+    /// electron traps, so this value is the simulated trap filling fraction.
+    /// An empty collection produces IEEE `NaN` through `0.0 / 0.0`.
     pub fn fill_ratio(&self) -> Float {
         self.available_count() as Float / self.ids.len() as Float
     }

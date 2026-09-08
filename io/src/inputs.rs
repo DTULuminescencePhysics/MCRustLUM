@@ -2,8 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Contains various structs to store all input data. currently this is in a single module
-//! however as more functionality is added that may change. 
+//! Strongly typed configuration for crystal geometry and charge-transfer physics.
+//!
+//! Each structure corresponds to a TOML section. Vector-valued physical
+//! parameters either contain one value shared by every experiment or one
+//! value per experiment; the Monte Carlo setup validates that indexing when a
+//! run is constructed.
 
 use common::constants::time::TimeUnit;
 use common::constants::temperature::TemperatureUnit;
@@ -16,11 +20,17 @@ use common::numeric::{Float, TimeFloat};
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
 #[serde(default)]
 pub struct CubeSpecification {
-    /// Unit-cell height in metres.
+    /// Unit-cell height in metres, retained for future lattice-aware placement.
+    ///
+    /// Current site generation samples a continuum and does not use this value.
     pub uc_h: Float,
-    /// Unit-cell width in metres.
+    /// Unit-cell width in metres, retained for future lattice-aware placement.
+    ///
+    /// Current site generation samples a continuum and does not use this value.
     pub uc_w: Float,
-    /// Unit-cell length in metres.
+    /// Unit-cell length in metres, retained for future lattice-aware placement.
+    ///
+    /// Current site generation samples a continuum and does not use this value.
     pub uc_l: Float,
     /// Cube extent along the x axis in metres.
     pub x: Float,
@@ -88,17 +98,23 @@ impl Default for TimeTempSpecification {
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 #[serde(default)]
 pub struct TrapEnergies {
-    /// Mean localised-state energies.
+    /// Ground-to-excited localised-state energy gaps, in eV.
     pub e_loc: Vec<Float>,
-    /// Mean conduction-band activation energies.
+    /// Ground-state activation energies for conduction-band release, in eV.
     pub e_cb: Vec<Float>,
-    /// Standard deviation associated with each localised energy.
+    /// Standard deviation associated with each localised energy, in eV.
+    ///
+    /// This is parsed and stored but the current homogeneous layout does not
+    /// yet sample an energy distribution from it.
     pub e_loc_sigma: Vec<Float>,
-    /// Standard deviation associated with each conduction-band energy.
+    /// Standard deviation associated with each conduction-band energy, in eV.
+    ///
+    /// This is parsed and stored but the current homogeneous layout does not
+    /// yet sample an energy distribution from it.
     pub e_cb_sigma: Vec<Float>,
-    /// Rate of moving from ground to excited state
+    /// Attempt frequency for thermal excitation from ground to excited state, in s⁻¹.
     pub s_frequency_e: Vec<Float>, 
-    /// Rate of moving from excited to ground state
+    /// Relaxation frequency from excited to ground state, in s⁻¹.
     pub s_frequency_g: Vec<Float>, 
 }
 
@@ -118,9 +134,9 @@ impl Default for TrapEnergies {
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 #[serde(default)]
 pub struct InitialConditions {
-    /// Percentage of traps available at start of simulation
+    /// Initial occupied-trap fraction, expressed from `0.0` through `1.0`.
     pub trap_available: Vec<Float>,
-    /// Percentage of holes available at start of simulation
+    /// Initial active-hole fraction, expressed from `0.0` through `1.0`.
     pub hole_available: Vec<Float>,
     
 }
@@ -145,7 +161,9 @@ pub struct LocalisedInputs {
     pub gs_retrap: bool,
     /// Enable excited-state localised retrapping.
     pub es_retrap: bool,
-    /// Enable variable-range hopping when supported by the simulation.
+    /// Request variable-range hopping in a future transport model.
+    ///
+    /// The current standard runner stores but does not act on this flag.
     pub vrh: bool,
     /// Ground-state attempt frequencies.
     pub b_gs: Vec<Float>,
@@ -187,9 +205,14 @@ pub struct DeLocalisedInputs {
     pub s_gs: Vec<Float>,
     /// Excited-state frequency factors.
     pub s_es: Vec<Float>,
-    /// 
+    /// Characteristic length in the distance-dependent conduction-band capture model.
+    ///
+    /// Values use the same length unit as the generated site coordinates.
     pub mu: Vec<Float>,
-    /// Relative retrapping strengths for each configured trap family.
+    /// Factors multiplying delocalised retrapping mean waiting times.
+    ///
+    /// Positive values participate in conduction-band destination selection;
+    /// zero disables retrapping for that trap family.
     pub retrap_ratio: Vec<Float>,
 }
 
@@ -221,7 +244,10 @@ pub struct FillingInputs {
     pub dd_unit: TimeUnit,
     /// Allow recombination while the system is being filled.
     pub cmbn_whn_fll: bool,
-    /// Recombination prefactors used during filling.
+    /// Recombination prefactors reserved for a future filling model.
+    ///
+    /// The current filling-time recombination branch uses a fixed probability
+    /// and does not read these values.
     pub recm_pre_fll: Vec<Float>,
 }
 
@@ -377,4 +403,3 @@ mod tests {
         
 
     
-

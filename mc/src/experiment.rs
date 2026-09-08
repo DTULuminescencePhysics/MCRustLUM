@@ -2,6 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
+//! Construction and execution of one Monte Carlo repetition.
+//!
+//! An experiment owns its independently randomized site coordinates,
+//! occupancy partitions, temperature-profile state, and random-number stream.
+//! Trap-family parameters may vary between experiment indices while remaining
+//! uniform across all traps within one current experiment.
+
 use crate::calculate_times::run_standard;
 use common::charge_transfer::RecordedEvent;
 use common::crystal::Cube;
@@ -16,6 +23,11 @@ use std::path::Path;
 use rand::rngs::StdRng;
 use common::random::get_std_rng_for_rep;
 
+/// Select a scalar parameter for an experiment from a configuration vector.
+///
+/// A singleton vector is broadcast to every experiment. Longer vectors are
+/// indexed by `experiment_index`, allowing parameter-sweep runs; empty and
+/// undersized vectors return a field-specific error.
 pub fn experiment_value(
     values: &[Float],
     experiment_index: usize,
@@ -34,6 +46,11 @@ pub fn experiment_value(
     }
 }
 
+/// Build the homogeneous trap-parameter layout for one experiment index.
+///
+/// Each physical parameter follows [`experiment_value`] broadcasting rules.
+/// The excited conduction-band barrier is derived inside
+/// [`TrapParameterLayout::new_uniform`] from the localised-state energy gap.
 pub fn new_uniform_trap_layout(
     inputs: &SimulationInputs,
     exp: &usize,
@@ -66,30 +83,52 @@ pub fn new_uniform_trap_layout(
     ))
 }
 
-/// Holds
+/// Mutable state for one independently randomized Monte Carlo repetition.
+///
+/// The variant records whether the spatial model includes shallow band-tail
+/// sites. Only [`MCExperiment::Standard`] currently has a kinetic runner.
 pub enum MCExperiment {
-    /// Contains experiment parts for standard run
+    /// A trap-and-hole model without band-tail transport.
     Standard {
+        /// Randomized trap and hole coordinates.
         places: ElectronPlaces,
+        /// Partition whose available traps are electron occupied.
         trap_places: PlaceAvailability,
+        /// Partition whose available sites contain recombining holes.
         hole_places: PlaceAvailability,
+        /// Physical parameter assignment for every trap.
         trap_parameters: TrapParameterLayout,
+        /// Independent mutable copy of the experimental profile.
         time_temperature: TimeTemperature,
+        /// Repetition-specific random-number generator.
         rng: StdRng,
     },
-    /// Contains parts for experiment with bandtails
+    /// A spatial model that also contains band-tail states.
     WithBandtail {
+        /// Randomized trap, hole, and band-tail coordinates.
         places: ElectronPlaces,
+        /// Partition whose available traps are electron occupied.
         trap_places: PlaceAvailability,
+        /// Partition whose available sites contain recombining holes.
         hole_places: PlaceAvailability,
+        /// Occupancy partition for band-tail states.
         bandtail_places: PlaceAvailability,
+        /// Physical parameter assignment for every trap.
         trap_parameters: TrapParameterLayout,
+        /// Independent mutable copy of the experimental profile.
         time_temperature: TimeTemperature,
+        /// Repetition-specific random-number generator.
         rng: StdRng,
     },
 }
 
 impl MCExperiment {
+    /// Randomize site positions and initial populations for one repetition.
+    ///
+    /// `trap_available` is the requested number of initially occupied traps;
+    /// `hole_available` is the number of active hole centres. The `rep` index
+    /// derives a deterministic random seed, while `exp` selects any
+    /// experiment-dependent physical parameter values.
     pub fn initialise(
         cube: &Cube,
         inputs: &SimulationInputs,
@@ -132,6 +171,11 @@ impl MCExperiment {
         }
     }
 
+    /// Execute this repetition and stream its records to `output_file`.
+    ///
+    /// The output is truncated before a standard run and then written in
+    /// bounded batches. Band-tail kinetics currently return an explicit error
+    /// without creating output.
     pub fn run(
         &mut self,
         cube: &Cube,

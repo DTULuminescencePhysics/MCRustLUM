@@ -14,11 +14,17 @@ use std::path::{Component, Path, PathBuf};
 #[derive(Debug)]
 pub enum FilesystemError {
     /// A supplied folder name was empty, nested, or otherwise unsafe.
-    InvalidFolderName { name: PathBuf },
+    InvalidFolderName {
+        /// Rejected path supplied as the experiment name.
+        name: PathBuf,
+    },
     /// A filesystem operation failed.
     Operation {
+        /// Human-readable filesystem operation being attempted.
         action: &'static str,
+        /// Path on which the operation failed.
         path: PathBuf,
+        /// Underlying filesystem error.
         source: std::io::Error,
     },
     /// Every representable automatic experiment number was already occupied.
@@ -54,6 +60,7 @@ impl Error for FilesystemError {
     }
 }
 
+/// Create an error adapter that adds operation and path context to an I/O error.
 fn operation_error(
     action: &'static str,
     path: &Path,
@@ -66,6 +73,10 @@ fn operation_error(
     }
 }
 
+/// Require an experiment name to be exactly one normal path component.
+///
+/// This prevents absolute paths and traversal components from escaping the
+/// workspace's `run/` directory.
 fn validate_folder_name(name: &OsStr) -> Result<(), FilesystemError> {
     let path = Path::new(name);
     let mut components = path.components();
@@ -81,6 +92,7 @@ fn validate_folder_name(name: &OsStr) -> Result<(), FilesystemError> {
     }
 }
 
+/// Atomically create the first free `experiment_N` directory.
 fn create_numbered_directory(run_directory: &Path) -> Result<PathBuf, FilesystemError> {
     for number in 1..=usize::MAX {
         let experiment_directory = run_directory.join(format!("experiment_{number}"));
@@ -100,6 +112,11 @@ fn create_numbered_directory(run_directory: &Path) -> Result<PathBuf, Filesystem
     Err(FilesystemError::ExperimentNumberExhausted)
 }
 
+/// Create a complete run directory while keeping setup failures recoverable.
+///
+/// The source input is checked before consuming an automatic number. If
+/// creation of `tmp/` or the input copy fails, directories created by this
+/// call are removed on a best-effort basis.
 fn create_experiment_directory(
     starting_directory: &Path,
     folder_name: Option<&OsStr>,

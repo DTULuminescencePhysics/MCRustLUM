@@ -199,7 +199,7 @@ where
     back_cb.element_sub(&to_cb)
 }
 
-// /// Calculate the net change in conduction-band carrier concentration.
+/// Calculate the net change in conduction-band carrier concentration.
 ///
 /// Thermal release supplies carriers to the conduction band, while
 /// retrapping and recombination remove them. This implementation follows

@@ -9,6 +9,8 @@
 //! [`SimulationInputs`] type, so downstream simulation code does not need to
 //! know where the values came from.
 
+#![warn(missing_docs)]
+
 /// Typed groups corresponding to the sections of an input TOML file.
 pub mod inputs;
 

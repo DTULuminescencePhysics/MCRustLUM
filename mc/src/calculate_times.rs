@@ -187,10 +187,10 @@ fn apply_event(
             }
 
             match outcome {
-                (TimedCandidate {
+                TimedCandidate {
                     event: selected_event @ Event::DelocalisedRecombination { hole, .. },
                     ..
-                }) => {
+                } => {
                     if !hole_places.make_unavailable(hole) {
                         return Err(format!(
                             "delocalised recombination hole {hole:?} was not available"
@@ -198,10 +198,10 @@ fn apply_event(
                     }
                     return Ok(selected_event);
                 }
-                (TimedCandidate {
+                TimedCandidate {
                     event: selected_event @ Event::DelocalisedRetrapping { destination, .. },
                     ..
-                }) => {
+                } => {
                     if !trap_places.make_available(destination) {
                         return Err(format!(
                             "delocalised retrapping destination {destination:?} was occupied"
@@ -240,20 +240,14 @@ fn choose_delocalised_outcome(
     rng: &mut impl Rng,
 ) -> Result<TimedCandidate, String> {
     let mu = parameters.delocalised_mu;
-    let recombination_prefactor = parameters.retrap_ratio;
+    let recombination_prefactor = 1.0;
 
     if !mu.is_finite() || mu <= 0.0 {
         return Err(format!(
             "delocalised mu must be finite and greater than zero, got {mu}"
         ));
     }
-    if !recombination_prefactor.is_finite() || !(0.0..=1.0).contains(&recombination_prefactor) {
-        return Err(format!(
-            "delocalised retrap_ratio must be between zero and one, got {recombination_prefactor}"
-        ));
-    }
-
-    let retrapping_prefactor = 1.0 - recombination_prefactor;
+   
     let source_position = &places.traps()[source.index()];
     
     let mut current_shortest = TimedCandidate::new_negative_time();
@@ -273,7 +267,8 @@ fn choose_delocalised_outcome(
         )?;
     }
 
-    if transitions.get_conduction_band_retrapping(){
+    if transitions.get_conduction_band_retrapping() && parameters.retrap_ratio > 0.0 {
+        let retrapping_prefactor = recombination_prefactor*parameters.retrap_ratio;
         for &destination in trap_places.unavailable() {
             let distance = cube.distance(source_position, &places.traps()[destination.index()]);
             
@@ -384,7 +379,12 @@ pub fn run_standard(
             rng,
             &mut next_event,
         )?;
-
+    //     match next_event.event{
+    //          Event::LocalisedRetrapping{source, destination, state} => {
+    //              print!("Source: {}| destination: {}", source.index(), destination.index());
+    //          },
+    //          _ => {}
+    //     };
         let signed_event_dt = direction * next_event.time;
         time_temperature.advance(signed_event_dt);
         let applied_event = apply_event(

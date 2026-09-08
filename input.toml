@@ -37,25 +37,25 @@ hole_available = [1]
 [localised]
 gs_tun = true
 es_tun = true
-gs_retrap = false
-es_retrap = false
+gs_retrap = true
+es_retrap = true
 vrh = false
 b_gs = [1.2e12]
 b_es = [1.2e12]
-alpha_gs = [9.0e12]
+alpha_gs = [9.0e9]
 alpha_es = [9.0e9]
 
 [delocalised]
 gs_cb = true
 es_cb = true
-retrap = false
+retrap = true
 s_gs = [1.2e12]
 s_es = [1.2e12]
 mu = [0.1]
-retrap_ratio = [0.0]
+retrap_ratio = [0.5]
 
 [filling]
-fill = false
+fill = true
 d0 = [400.0]
 d_dot = [1.0]
 dd_unit = "second"

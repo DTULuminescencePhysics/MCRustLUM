@@ -18,12 +18,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
-
     let inputs = io::read_inputs("input.toml")?;
-    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 10, 1)?;
+    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 10, 1,25)?;
 
     monte_carlo.run()?;
     mc::average::average_fill()?;
+    mc::average::average_events()?;
 
     Ok(())
 }

@@ -4,9 +4,12 @@
 
 //! Consolidation of repeated Monte Carlo trajectories.
 
-use common::charge_transfer::RecordedEvent;
+use common::charge_transfer::{ElectronicState, Event, RecordedEvent};
 use common::numeric::{Float, TimeFloat};
-use io::outputs::{BatchReader, ContinuousValueRow, read_all_batches, write_continuous_values_csv};
+use io::outputs::{
+    AverageEventRow, BatchReader, ContinuousValueRow, read_all_batches, write_average_events_csv,
+    write_continuous_values_csv,
+};
 use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,7 +17,8 @@ use std::vec::IntoIter;
 
 const TEMPORARY_DIRECTORY: &str = "tmp";
 const AVERAGE_FILL_FILE: &str = "average_fill.csv";
-const AVERAGE_EVENT_FILE: &str = "average_fill.csv";
+const AVERAGE_EVENT_FILE: &str = "average_event.csv";
+const EVENT_BIN_WIDTH: TimeFloat = 0.1;
 
 struct RecordStream {
     path: PathBuf,
@@ -83,9 +87,59 @@ impl Direction {
 struct AverageFillRows {
     cursors: Vec<TrajectoryCursor>,
     direction: Direction,
-    fill_sum: Float,
     first: Option<ContinuousValueRow>,
     finished: bool,
+}
+
+struct FillStatistics {
+    mean: Float,
+    standard_deviation: Float,
+    median: Float,
+    quantile_0_1: Float,
+    quantile_0_9: Float,
+}
+
+impl FillStatistics {
+    fn from_values(mut values: Vec<Float>) -> Self {
+        debug_assert!(!values.is_empty());
+        values.sort_by(Float::total_cmp);
+
+        let mean = values.iter().sum::<Float>() / values.len() as Float;
+        let variance = values
+            .iter()
+            .map(|value| (value - mean).powi(2))
+            .sum::<Float>()
+            / values.len() as Float;
+
+        Self {
+            mean,
+            standard_deviation: variance.sqrt(),
+            median: quantile(&values, 0.5),
+            quantile_0_1: quantile(&values, 0.1),
+            quantile_0_9: quantile(&values, 0.9),
+        }
+    }
+
+    fn row(self, time: TimeFloat, temperature: Float) -> ContinuousValueRow {
+        ContinuousValueRow {
+            time,
+            temperature,
+            fill: self.mean,
+            fill_standard_deviation: self.standard_deviation,
+            fill_median: self.median,
+            fill_quantile_0_1: self.quantile_0_1,
+            fill_quantile_0_9: self.quantile_0_9,
+        }
+    }
+}
+
+fn quantile(sorted_values: &[Float], probability: Float) -> Float {
+    let position = probability * (sorted_values.len() - 1) as Float;
+    let lower_index = position.floor() as usize;
+    let upper_index = position.ceil() as usize;
+    let fraction = position - lower_index as Float;
+    sorted_values[lower_index]
+        + fraction * (sorted_values[upper_index] - sorted_values[lower_index])
 }
 
 impl AverageFillRows {
@@ -93,7 +147,7 @@ impl AverageFillRows {
         let mut cursors = Vec::with_capacity(paths.len());
         let mut initial_time = None;
         let mut initial_temperature_sum = 0.0;
-        let mut fill_sum = 0.0;
+        let mut initial_fills = Vec::with_capacity(paths.len());
 
         for path in paths {
             let mut stream = RecordStream::open(path.clone())?;
@@ -115,7 +169,7 @@ impl AverageFillRows {
             }
 
             initial_temperature_sum += first.temperature;
-            fill_sum += first.fill;
+            initial_fills.push(first.fill);
             let next = stream.next_record()?;
             if let Some(record) = &next {
                 validate_record(&path, record)?;
@@ -153,16 +207,14 @@ impl AverageFillRows {
         }
 
         let count = cursors.len() as Float;
-        let first = ContinuousValueRow {
-            time: initial_time.expect("at least one path is required"),
-            temperature: initial_temperature_sum / count,
-            fill: fill_sum / count,
-        };
+        let first = FillStatistics::from_values(initial_fills).row(
+            initial_time.expect("at least one path is required"),
+            initial_temperature_sum / count,
+        );
 
         Ok(Self {
             cursors,
             direction,
-            fill_sum,
             first: Some(first),
             finished: false,
         })
@@ -227,11 +279,9 @@ impl Iterator for AverageFillRows {
 
         let mut temperature_sum = 0.0;
         let mut temperature_count = 0usize;
-        let mut fill_sum = 0.0;
         for cursor in &mut self.cursors {
             match Self::advance_cursor_at(cursor, time, self.direction) {
                 Ok((cursor_temperature_sum, cursor_temperature_count)) => {
-                    fill_sum += cursor.fill;
                     temperature_sum += cursor_temperature_sum;
                     temperature_count += cursor_temperature_count;
                 }
@@ -241,24 +291,20 @@ impl Iterator for AverageFillRows {
                 }
             }
         }
-        self.fill_sum = fill_sum;
-
         if temperature_count == 0 {
             self.finished = true;
             return Some(Err(format!("no temperature was recorded at time {time}")));
         }
 
-        Some(Ok(ContinuousValueRow {
-            time,
-            temperature: temperature_sum / temperature_count as Float,
-            fill: self.fill_sum / self.cursors.len() as Float,
-        }))
+        let fills = self.cursors.iter().map(|cursor| cursor.fill).collect();
+        Some(Ok(FillStatistics::from_values(fills)
+            .row(time, temperature_sum / temperature_count as Float)))
     }
 }
 
 struct EventBin {
     start_time: TimeFloat,
-    end_time: TimeFloat, 
+    end_time: TimeFloat,
 
     localised_recombination_ground_count: usize,
     localised_recombination_excited_count: usize,
@@ -269,43 +315,163 @@ struct EventBin {
     localised_retrapping_excited_count: usize,
     delocalised_retrapping_ground_count: usize,
     delocalised_retrapping_excited_count: usize,
-    
-    filling_count: usize
 
+    ground_count: usize,
+    excited_count: usize,
+
+    recombination_count: usize,
+    retrapping_count: usize,
+
+    filling_count: usize,
 }
 
-struct AverageEventRows {
-    cursors: Vec<TrajectoryCursor>,
-    direction: Direction,
-    fill_sum: Float,
-    first: Option<ContinuousValueRow>,
-    finished: bool,
+impl EventBin {
+    fn new(index: usize) -> Self {
+        Self {
+            start_time: index as TimeFloat * EVENT_BIN_WIDTH,
+            end_time: (index + 1) as TimeFloat * EVENT_BIN_WIDTH,
+            localised_recombination_ground_count: 0,
+            localised_recombination_excited_count: 0,
+            delocalised_recombination_ground_count: 0,
+            delocalised_recombination_excited_count: 0,
+            localised_retrapping_ground_count: 0,
+            localised_retrapping_excited_count: 0,
+            delocalised_retrapping_ground_count: 0,
+            delocalised_retrapping_excited_count: 0,
+            ground_count: 0,
+            excited_count: 0,
+            recombination_count: 0,
+            retrapping_count: 0,
+            filling_count: 0,
+        }
+    }
 
+    fn record(&mut self, event: Event) {
+        match event {
+            Event::LocalisedRecombination {
+                state: ElectronicState::Ground,
+                ..
+            } => {
+                self.localised_recombination_ground_count += 1;
+                self.ground_count += 1;
+                self.recombination_count += 1;
+            }
+            Event::LocalisedRecombination {
+                state: ElectronicState::Excited,
+                ..
+            } => {
+                self.localised_recombination_excited_count += 1;
+                self.excited_count += 1;
+                self.recombination_count += 1;
+            }
+            Event::DelocalisedRecombination {
+                state: ElectronicState::Ground,
+                ..
+            } => {
+                self.delocalised_recombination_ground_count += 1;
+                self.ground_count += 1;
+                self.recombination_count += 1;
+            }
+            Event::DelocalisedRecombination {
+                state: ElectronicState::Excited,
+                ..
+            } => {
+                self.delocalised_recombination_excited_count += 1;
+                self.excited_count += 1;
+                self.recombination_count += 1;
+            }
+            Event::LocalisedRetrapping {
+                state: ElectronicState::Ground,
+                ..
+            } => {
+                self.localised_retrapping_ground_count += 1;
+                self.ground_count += 1;
+                self.retrapping_count += 1;
+            }
+            Event::LocalisedRetrapping {
+                state: ElectronicState::Excited,
+                ..
+            } => {
+                self.localised_retrapping_excited_count += 1;
+                self.excited_count += 1;
+                self.retrapping_count += 1;
+            }
+            Event::DelocalisedRetrapping {
+                state: ElectronicState::Ground,
+                ..
+            } => {
+                self.delocalised_retrapping_ground_count += 1;
+                self.ground_count += 1;
+                self.retrapping_count += 1;
+            }
+            Event::DelocalisedRetrapping {
+                state: ElectronicState::Excited,
+                ..
+            } => {
+                self.delocalised_retrapping_excited_count += 1;
+                self.excited_count += 1;
+                self.retrapping_count += 1;
+            }
+
+            Event::Filling { .. } => self.filling_count += 1,
+            Event::None => {}
+            _ => {}
+        }
+    }
+
+    fn averaged(self, repetition_count: usize) -> AverageEventRow {
+        debug_assert!(self.end_time > self.start_time);
+        let repetitions = repetition_count as Float * EVENT_BIN_WIDTH as Float;
+        AverageEventRow {
+            time: self.end_time,
+            localised_recombination_ground_count: self.localised_recombination_ground_count
+                as Float
+                / repetitions,
+            localised_recombination_excited_count: self.localised_recombination_excited_count
+                as Float
+                / repetitions,
+            delocalised_recombination_ground_count: self.delocalised_recombination_ground_count
+                as Float
+                / repetitions,
+            delocalised_recombination_excited_count: self.delocalised_recombination_excited_count
+                as Float
+                / repetitions,
+            localised_retrapping_ground_count: self.localised_retrapping_ground_count as Float
+                / repetitions,
+            localised_retrapping_excited_count: self.localised_retrapping_excited_count as Float
+                / repetitions,
+            delocalised_retrapping_ground_count: self.delocalised_retrapping_ground_count as Float
+                / repetitions,
+            delocalised_retrapping_excited_count: self.delocalised_retrapping_excited_count
+                as Float
+                / repetitions,
+            ground_count: self.ground_count as Float / repetitions,
+            excited_count: self.excited_count as Float / repetitions,
+            recombination_count: self.recombination_count as Float / repetitions,
+            retrapping_count: self.retrapping_count as Float / repetitions,
+            filling_count: self.filling_count as Float / repetitions,
+        }
+    }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+fn initial_event_row() -> AverageEventRow {
+    AverageEventRow {
+        time: 0.0,
+        localised_recombination_ground_count: 0.0,
+        localised_recombination_excited_count: 0.0,
+        delocalised_recombination_ground_count: 0.0,
+        delocalised_recombination_excited_count: 0.0,
+        localised_retrapping_ground_count: 0.0,
+        localised_retrapping_excited_count: 0.0,
+        delocalised_retrapping_ground_count: 0.0,
+        delocalised_retrapping_excited_count: 0.0,
+        ground_count: 0.0,
+        excited_count: 0.0,
+        recombination_count: 0.0,
+        retrapping_count: 0.0,
+        filling_count: 0.0,
+    }
+}
 fn validate_record(path: &Path, record: &RecordedEvent) -> Result<(), String> {
     if !record.time.is_finite() {
         return Err(format!("{} contains a non-finite time", path.display()));
@@ -378,10 +544,71 @@ pub fn average_fill_in(
     write_continuous_values_csv(output_file, rows).map_err(|error| error.to_string())
 }
 
+/// Average event counts from `tmp/` into fixed-width bins and write
+/// `average_event.csv` in the current experiment directory.
+pub fn average_events() -> Result<(), String> {
+    average_events_in(TEMPORARY_DIRECTORY, AVERAGE_EVENT_FILE)
+}
+
+/// Average temporary event trajectories from `temporary_directory` into
+/// `output_file`.
+pub fn average_events_in(
+    temporary_directory: impl AsRef<Path>,
+    output_file: impl AsRef<Path>,
+) -> Result<(), String> {
+    let paths = temporary_result_paths(temporary_directory.as_ref())?;
+    let repetition_count = paths.len();
+    let mut bins = Vec::<EventBin>::new();
+
+    for path in paths {
+        let batches =
+            read_all_batches::<RecordedEvent>(&path).map_err(|error| error.to_string())?;
+        for batch in batches {
+            for record in batch.map_err(|error| error.to_string())? {
+                validate_record(&path, &record)?;
+                if record.time < 0.0 {
+                    return Err(format!(
+                        "{} contains a negative time {}, which cannot be placed in bins starting at zero",
+                        path.display(),
+                        record.time,
+                    ));
+                }
+
+                let endpoint = (record.time / EVENT_BIN_WIDTH).ceil();
+                if endpoint > usize::MAX as TimeFloat {
+                    return Err(format!(
+                        "{} contains a time too large to bin: {}",
+                        path.display(),
+                        record.time,
+                    ));
+                }
+                let bins_through_record = endpoint as usize;
+                while bins.len() < bins_through_record {
+                    bins.push(EventBin::new(bins.len()));
+                }
+
+                if record.event != Event::None {
+                    let bin_index = bins_through_record.saturating_sub(1);
+                    if bins.is_empty() {
+                        bins.push(EventBin::new(0));
+                    }
+                    bins[bin_index].record(record.event);
+                }
+            }
+        }
+    }
+
+    let rows = std::iter::once(initial_event_row())
+        .chain(bins.into_iter().map(|bin| bin.averaged(repetition_count)))
+        .map(Ok::<_, std::convert::Infallible>);
+    write_average_events_csv(output_file, rows).map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use common::charge_transfer::Event;
+    use common::place_ids::PlaceId;
     use io::outputs::{
         append_monte_carlo_experiment_batch_to_file, create_monte_carlo_experiment_file,
     };
@@ -412,6 +639,15 @@ mod tests {
             temperature,
             fill,
             event: Event::None,
+        }
+    }
+
+    fn event_record(time: TimeFloat, event: Event) -> RecordedEvent {
+        RecordedEvent {
+            time,
+            temperature: 300.0,
+            fill: 0.5,
+            event,
         }
     }
 
@@ -451,17 +687,33 @@ mod tests {
         let contents = fs::read_to_string(&output_file).unwrap();
         fs::remove_dir_all(directory).unwrap();
 
+        let mut lines = contents.lines();
         assert_eq!(
-            contents,
-            concat!(
-                "time,temperature,fill\n",
-                "0,100,0.4\n",
-                "1,110,0.5\n",
-                "2,120,0.6000000000000001\n",
-                "3,130,0.30000000000000004\n",
-                "4,140,0.5\n",
-            )
+            lines.next().unwrap(),
+            "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9"
         );
+        let rows = lines
+            .map(|line| {
+                line.split(',')
+                    .map(|value| value.parse::<Float>().unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let expected = [
+            [0.0, 100.0, 0.4, 0.2, 0.4, 0.24, 0.56],
+            [1.0, 110.0, 0.5, 0.3, 0.5, 0.26, 0.74],
+            [2.0, 120.0, 0.6, 0.2, 0.6, 0.44, 0.76],
+            [3.0, 130.0, 0.3, 0.1, 0.3, 0.22, 0.38],
+            [4.0, 140.0, 0.5, 0.1, 0.5, 0.42, 0.58],
+        ];
+
+        assert_eq!(rows.len(), expected.len());
+        for (row, expected_row) in rows.iter().zip(expected) {
+            assert_eq!(row.len(), expected_row.len());
+            for (actual, expected) in row.iter().zip(expected_row) {
+                assert!((actual - expected).abs() < 1e-12, "{actual} != {expected}");
+            }
+        }
     }
 
     #[test]
@@ -505,5 +757,96 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
 
         assert_eq!(times, vec![4.0, 3.0, 2.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn bins_events_and_averages_counts_over_repetitions() {
+        let directory = temporary_directory();
+        let temporary_directory = directory.join("tmp");
+        let output_file = directory.join("average_event.csv");
+        fs::create_dir(&temporary_directory).unwrap();
+        let place = PlaceId::new(0).unwrap();
+
+        write_records(
+            &temporary_directory.join("experiment_results_0_0.bin.gz"),
+            &[
+                event_record(0.0, Event::None),
+                event_record(
+                    0.0005,
+                    Event::LocalisedRecombination {
+                        source: place,
+                        hole: place,
+                        state: ElectronicState::Ground,
+                    },
+                ),
+                event_record(
+                    0.001,
+                    Event::DelocalisedRecombination {
+                        source: place,
+                        hole: place,
+                        state: ElectronicState::Ground,
+                    },
+                ),
+                event_record(
+                    0.0015,
+                    Event::Filling {
+                        trap: place,
+                        hole: place,
+                    },
+                ),
+                event_record(0.003, Event::None),
+            ],
+        );
+        write_records(
+            &temporary_directory.join("experiment_results_0_1.bin.gz"),
+            &[
+                event_record(0.0, Event::None),
+                event_record(
+                    0.0002,
+                    Event::LocalisedRecombination {
+                        source: place,
+                        hole: place,
+                        state: ElectronicState::Ground,
+                    },
+                ),
+                event_record(
+                    0.0004,
+                    Event::LocalisedRecombination {
+                        source: place,
+                        hole: place,
+                        state: ElectronicState::Ground,
+                    },
+                ),
+                event_record(
+                    0.0012,
+                    Event::DelocalisedRecombination {
+                        source: place,
+                        hole: place,
+                        state: ElectronicState::Excited,
+                    },
+                ),
+                event_record(0.003, Event::None),
+            ],
+        );
+
+        average_events_in(&temporary_directory, &output_file).unwrap();
+        let contents = fs::read_to_string(&output_file).unwrap();
+        fs::remove_dir_all(directory).unwrap();
+        let rows = contents
+            .lines()
+            .skip(1)
+            .map(|line| line.split(',').collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], vec!["0"; 14]);
+        assert_eq!(rows[1][0], "0.1");
+        assert_eq!(rows[1][1], "15");
+        assert_eq!(rows[1][3], "5");
+        assert_eq!(rows[1][4], "5");
+        assert_eq!(rows[1][9], "20");
+        assert_eq!(rows[1][10], "5");
+        assert_eq!(rows[1][11], "25");
+        assert_eq!(rows[1][13], "5");
     }
 }

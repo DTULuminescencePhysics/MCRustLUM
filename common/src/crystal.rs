@@ -259,6 +259,7 @@ mod tests {
             1,
             1,
             false,
+            100
         )
         .is_err());
     }

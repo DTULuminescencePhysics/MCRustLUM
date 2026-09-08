@@ -246,6 +246,29 @@ pub struct ContinuousValueRow {
     pub time: TimeFloat,
     pub temperature: Float,
     pub fill: Float,
+    pub fill_standard_deviation: Float,
+    pub fill_median: Float,
+    pub fill_quantile_0_1: Float,
+    pub fill_quantile_0_9: Float,
+}
+
+/// One row in the averaged event-count output.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AverageEventRow {
+    pub time: TimeFloat,
+    pub localised_recombination_ground_count: Float,
+    pub localised_recombination_excited_count: Float,
+    pub delocalised_recombination_ground_count: Float,
+    pub delocalised_recombination_excited_count: Float,
+    pub localised_retrapping_ground_count: Float,
+    pub localised_retrapping_excited_count: Float,
+    pub delocalised_retrapping_ground_count: Float,
+    pub delocalised_retrapping_excited_count: Float,
+    pub ground_count: Float,
+    pub excited_count: Float,
+    pub recombination_count: Float,
+    pub retrapping_count: Float,
+    pub filling_count: Float,
 }
 
 /// An error produced while writing consolidated CSV output.
@@ -311,7 +334,11 @@ where
     })?;
     let mut writer = BufWriter::new(file);
 
-    writeln!(writer, "time,temperature,fill").map_err(|source| CsvOutputError::Write {
+    writeln!(
+        writer,
+        "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9"
+    )
+    .map_err(|source| CsvOutputError::Write {
         path: path.to_path_buf(),
         source,
     })?;
@@ -321,11 +348,20 @@ where
             path: path.to_path_buf(),
             message: error.to_string(),
         })?;
-        writeln!(writer, "{},{},{}", row.time, row.temperature, row.fill).map_err(|source| {
-            CsvOutputError::Write {
-                path: path.to_path_buf(),
-                source,
-            }
+        writeln!(
+            writer,
+            "{},{},{},{},{},{},{}",
+            row.time,
+            row.temperature,
+            row.fill,
+            row.fill_standard_deviation,
+            row.fill_median,
+            row.fill_quantile_0_1,
+            row.fill_quantile_0_9,
+        )
+        .map_err(|source| CsvOutputError::Write {
+            path: path.to_path_buf(),
+            source,
         })?;
     }
 
@@ -335,14 +371,70 @@ where
     })
 }
 
+/// Write averaged event counts to a CSV file.
+pub fn write_average_events_csv<I, E>(path: impl AsRef<Path>, rows: I) -> Result<(), CsvOutputError>
+where
+    I: IntoIterator<Item = Result<AverageEventRow, E>>,
+    E: fmt::Display,
+{
+    let path = path.as_ref();
+    let file = File::create(path).map_err(|source| CsvOutputError::Create {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut writer = BufWriter::new(file);
+
+    writeln!(
+        writer,
+        "time,localised_recombination_ground,localised_recombination_excited,delocalised_recombination_ground,delocalised_recombination_excited,localised_retrapping_ground,localised_retrapping_excited,delocalised_retrapping_ground,delocalised_retrapping_excited,ground,excited,recombination, retrapping, filling_count"
+    )
+    .map_err(|source| CsvOutputError::Write {
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    for row in rows {
+        let row = row.map_err(|error| CsvOutputError::SourceData {
+            path: path.to_path_buf(),
+            message: error.to_string(),
+        })?;
+        writeln!(
+            writer,
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            row.time,
+            row.localised_recombination_ground_count,
+            row.localised_recombination_excited_count,
+            row.delocalised_recombination_ground_count,
+            row.delocalised_recombination_excited_count,
+            row.localised_retrapping_ground_count,
+            row.localised_retrapping_excited_count,
+            row.delocalised_retrapping_ground_count,
+            row.delocalised_retrapping_excited_count,
+            row.ground_count,
+            row.excited_count,
+            row.recombination_count,
+            row.retrapping_count,
+            row.filling_count,
+        )
+        .map_err(|source| CsvOutputError::Write {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+
+    writer.flush().map_err(|source| CsvOutputError::Write {
+        path: path.to_path_buf(),
+        source,
+    })
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde::{Deserialize, Serialize};
+    use std::convert::Infallible;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
-    use std::convert::Infallible;
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct TestRecord {
         id: u16,
@@ -422,8 +514,6 @@ mod tests {
         assert!(matches!(error, OutputError::Open { .. }));
     }
 
-   
-
     fn temporary_output_path_2() -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -444,11 +534,19 @@ mod tests {
                 time: 0.0,
                 temperature: 273.15,
                 fill: 0.25,
+                fill_standard_deviation: 0.05,
+                fill_median: 0.25,
+                fill_quantile_0_1: 0.21,
+                fill_quantile_0_9: 0.29,
             },
             ContinuousValueRow {
                 time: 1.0,
                 temperature: 283.15,
                 fill: 0.5,
+                fill_standard_deviation: 0.1,
+                fill_median: 0.5,
+                fill_quantile_0_1: 0.42,
+                fill_quantile_0_9: 0.58,
             },
         ]
         .into_iter()
@@ -460,8 +558,11 @@ mod tests {
 
         assert_eq!(
             contents,
-            "time,temperature,fill\n0,273.15,0.25\n1,283.15,0.5\n"
+            concat!(
+                "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9\n",
+                "0,273.15,0.25,0.05,0.25,0.21,0.29\n",
+                "1,283.15,0.5,0.1,0.5,0.42,0.58\n",
+            )
         );
     }
-
 }

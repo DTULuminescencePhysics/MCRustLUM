@@ -41,6 +41,7 @@ impl MonteCarloSimulation {
     ///     io::default_inputs(),
     ///     10,
     ///     1,
+    ///     100,
     /// )?;
     /// assert_eq!(simulation.repetions, 10);
     /// # Ok(())
@@ -50,8 +51,9 @@ impl MonteCarloSimulation {
         inputs: SimulationInputs,
         repetions: usize,
         experiments: usize,
+        minimum_t:usize,
     ) -> Result<Self, String> {
-        let cube = MonteCarloSimulation::generate_cube(&inputs.cube)?;
+        let cube = MonteCarloSimulation::generate_cube(&inputs.cube, minimum_t)?;
         let time_temperature =
             MonteCarloSimulation::generate_time_temperature(&inputs.time_temperature)?;
         let transitions = MonteCarloSimulation::generate_transitions(&inputs)?;
@@ -70,7 +72,7 @@ impl MonteCarloSimulation {
     ///
     /// The trap count is derived from the configured density and volume. Hole
     /// and bandtail counts are interpreted as ratios per trap.
-    pub fn generate_cube(inputs: &CubeSpecification) -> Result<Cube, String> {
+    pub fn generate_cube(inputs: &CubeSpecification,  minimum_t:usize,) -> Result<Cube, String> {
         Cube::new_from_density(
             inputs.x,
             inputs.y,
@@ -79,7 +81,7 @@ impl MonteCarloSimulation {
             inputs.hole_count,
             inputs.bandtail_count,
             inputs.periodic,
-            100,
+            minimum_t,
         )
     }
     /// Validate and generate the piecewise-linear time/temperature profile.
@@ -235,7 +237,7 @@ mod tests {
 
     #[test]
     fn new_builds_all_runtime_state_from_grouped_inputs() {
-        let simulation = MonteCarloSimulation::new(small_inputs(), 12, 3)
+        let simulation = MonteCarloSimulation::new(small_inputs(), 12, 3,3)
             .expect("valid grouped inputs should build a simulation");
 
         assert_eq!(simulation.repetions, 12);
@@ -255,7 +257,7 @@ mod tests {
     fn generation_helpers_propagate_invalid_geometry_and_profiles() {
         let mut cube = CubeSpecification::default();
         cube.x = 0.0;
-        let cube_error = MonteCarloSimulation::generate_cube(&cube).unwrap_err();
+        let cube_error = MonteCarloSimulation::generate_cube(&cube,2).unwrap_err();
         assert!(cube_error.contains("boundary x must be greater than zero"));
 
         let mut profile = TimeTempSpecification::default();
@@ -320,7 +322,7 @@ mod tests {
         inputs.filling.fill = false;
         inputs.filling.cmbn_whn_fll = false;
 
-        let simulation = MonteCarloSimulation::new(inputs, 3, 2).unwrap();
+        let simulation = MonteCarloSimulation::new(inputs, 3, 2,1).unwrap();
         let output_directory = temporary_output_directory("simulation");
         fs::create_dir(&output_directory).unwrap();
 

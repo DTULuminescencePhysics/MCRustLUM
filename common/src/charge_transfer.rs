@@ -221,6 +221,9 @@ pub struct TimedCandidate {
 }
 
 impl TimedCandidate {
+    pub fn new_negative_time() -> Self {
+        Self { event: Event::None, time: TimeFloat::INFINITY,}
+    }
 
     pub fn rate_to_lifetime(candidate : Candidate, rng: &mut impl Rng) -> Result<Self, String> {
         if !candidate.rate.is_finite() {
@@ -241,6 +244,28 @@ impl TimedCandidate {
 
     }
 
+    pub fn find_shortest(&mut self, candidate: Candidate, rng: &mut impl Rng) -> Result<(), String> {
+        if candidate.rate == DISABLED_RATE {
+            return Ok(());
+        }
+        let tc = TimedCandidate::rate_to_lifetime(candidate,rng)?;
+        if tc.time.total_cmp(&self.time).is_lt(){
+            *self = tc;
+            return Ok(());
+        }else {
+            return Ok(());
+        }
+
+    }
+    pub fn find_smallest_candidate(&mut self, candidate: TimedCandidate)-> Result<(), String> { 
+        if candidate.time.total_cmp(&self.time).is_lt(){
+            *self = candidate;
+            return Ok(());
+        }else {
+            return Ok(());
+        }
+
+    }
     pub fn delocalised_recombination(
         prefactor: Float,
         mu: Float,
@@ -302,44 +327,6 @@ impl TimedCandidate {
         
     }
 
-
-
-}
-
-pub struct TimedCandidatePool {
-    candidates: Vec<TimedCandidate>,
-}
-impl TimedCandidatePool {
-
-    pub fn new() -> Self{ 
-        Self {
-            candidates: Vec::new(),
-        }
-    }  
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            candidates: Vec::with_capacity(capacity),
-        }
-    }
-    pub fn push_to_lifetime(&mut self, candidate : Candidate, rng: &mut impl Rng) -> Result<(), String> {
-        if candidate.rate == DISABLED_RATE {
-            return Ok(());
-        }
-        self.push(TimedCandidate::rate_to_lifetime(candidate,rng)?);
-        Ok(())
-       
-    }
-    pub fn push(&mut self, to_push: TimedCandidate){
-        self.candidates.push(to_push)
-    }
-
-    pub fn earliest_candidate(&self,) -> Option<TimedCandidate> {
-        self.candidates
-        .iter()
-        .copied()
-        .min_by(|a, b| a.time.total_cmp(&b.time))
-    }
 
 
 }

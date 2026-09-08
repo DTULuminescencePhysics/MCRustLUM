@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use common::charge_transfer::{ElectronicState, Event, Candidate, TimedCandidate, RecordedEvent, TimedCandidatePool}; 
+use common::charge_transfer::{ElectronicState, Event, Candidate, TimedCandidate, RecordedEvent}; 
 use common::place_ids::{PlaceAvailability, PlaceId};
 use common::trap_hole_band_tail::{TrapParameterLayout, TrapParameters};
 use common::crystal::Cube;
@@ -72,10 +72,8 @@ fn build_candidates(
     inputs: &SimulationInputs,
     transitions: &Transitions,
     rng: &mut impl Rng,
-) -> Result<TimedCandidatePool, String> {
-
-    let total = transitions.number_transitions(trap_places.available_count(), hole_places.available_count());
-    let mut candidates = TimedCandidatePool::with_capacity(total);
+    shortest: &mut TimedCandidate, 
+) -> Result<(), String> {
 
     for &source in trap_places.available() {
         let parameters = trap_parameters.get(source);
@@ -86,8 +84,9 @@ fn build_candidates(
                                                                       transitions.get_delocaised_transitions(), 
                                                                       &parameters, source, temperature, 
                                                                       ground_weight, excited_weight)?;
-            candidates.push_to_lifetime(ground,rng)?;
-            candidates.push_to_lifetime(excited,rng)?;                                                         
+            shortest.find_shortest(ground, rng)?;
+            shortest.find_shortest(excited, rng)?;
+                                                
         }
         if transitions.get_localised_recombination(){
             for &hole in hole_places.available() {
@@ -99,9 +98,9 @@ fn build_candidates(
                                                                           transitions.get_locaised_recomb_transitions(), 
                                                                           &parameters, source, hole, temperature, 
                                                                           distance, ground_weight, excited_weight)?;
-
-               candidates.push_to_lifetime(ground,rng)?;
-               candidates.push_to_lifetime(excited,rng)?;        
+                shortest.find_shortest(ground, rng)?;
+                shortest.find_shortest(excited, rng)?;
+     
            } 
         }
         if transitions.get_localised_retrapping(){
@@ -118,9 +117,8 @@ fn build_candidates(
                                                                           transitions.get_locaised_retrap_transitions(), 
                                                                           &parameters, source, destination, temperature, 
                                                                           distance, ground_weight, excited_weight)?;
-
-                candidates.push_to_lifetime(ground,rng)?;
-                candidates.push_to_lifetime(excited,rng)?; 
+                shortest.find_shortest(ground, rng)?;
+                shortest.find_shortest(excited, rng)?;
 
             }
         }
@@ -133,11 +131,11 @@ fn build_candidates(
             inputs,
             transitions,
         )?;
-        candidates.push_to_lifetime(fill,rng)?;
+        shortest.find_shortest(fill, rng)?;
            
     }  
 
-    Ok(candidates)
+    Ok(())
 }
 
 fn apply_event(
@@ -189,7 +187,7 @@ fn apply_event(
             }
 
             match outcome {
-                Some(TimedCandidate {
+                (TimedCandidate {
                     event: selected_event @ Event::DelocalisedRecombination { hole, .. },
                     ..
                 }) => {
@@ -200,7 +198,7 @@ fn apply_event(
                     }
                     return Ok(selected_event);
                 }
-                Some(TimedCandidate {
+                (TimedCandidate {
                     event: selected_event @ Event::DelocalisedRetrapping { destination, .. },
                     ..
                 }) => {
@@ -240,7 +238,7 @@ fn choose_delocalised_outcome(
     transitions: &Transitions,
     state: ElectronicState,
     rng: &mut impl Rng,
-) -> Result<Option<TimedCandidate>, String> {
+) -> Result<TimedCandidate, String> {
     let mu = parameters.delocalised_mu;
     let recombination_prefactor = parameters.retrap_ratio;
 
@@ -258,16 +256,12 @@ fn choose_delocalised_outcome(
     let retrapping_prefactor = 1.0 - recombination_prefactor;
     let source_position = &places.traps()[source.index()];
     
-    let total = if transitions.get_conduction_band_retrapping(){
-        hole_places.available().len() + trap_places.unavailable().len()
-    } else {
-        hole_places.available().len()
-    };
-    let mut candidates = TimedCandidatePool::with_capacity(total);
+    let mut current_shortest = TimedCandidate::new_negative_time();
+
 
     for &hole in hole_places.available() {
         let distance = cube.distance(source_position, &places.holes()[hole.index()]);
-        candidates.push(TimedCandidate::delocalised_recombination(
+        current_shortest.find_smallest_candidate(TimedCandidate::delocalised_recombination(
             recombination_prefactor,
             mu,
             distance,
@@ -276,27 +270,27 @@ fn choose_delocalised_outcome(
             state,
             rng,
             )?
-        );
+        )?;
     }
 
     if transitions.get_conduction_band_retrapping(){
         for &destination in trap_places.unavailable() {
             let distance = cube.distance(source_position, &places.traps()[destination.index()]);
-        candidates.push(TimedCandidate::delocalised_retrapping(
-            retrapping_prefactor,
-            mu,
-            distance,
-            source,
-            destination,
-            state,
-            rng,
-            )?
-        );
+            
+            current_shortest.find_smallest_candidate(TimedCandidate::delocalised_retrapping(
+                retrapping_prefactor,
+                mu,
+                distance,
+                source,
+                destination,
+                state,
+                rng,
+                )?
+            )?;
         }
     }
-    let earliest = candidates.earliest_candidate();
 
-    Ok(earliest)
+    Ok(current_shortest)
     
 }
 
@@ -307,8 +301,6 @@ pub fn choose_filling_outcome(
     rng: &mut impl Rng,
 ) -> Result<Event, String> {
     
-    
-
     let hole = {
         let empty_holes = hole_places.unavailable();
         if empty_holes.is_empty() {
@@ -378,8 +370,9 @@ pub fn run_standard(
         let max_dt = signed_profile_dt.abs();
         let direction = signed_profile_dt.signum();
 
+        let mut next_event = TimedCandidate { event: Event::None, time: max_dt,};
         // Contains localised, delocalised, and one aggregate filling event.
-        let mut timed_candidates = build_candidates(
+        build_candidates(
             places,
             trap_places,
             hole_places,
@@ -389,17 +382,13 @@ pub fn run_standard(
             inputs,
             transitions,
             rng,
+            &mut next_event,
         )?;
 
-        timed_candidates.push(TimedCandidate { event: Event::None, time: max_dt,});
-        let earliest = timed_candidates.earliest_candidate();
-
-        match earliest {
-            Some(TimedCandidate { event, time }) => {
-                let signed_event_dt = direction * time;
-                time_temperature.advance(signed_event_dt);
-                let applied_event = apply_event(
-                    event,
+        let signed_event_dt = direction * next_event.time;
+        time_temperature.advance(signed_event_dt);
+        let applied_event = apply_event(
+                    next_event.event,
                     places,
                     trap_places,
                     hole_places,
@@ -414,17 +403,7 @@ pub fn run_standard(
                     temperature: time_temperature.current_temperature(),
                     event: applied_event,
                 });
-            }
-            None => {
-                time_temperature.advance(time_temperature.current_max_dt());
-                results.push(RecordedEvent {
-                    time: time_temperature.current_time(),
-                    fill: trap_places.fill_ratio(),
-                    temperature: time_temperature.current_temperature(),
-                    event: Event::None,
-                });
-            }
-        }
+
         if results.len() == results.capacity() {
             append_monte_carlo_experiment_batch_to_file(output_file, &results)
                 .map_err(|error| error.to_string())?;

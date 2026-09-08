@@ -2,18 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use common::charge_transfer::{ElectronicState, Event, Candidate,TimedDelocalisedOutcome,DelocalisedOutcome, TimedCandidate, RecordedEvent}; 
+use common::charge_transfer::{ElectronicState, Event, Candidate, TimedCandidate, RecordedEvent, TimedCandidatePool}; 
 use common::place_ids::{PlaceAvailability, PlaceId};
 use common::trap_hole_band_tail::{TrapParameterLayout, TrapParameters};
 use common::crystal::Cube;
-use common::rate_equation_inputs::{
-    DelocalisedTransitionInputs, FillingTransitionInputs, LocalisedTransitionInputs,
-};
-use common::rate_equation_selection::{
-    DelocalisedRateEquation, FillingRateEquation, LocalisedRateEquation, Transitions,
-    TransitionsTypes,
-};
-use common::rate_equations::{ground_excited_state_weights, retrapping_probability_by_r};
+
+use common::rate_equation_selection::Transitions;
+use common::rate_equations::{ground_excited_state_weights};
 use common::time_temperature::TimeTemperature;
 use common::trap_hole_band_tail::ElectronPlaces;
 
@@ -22,15 +17,6 @@ use io::SimulationInputs;
 use io::outputs::append_monte_carlo_experiment_batch_to_file;
 use rand::Rng;
 use std::path::Path;
-
-fn transition_types(transitions: &Transitions) -> &TransitionsTypes {
-    match transitions {
-        Transitions::NoCbFillRetrapping { transitions }
-        | Transitions::FillRetrapping { transitions }
-        | Transitions::CbRetrapping { transitions }
-        | Transitions::FillCbRetrapping { transitions } => transitions,
-    }
-}
 
 fn state_weights(
     parameters: &TrapParameters,
@@ -45,187 +31,12 @@ fn state_weights(
     .ok_or_else(|| "could not calculate ground/excited-state weights".to_string())
 }
 
-fn push_candidate(
-    candidates: &mut Vec<Candidate>,
-    event: Event,
-    rate: Option<TimeFloat>,
-) -> Result<(), String> {
-    let rate = rate.ok_or_else(|| format!("could not calculate rate for {event:?}"))?;
-
-    if !rate.is_finite() {
-        return Err(format!("non-finite rate for {event:?}: {rate}"));
-    }
-    if rate < 0.0 {
-        return Err(format!("negative rate for {event:?}: {rate}"));
-    }
-    if rate > 0.0 {
-        candidates.push(Candidate { event, rate });
-    }
-
-    Ok(())
-}
-
-fn push_delocalised_candidates(
-    candidates: &mut Vec<Candidate>,
-    source: PlaceId,
-    parameters: &TrapParameters,
-    temperature: Float,
-    transitions: &Transitions,
-) -> Result<(), String> {
-    if matches!(
-        transition_types(transitions).delocalised,
-        DelocalisedRateEquation::None
-    ) {
-        return Ok(());
-    }
-
-    let (ground_weight, excited_weight) = state_weights(parameters, temperature)?;
-    let inputs = DelocalisedTransitionInputs {
-        e_cb_ground: parameters.e_cb_ground,
-        frequency_ground: parameters.de_frequency_ground,
-        e_cb_excited: parameters.e_cb_excited,
-        frequency_excited: parameters.de_frequency_excited,
-        temperature,
-        ground_weight,
-        excited_weight,
-    };
-    let (ground_rate, excited_rate): (Option<TimeFloat>, Option<TimeFloat>) =
-        transition_types(transitions).delocalised.calculate(&inputs);
-
-    push_candidate(
-        candidates,
-        Event::Delocalised {
-            source,
-            state: ElectronicState::Ground,
-        },
-        ground_rate,
-    )?;
-    push_candidate(
-        candidates,
-        Event::Delocalised {
-            source,
-            state: ElectronicState::Excited,
-        },
-        excited_rate,
-    )
-}
-
-fn push_recombination_candidates(
-    candidates: &mut Vec<Candidate>,
-    source: PlaceId,
-    hole: PlaceId,
-    distance: Float,
-    parameters: &TrapParameters,
-    temperature: Float,
-    transitions: &Transitions,
-) -> Result<(), String> {
-    if matches!(
-        transition_types(transitions).localised_recomb,
-        LocalisedRateEquation::None
-    ) {
-        return Ok(());
-    }
-
-    let (ground_weight, excited_weight) = state_weights(parameters, temperature)?;
-    let inputs = LocalisedTransitionInputs {
-        alpha_ground: parameters.alpha_ground,
-        frequency_ground: parameters.lo_frequency_ground,
-        alpha_excited: parameters.alpha_excited,
-        frequency_excited: parameters.lo_frequency_excited,
-        ground_weight,
-        excited_weight,
-        distance,
-    };
-    let (ground_rate, excited_rate): (Option<TimeFloat>, Option<TimeFloat>) =
-        transition_types(transitions)
-            .localised_recomb
-            .calculate(&inputs);
-
-    push_candidate(
-        candidates,
-        Event::LocalisedRecombination {
-            source,
-            hole,
-            state: ElectronicState::Ground,
-        },
-        ground_rate,
-    )?;
-    push_candidate(
-        candidates,
-        Event::LocalisedRecombination {
-            source,
-            hole,
-            state: ElectronicState::Excited,
-        },
-        excited_rate,
-    )
-}
-
-fn push_retrapping_candidates(
-    candidates: &mut Vec<Candidate>,
-    source: PlaceId,
-    destination: PlaceId,
-    distance: Float,
-    parameters: &TrapParameters,
-    temperature: Float,
-    transitions: &Transitions,
-) -> Result<(), String> {
-    if matches!(
-        transition_types(transitions).localised_retrap,
-        LocalisedRateEquation::None
-    ) {
-        return Ok(());
-    }
-
-    let (ground_weight, excited_weight) = state_weights(parameters, temperature)?;
-    let inputs = LocalisedTransitionInputs {
-        alpha_ground: parameters.alpha_ground,
-        frequency_ground: parameters.lo_frequency_ground,
-        alpha_excited: parameters.alpha_excited,
-        frequency_excited: parameters.lo_frequency_excited,
-        ground_weight,
-        excited_weight,
-        distance,
-    };
-    let (ground_rate, excited_rate): (Option<TimeFloat>, Option<TimeFloat>) =
-        transition_types(transitions)
-            .localised_retrap
-            .calculate(&inputs);
-
-    push_candidate(
-        candidates,
-        Event::LocalisedRetrapping {
-            source,
-            destination,
-            state: ElectronicState::Ground,
-        },
-        ground_rate,
-    )?;
-    push_candidate(
-        candidates,
-        Event::LocalisedRetrapping {
-            source,
-            destination,
-            state: ElectronicState::Excited,
-        },
-        excited_rate,
-    )
-}
-
-fn push_aggregate_filling_candidate(
-    candidates: &mut Vec<Candidate>,
+fn aggregate_filling_candidate(
     occupied_population: usize,
     total_population: usize,
     inputs: &SimulationInputs,
     transitions: &Transitions,
-) -> Result<(), String> {
-    if matches!(
-        transition_types(transitions).filling,
-        FillingRateEquation::None
-    ) {
-        return Ok(());
-    }
-
+) -> Result<Candidate, String> {
     let characteristic_dose = *inputs
         .filling
         .d0
@@ -241,23 +52,13 @@ fn push_aggregate_filling_candidate(
             .ok_or_else(|| format!("unknown filling dose-rate unit: {}", inputs.filling.dd_unit))?
             .get_float_precision();
     let dose_rate = configured_dose_rate / seconds_per_dose_rate_unit;
-    let filling_inputs = FillingTransitionInputs {
-        characteristic_dose,
-        dose_rate,
-        occupied_population: occupied_population as Float,
-        total_population: total_population as Float,
-    };
-    let rate: Option<TimeFloat> = transition_types(transitions)
-        .filling
-        .calculate(&filling_inputs);
 
-    push_candidate(
-        candidates,
-        Event::Filling {
-            trap: PlaceId::new(0)?,
-            hole: PlaceId::new(0)?,
-        },
-        rate,
+    Candidate::filling_candidate(
+        transitions.get_filling_transitions(),
+        &characteristic_dose,
+        &dose_rate,
+        occupied_population,
+        total_population,
     )
 }
 
@@ -270,132 +71,163 @@ fn build_candidates(
     cube: &Cube,
     inputs: &SimulationInputs,
     transitions: &Transitions,
-) -> Result<Vec<Candidate>, String> {
-    let mut candidates = Vec::new();
+    rng: &mut impl Rng,
+) -> Result<TimedCandidatePool, String> {
+
+    let total = transitions.number_transitions(trap_places.available_count(), hole_places.available_count());
+    let mut candidates = TimedCandidatePool::with_capacity(total);
 
     for &source in trap_places.available() {
         let parameters = trap_parameters.get(source);
+        let (ground_weight, excited_weight) = state_weights(parameters, temperature)?;
 
-        // Delocalised rates: once per occupied source trap.
-        push_delocalised_candidates(
-            &mut candidates,
-            source,
-            parameters,
-            temperature,
-            transitions,
-        )?;
-
-        // Recombination: once per occupied-source/active-hole pair.
-        for &hole in hole_places.available() {
-            let distance = cube.distance(
-                &places.traps()[source.index()],
-                &places.holes()[hole.index()],
-            );
-
-            push_recombination_candidates(
-                &mut candidates,
-                source,
-                hole,
-                distance,
-                parameters,
-                temperature,
-                transitions,
-            )?;
+        if transitions.get_delocalised(){
+            let (ground, excited) = Candidate::delocalised_candidates(
+                                                                      transitions.get_delocaised_transitions(), 
+                                                                      &parameters, source, temperature, 
+                                                                      ground_weight, excited_weight)?;
+            candidates.push_to_lifetime(ground,rng)?;
+            candidates.push_to_lifetime(excited,rng)?;                                                         
         }
+        if transitions.get_localised_recombination(){
+            for &hole in hole_places.available() {
+                let distance = cube.distance(
+                    &places.traps()[source.index()],
+                    &places.holes()[hole.index()],
+                );
+                let (ground, excited) = Candidate::localised_recombination_candidates(
+                                                                          transitions.get_locaised_recomb_transitions(), 
+                                                                          &parameters, source, hole, temperature, 
+                                                                          distance, ground_weight, excited_weight)?;
 
-        // Retrapping: once per occupied-source/empty-destination pair.
-        for &destination in trap_places.unavailable() {
-            let distance = cube.distance(
-                &places.traps()[source.index()],
-                &places.traps()[destination.index()],
-            );
+               candidates.push_to_lifetime(ground,rng)?;
+               candidates.push_to_lifetime(excited,rng)?;        
+           } 
+        }
+        if transitions.get_localised_retrapping(){
+            for &destination in trap_places.unavailable() {
+                if destination == source{
+                    continue
+                }
+                let distance = cube.distance(
+                    &places.traps()[source.index()],
+                    &places.traps()[destination.index()],
+                );
 
-            push_retrapping_candidates(
-                &mut candidates,
-                source,
-                destination,
-                distance,
-                parameters,
-                temperature,
-                transitions,
-            )?;
+                let (ground, excited) = Candidate::localised_retrapping_candidates(
+                                                                          transitions.get_locaised_retrap_transitions(), 
+                                                                          &parameters, source, destination, temperature, 
+                                                                          distance, ground_weight, excited_weight)?;
+
+                candidates.push_to_lifetime(ground,rng)?;
+                candidates.push_to_lifetime(excited,rng)?; 
+
+            }
         }
     }
-
-    // The filling rate already contains the number of empty traps.
-    push_aggregate_filling_candidate(
-        &mut candidates,
-        trap_places.available_count(),
-        places.traps().len(),
-        inputs,
-        transitions,
-    )?;
+        
+    if transitions.get_filling(){
+        let fill = aggregate_filling_candidate(
+            trap_places.available_count(),
+            trap_places.total(),
+            inputs,
+            transitions,
+        )?;
+        candidates.push_to_lifetime(fill,rng)?;
+           
+    }  
 
     Ok(candidates)
 }
 
-
-fn lifetime(rate: TimeFloat, rng: &mut impl Rng) -> Result<TimeFloat, String> {
-    if !rate.is_finite() {
-        return Err(format!("non-finite transition rate: {rate}"));
-    }
-
-    if rate < 0.0 {
-        return Err(format!("negative transition rate: {rate}"));
-    }
-
-    if rate == 0.0 {
-        return Ok(TimeFloat::INFINITY);
-    }
-
-    let u: TimeFloat = rng.sample(rand::distributions::Open01);
-    Ok(-u.ln() / rate)
-}
-
-fn cb_retrapping_enabled(transitions: &Transitions) -> bool {
-    matches!(
-        transitions,
-        Transitions::CbRetrapping { .. } | Transitions::FillCbRetrapping { .. }
-    )
-}
-
-fn reciprocal_rate_lifetime(
-    reciprocal_rate: TimeFloat,
+fn apply_event(
+    event: Event,
+    places: &ElectronPlaces,
+    trap_places: &mut PlaceAvailability,
+    hole_places: &mut PlaceAvailability,
+    trap_parameters: &TrapParameterLayout,
+    cube: &Cube,
+    transitions: &Transitions,
     rng: &mut impl Rng,
-) -> Result<TimeFloat, String> {
-    if reciprocal_rate.is_nan() || reciprocal_rate < 0.0 {
-        return Err(format!(
-            "invalid delocalised destination reciprocal rate: {reciprocal_rate}"
-        ));
+) -> Result<Event, String> {
+    match event {
+        Event::LocalisedRecombination { source, hole, .. }
+        | Event::DelocalisedRecombination { source, hole, .. } => {
+            if !trap_places.make_unavailable(source) {
+                return Err(format!("recombination source {source:?} was not occupied"));
+            }
+            if !hole_places.make_unavailable(hole) {
+                return Err(format!("recombination hole {hole:?} was not available"));
+            }
+        }
+        Event::LocalisedRetrapping { source, destination, .. }
+        | Event::DelocalisedRetrapping { source, destination, .. } => {
+            if !trap_places.make_unavailable(source) {
+                return Err(format!("retrapping source {source:?} was not occupied"));
+            }
+            if !trap_places.make_available(destination) {
+                return Err(format!(
+                    "retrapping destination {destination:?} was already occupied"
+                ));
+            }
+        }
+        Event::Delocalised { source, state } => {
+            let outcome = choose_delocalised_outcome(
+                source,
+                places,
+                trap_places,
+                hole_places,
+                trap_parameters.get(source),
+                cube,
+                transitions,
+                state,
+                rng
+            )?;
+
+            if !trap_places.make_unavailable(source) {
+                return Err(format!("delocalised source {source:?} was not occupied"));
+            }
+
+            match outcome {
+                Some(TimedCandidate {
+                    event: selected_event @ Event::DelocalisedRecombination { hole, .. },
+                    ..
+                }) => {
+                    if !hole_places.make_unavailable(hole) {
+                        return Err(format!(
+                            "delocalised recombination hole {hole:?} was not available"
+                        ));
+                    }
+                    return Ok(selected_event);
+                }
+                Some(TimedCandidate {
+                    event: selected_event @ Event::DelocalisedRetrapping { destination, .. },
+                    ..
+                }) => {
+                    if !trap_places.make_available(destination) {
+                        return Err(format!(
+                            "delocalised retrapping destination {destination:?} was occupied"
+                        ));
+                    }
+                    return Ok(selected_event);
+                }
+                _ => {
+                    return Err(format!(
+                            "An event that is not Delocalised Recombination or Retrapping \\
+                            has been returned when a delocalised transition has been selected.
+                            \\This error should never occur. Panic -- A LOT!"
+                    ));
+                }
+            }
+        }
+        Event::Filling { .. } => {
+            let filling = choose_filling_outcome(trap_places, hole_places, transitions, rng)?;
+            return Ok(filling)
+        }
+        Event::None => return Ok(Event::None),
     }
-    if reciprocal_rate.is_infinite() {
-        return Ok(TimeFloat::INFINITY);
-    }
 
-    let u: TimeFloat = rng.sample(rand::distributions::Open01);
-    Ok(-u.ln() * reciprocal_rate)
-}
-
-fn push_delocalised_outcome(
-    candidates: &mut Vec<TimedDelocalisedOutcome>,
-    outcome: DelocalisedOutcome,
-    prefactor: Float,
-    mu: Float,
-    distance: Float,
-    rng: &mut impl Rng,
-) -> Result<(), String> {
-    let reciprocal_rate: Option<TimeFloat> =
-        retrapping_probability_by_r(&prefactor, &mu, &distance);
-    let reciprocal_rate = reciprocal_rate.ok_or_else(|| {
-        format!("could not calculate delocalised destination rate for {outcome:?}")
-    })?;
-    let time = reciprocal_rate_lifetime(reciprocal_rate, rng)?;
-
-    if time.is_finite() {
-        candidates.push(TimedDelocalisedOutcome { outcome, time });
-    }
-
-    Ok(())
+    Ok(event)
 }
 
 fn choose_delocalised_outcome(
@@ -406,8 +238,9 @@ fn choose_delocalised_outcome(
     parameters: &TrapParameters,
     cube: &Cube,
     transitions: &Transitions,
+    state: ElectronicState,
     rng: &mut impl Rng,
-) -> Result<Option<DelocalisedOutcome>, String> {
+) -> Result<Option<TimedCandidate>, String> {
     let mu = parameters.delocalised_mu;
     let recombination_prefactor = parameters.retrap_ratio;
 
@@ -424,88 +257,101 @@ fn choose_delocalised_outcome(
 
     let retrapping_prefactor = 1.0 - recombination_prefactor;
     let source_position = &places.traps()[source.index()];
-    let mut candidates = Vec::with_capacity(
+    
+    let total = if transitions.get_conduction_band_retrapping(){
+        hole_places.available().len() + trap_places.unavailable().len()
+    } else {
         hole_places.available().len()
-            + if cb_retrapping_enabled(transitions) {
-                trap_places.unavailable().len()
-            } else {
-                0
-            },
-    );
+    };
+    let mut candidates = TimedCandidatePool::with_capacity(total);
 
     for &hole in hole_places.available() {
         let distance = cube.distance(source_position, &places.holes()[hole.index()]);
-        push_delocalised_outcome(
-            &mut candidates,
-            DelocalisedOutcome::Recombination { hole },
+        candidates.push(TimedCandidate::delocalised_recombination(
             recombination_prefactor,
             mu,
             distance,
+            source,
+            hole,
+            state,
             rng,
-        )?;
+            )?
+        );
     }
 
-    if cb_retrapping_enabled(transitions) {
+    if transitions.get_conduction_band_retrapping(){
         for &destination in trap_places.unavailable() {
             let distance = cube.distance(source_position, &places.traps()[destination.index()]);
-            push_delocalised_outcome(
-                &mut candidates,
-                DelocalisedOutcome::Retrapping { destination },
-                retrapping_prefactor,
-                mu,
-                distance,
-                rng,
-            )?;
+        candidates.push(TimedCandidate::delocalised_retrapping(
+            retrapping_prefactor,
+            mu,
+            distance,
+            source,
+            destination,
+            state,
+            rng,
+            )?
+        );
         }
     }
+    let earliest = candidates.earliest_candidate();
 
-    let Some(minimum_time) = candidates
-        .iter()
-        .map(|candidate| candidate.time)
-        .min_by(TimeFloat::total_cmp)
-    else {
-        return Ok(None);
+    Ok(earliest)
+    
+}
+
+pub fn choose_filling_outcome(
+    trap_places: &mut PlaceAvailability,
+    hole_places: &mut PlaceAvailability,
+    transitions: &Transitions,
+    rng: &mut impl Rng,
+) -> Result<Event, String> {
+    
+    
+
+    let hole = {
+        let empty_holes = hole_places.unavailable();
+        if empty_holes.is_empty() {
+            return Err("filling selected when no available holes remain".to_string());
+        }
+
+        empty_holes[rng.gen_range(0..empty_holes.len())]
     };
 
-    // Zero prefactors can create exact ties. Pick uniformly among tied
-    // destinations rather than depending on storage order.
-    let tied_candidates: Vec<_> = candidates
-        .iter()
-        .filter(|candidate| candidate.time.total_cmp(&minimum_time).is_eq())
-        .collect();
-    let selected = tied_candidates[rng.gen_range(0..tied_candidates.len())];
-
-    Ok(Some(selected.outcome))
-}
-
-fn calculate_candidate_times(
-    candidates: &[Candidate],
-    max_dt: TimeFloat,
-    rng: &mut impl Rng,
-) -> Result<Vec<TimedCandidate>, String> {
-    let mut timed = Vec::with_capacity(candidates.len());
-
-    for candidate in candidates {
-        timed.push(TimedCandidate {
-            event: candidate.event,
-            time: lifetime(candidate.rate, rng)?,
-        });
+    if !hole_places.make_available(hole) {
+        return Err(format!("filling destination {hole:?} was occupied"));
     }
-    timed.push(TimedCandidate {
-        event: Event::None,
-        time: max_dt,
-    });
-    Ok(timed)
+
+    if transitions.get_filling_retrapping() && rng.gen_bool(0.5){
+        let hole_destination = {
+            let empty_holes = hole_places.available();
+            if empty_holes.is_empty() {
+                return Err("No holes to put electron in".to_string());
+            }
+            empty_holes[rng.gen_range(0..empty_holes.len())]
+        };
+        if !hole_places.make_unavailable(hole_destination) {
+            return Err(format!("hole destination {hole_destination:?} was occupied"));
+        }
+        return Ok(Event::Filling { trap:hole_destination, hole });
+    } else { 
+        let trap = {
+            let trap_dest = trap_places.unavailable();
+            if trap_dest.is_empty() {
+                return Err("filling selected when no empty traps remain".to_string());
+            }
+            trap_dest[rng.gen_range(0..trap_dest.len())]
+        };
+
+        if !trap_places.make_available(trap) {
+            return Err(format!("filling destination {trap:?} was occupied"));
+        }
+        return Ok(Event::Filling { trap, hole });
+    }
+
 }
 
-fn earliest_candidate(candidates: &[TimedCandidate]) -> Option<TimedCandidate> {
-    candidates
-        .iter()
-        .copied()
-        .min_by(|a, b| a.time.total_cmp(&b.time))
-}
-
-pub(crate) fn run_standard(
+pub fn run_standard(
     places: &ElectronPlaces,
     trap_places: &mut PlaceAvailability,
     hole_places: &mut PlaceAvailability,
@@ -533,7 +379,7 @@ pub(crate) fn run_standard(
         let direction = signed_profile_dt.signum();
 
         // Contains localised, delocalised, and one aggregate filling event.
-        let rate_candidates = build_candidates(
+        let mut timed_candidates = build_candidates(
             places,
             trap_places,
             hole_places,
@@ -542,11 +388,11 @@ pub(crate) fn run_standard(
             cube,
             inputs,
             transitions,
+            rng,
         )?;
 
-        let timed_candidates = calculate_candidate_times(&rate_candidates, max_dt, rng)?;
-
-        let earliest = earliest_candidate(&timed_candidates);
+        timed_candidates.push(TimedCandidate { event: Event::None, time: max_dt,});
+        let earliest = timed_candidates.earliest_candidate();
 
         match earliest {
             Some(TimedCandidate { event, time }) => {
@@ -595,122 +441,7 @@ pub(crate) fn run_standard(
     Ok(())
 }
 
-fn apply_event(
-    event: Event,
-    places: &ElectronPlaces,
-    trap_places: &mut PlaceAvailability,
-    hole_places: &mut PlaceAvailability,
-    trap_parameters: &TrapParameterLayout,
-    cube: &Cube,
-    transitions: &Transitions,
-    rng: &mut impl Rng,
-) -> Result<Event, String> {
-    match event {
-        Event::LocalisedRecombination { source, hole, .. }
-        | Event::DelocalisedRecombination { source, hole, .. } => {
-            if !trap_places.make_unavailable(source) {
-                return Err(format!("recombination source {source:?} was not occupied"));
-            }
-            if !hole_places.make_unavailable(hole) {
-                return Err(format!("recombination hole {hole:?} was not available"));
-            }
-        }
-        Event::LocalisedRetrapping {
-            source,
-            destination,
-            ..
-        }
-        | Event::DelocalisedRetrapping {
-            source,
-            destination,
-            ..
-        } => {
-            if !trap_places.make_unavailable(source) {
-                return Err(format!("retrapping source {source:?} was not occupied"));
-            }
-            if !trap_places.make_available(destination) {
-                return Err(format!(
-                    "retrapping destination {destination:?} was already occupied"
-                ));
-            }
-        }
-        Event::Delocalised { source, state } => {
-            let outcome = choose_delocalised_outcome(
-                source,
-                places,
-                trap_places,
-                hole_places,
-                trap_parameters.get(source),
-                cube,
-                transitions,
-                rng
-            )?;
 
-            if !trap_places.make_unavailable(source) {
-                return Err(format!("delocalised source {source:?} was not occupied"));
-            }
-
-            match outcome {
-                Some(DelocalisedOutcome::Recombination { hole }) => {
-                    if !hole_places.make_unavailable(hole) {
-                        return Err(format!(
-                            "delocalised recombination hole {hole:?} was not available"
-                        ));
-                    }
-                    return Ok(Event::DelocalisedRecombination {
-                        source,
-                        hole,
-                        state,
-                    });
-                }
-                Some(DelocalisedOutcome::Retrapping { destination }) => {
-                    if !trap_places.make_available(destination) {
-                        return Err(format!(
-                            "delocalised retrapping destination {destination:?} was occupied"
-                        ));
-                    }
-                    return Ok(Event::DelocalisedRetrapping {
-                        source,
-                        destination,
-                        state,
-                    });
-                }
-                None => {}
-            }
-        }
-        Event::Filling { trap: _, hole: _ } => {
-            let trap = {
-                let empty_traps = trap_places.unavailable();
-                if empty_traps.is_empty() {
-                    return Err("filling selected when no empty traps remain".to_string());
-                }
-
-                empty_traps[rng.gen_range(0..empty_traps.len())]
-            };
-
-            if !trap_places.make_available(trap) {
-                return Err(format!("filling destination {trap:?} was occupied"));
-            }
-
-            let hole = {
-                let empty_holes = hole_places.unavailable();
-                if empty_holes.is_empty() {
-                    return Err("filling selected when no available holes remain".to_string());
-                }
-
-                empty_holes[rng.gen_range(0..empty_holes.len())]
-            };
-
-            if !hole_places.make_available(hole) {
-                return Err(format!("filling destination {hole:?} was occupied"));
-            }
-            return Ok(Event::Filling { trap, hole });
-        }
-        Event::None => return Ok(Event::None),
-    }
-
-    Ok(event)
-}
 
 #[cfg(test)]
 mod tests {
@@ -770,36 +501,56 @@ mod tests {
     }
 
     #[test]
-    fn pathway_helpers_add_ground_and_excited_candidates() {
+    fn candidate_builders_add_ground_and_excited_candidates() {
         let source = PlaceId::new(0).unwrap();
         let destination = PlaceId::new(1).unwrap();
         let hole = PlaceId::new(0).unwrap();
         let transitions = selected_transitions(true, true, true, false);
         let parameters = parameters();
-        let mut candidates = Vec::new();
+        let temperature = 300.0;
+        let (ground_weight, excited_weight) =
+            state_weights(&parameters, temperature).unwrap();
 
-        push_delocalised_candidates(&mut candidates, source, &parameters, 300.0, &transitions)
-            .unwrap();
-        push_recombination_candidates(
-            &mut candidates,
+        let delocalised = Candidate::delocalised_candidates(
+            transitions.get_delocaised_transitions(),
+            &parameters,
+            source,
+            temperature,
+            ground_weight,
+            excited_weight,
+        )
+        .unwrap();
+        let recombination = Candidate::localised_recombination_candidates(
+            transitions.get_locaised_recomb_transitions(),
+            &parameters,
             source,
             hole,
+            temperature,
             0.5,
-            &parameters,
-            300.0,
-            &transitions,
+            ground_weight,
+            excited_weight,
         )
         .unwrap();
-        push_retrapping_candidates(
-            &mut candidates,
+        let retrapping = Candidate::localised_retrapping_candidates(
+            transitions.get_locaised_retrap_transitions(),
+            &parameters,
             source,
             destination,
+            temperature,
             0.5,
-            &parameters,
-            300.0,
-            &transitions,
+            ground_weight,
+            excited_weight,
         )
         .unwrap();
+
+        let candidates = [
+            delocalised.0,
+            delocalised.1,
+            recombination.0,
+            recombination.1,
+            retrapping.0,
+            retrapping.1,
+        ];
 
         assert_eq!(candidates.len(), 6);
         assert!(candidates.iter().all(|candidate| candidate.rate > 0.0));
@@ -812,37 +563,35 @@ mod tests {
         inputs.filling.d_dot = vec![2.0];
         inputs.filling.dd_unit = common::constants::time::TimeUnit::Minute;
         let transitions = selected_transitions(false, false, false, true);
-        let mut candidates = Vec::new();
+        let candidate =
+            aggregate_filling_candidate(1, 4, &inputs, &transitions).unwrap();
 
-        push_aggregate_filling_candidate(&mut candidates, 1, 4, &inputs, &transitions).unwrap();
-
-        assert_eq!(candidates.len(), 1);
         assert_eq!(
-            candidates[0].event,
+            candidate.event,
             Event::Filling {
                 trap: PlaceId::new(0).unwrap(),
                 hole: PlaceId::new(0).unwrap(),
             }
         );
-        assert_eq!(candidates[0].rate, 0.025);
+        assert_eq!(candidate.rate, 0.025);
+
         let mut rng = common::random::get_std_rng_for_rep(0);
-        let timed = calculate_candidate_times(&candidates, 1.0, &mut rng).unwrap();
-        assert_eq!(timed.len(), 2);
-        assert_eq!(timed[0].event, candidates[0].event);
-        assert!(timed[0].time.is_finite() && timed[0].time > 0.0);
-        assert_eq!(timed[1].event, Event::None);
-        assert_eq!(timed[1].time, 1.0);
+        let timed = TimedCandidate::rate_to_lifetime(candidate, &mut rng).unwrap();
+        assert_eq!(timed.event, candidate.event);
+        assert!(timed.time.is_finite() && timed.time > 0.0);
     }
 
     #[test]
-    fn filling_adds_no_candidate_when_every_trap_is_occupied() {
+    fn fully_occupied_traps_produce_no_finite_filling_event() {
         let inputs = SimulationInputs::default();
         let transitions = selected_transitions(false, false, false, true);
-        let mut candidates = Vec::new();
+        let candidate =
+            aggregate_filling_candidate(4, 4, &inputs, &transitions).unwrap();
+        assert_eq!(candidate.rate, 0.0);
 
-        push_aggregate_filling_candidate(&mut candidates, 4, 4, &inputs, &transitions).unwrap();
-
-        assert!(candidates.is_empty());
+        let mut rng = common::random::get_std_rng_for_rep(0);
+        let timed = TimedCandidate::rate_to_lifetime(candidate, &mut rng).unwrap();
+        assert!(timed.time.is_infinite());
     }
 
     #[test]

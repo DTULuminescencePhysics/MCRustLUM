@@ -112,6 +112,10 @@ impl PlaceAvailability {
     pub fn mark_all_available(&mut self) {
         self.available_count = self.ids.len();
     }
+    pub fn total(&self) -> usize {
+        self.ids.len()
+    }
+
     /// Gives Ids available for reaction
     /// i.e. an occupied trap or unoccupied hole
     pub fn available(&self) -> &[PlaceId] {

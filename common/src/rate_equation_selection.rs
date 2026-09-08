@@ -160,6 +160,7 @@ impl DelocalisedRateEquation {
         E: ElementWise<Float, Output = ENeg>,
         Float: ElementWise<Float, Output = KT>,
         ENeg: ElementWise<KT, Output = Ratio>
+         + ElementWise<Float, Output = ENeg>
             + PrecisionInput<TimePrecision, Output = V>,
         Ratio: ElementWiseUnary<Output = Exp>,
         Exp: ElementWise<S, Output = RateRaw>,
@@ -168,17 +169,19 @@ impl DelocalisedRateEquation {
         WeightRaw: PrecisionInput<TimePrecision, Output = Weight>,
         Weight: ElementWise<V, Output = Weighted>,
         Weighted: PrecisionInput<TimePrecision, Output = V>,
-    {
-        let zero_ground = || {
-            inputs.e_cb_ground
-                .element_mul(&0.0)
-                .map(|zero| zero.map_to_precision())
+    {   
+        let disabled_ground = || {
+            let zero = inputs.e_cb_ground.element_mul(&0.0)?;
+            let minus_one = zero.element_add(&-1.0)?;
+
+            Some(minus_one.map_to_precision())
         };
 
-        let zero_excited = || {
-            inputs.e_cb_excited
-                .element_mul(&0.0)
-                .map(|zero| zero.map_to_precision())
+        let disabled_excited = || {
+            let zero = inputs.e_cb_excited.element_mul(&0.0)?;
+            let minus_one = zero.element_add(&-1.0)?;
+
+            Some(minus_one.map_to_precision())
         };
 
         let weighted_ground = |re: DelocalisedRateEquationType| {
@@ -210,10 +213,10 @@ impl DelocalisedRateEquation {
         };
 
         match *self {
-            Self::Ground { re } => (weighted_ground(re), zero_excited()),
-            Self::Excited { re } => (zero_ground(), weighted_excited(re)),
+            Self::Ground { re } => (weighted_ground(re), disabled_excited()),
+            Self::Excited { re } => (disabled_ground(), weighted_excited(re)),
             Self::Both { re } => (weighted_ground(re), weighted_excited(re)),
-            Self::None => (zero_ground(), zero_excited()),
+            Self::None => (disabled_ground(), disabled_excited()),
         }
     }
 }
@@ -319,18 +322,23 @@ impl LocalisedRateEquation {
         B: ElementWise<Exp, Output = RateOut>,
         RateOut: PrecisionInput<TimePrecision,Output = V>, 
         R: ElementWise<Float, Output = Zero>,
-        Zero: PrecisionInput<TimePrecision,Output = V>,
+        Zero: ElementWise<Float, Output = Zero> + 
+            PrecisionInput<TimePrecision,Output = V>,
         V: PrecisionInput<TimePrecision>,
         W: ElementWise<Float, Output = WeightRaw>,
         WeightRaw: PrecisionInput<TimePrecision, Output = Weight>,
         Weight: ElementWise<V, Output = Weighted>,
         Weighted: PrecisionInput<TimePrecision, Output = V>,
-    {
-        let zero = || {
-            inputs.distance.element_mul(&0.0)
-                .map(|zero| zero.map_to_precision())
-                
+        
+    {   
+
+        let disabled = || {
+            let zero = inputs.distance.element_mul(&0.0)?;
+            let minus_one = zero.element_add(&-1.0)?;
+
+            Some(minus_one.map_to_precision())
         };
+       
         let weighted_ground = || {
             let rate = rate_equations::tunnelling_rate(
                 &inputs.alpha_ground,
@@ -358,10 +366,10 @@ impl LocalisedRateEquation {
         };
 
         match *self {
-            Self::Ground => (weighted_ground(), zero()),
-            Self::Excited => (zero(), weighted_excited()),
+            Self::Ground => (weighted_ground(), disabled()),
+            Self::Excited => (disabled(), weighted_excited()),
             Self::Both => (weighted_ground(), weighted_excited()),
-            Self::None => (zero(), zero()),
+            Self::None => (disabled(), disabled()),
         }
     }
 
@@ -424,10 +432,8 @@ impl FillingRateEquation {
         NTot: ElementWise<N, Output = Available>,
         DoseRatio: ElementWise<Available, Output = V>,
         D0: ElementWise<Float, Output = Zero>,
-        Zero: PrecisionInput<
-            TimePrecision,
-            Output = <V as PrecisionInput<TimePrecision>>::Output,
-        >,
+        Zero: ElementWise<Float, Output = Zero>
+            + PrecisionInput< TimePrecision, Output = <V as PrecisionInput<TimePrecision>>::Output>,
         V: PrecisionInput<TimePrecision>,
     {
         match *self {
@@ -438,7 +444,10 @@ impl FillingRateEquation {
                 &inputs.total_population,
             ),
             Self::None => Some(
-                inputs.characteristic_dose.element_mul(&0.0)?
+                inputs
+                    .characteristic_dose
+                    .element_mul(&0.0)?
+                    .element_add(&-1.0)?
                     .map_to_precision(),
             ),
         }
@@ -513,7 +522,107 @@ pub enum Transitions{
         /// Complete set of equation selections.
         transitions: TransitionsTypes,
     }
+
 }
+impl Transitions {
+    fn transition_types(&self) -> &TransitionsTypes {
+        match self {
+            Transitions::NoCbFillRetrapping { transitions }
+            | Transitions::FillRetrapping { transitions }
+            | Transitions::CbRetrapping { transitions }
+            | Transitions::FillCbRetrapping { transitions } => transitions,
+        }
+    }
+    pub fn get_delocaised_transitions(&self) -> &DelocalisedRateEquation {
+        let t = self.transition_types(); 
+        &t.delocalised
+    }
+    pub fn get_locaised_recomb_transitions(&self) -> &LocalisedRateEquation {
+        let t = self.transition_types(); 
+        &t.localised_recomb
+    }
+    pub fn get_locaised_retrap_transitions(&self) -> &LocalisedRateEquation {
+        let t = self.transition_types(); 
+        &t.localised_retrap
+    }
+    pub fn get_filling_transitions(&self) -> &FillingRateEquation {
+        let t = self.transition_types(); 
+        &t.filling
+    }
+    pub fn get_delocalised(&self) -> bool {
+        let transitions = self.transition_types();
+    
+        if matches!(transitions.delocalised, DelocalisedRateEquation::None){
+            return false 
+        }  else{
+            return true
+        }
+    }
+    pub fn get_localised_recombination(&self) -> bool {
+       let transitions = self.transition_types();
+        if matches!(transitions.localised_recomb, LocalisedRateEquation::None){
+            return false 
+        }  else{
+            return true
+        }
+    }
+    pub fn get_localised_retrapping(&self) -> bool {
+        let transitions = self.transition_types();
+        if matches!(transitions.localised_retrap, LocalisedRateEquation::None){
+            return false 
+        }  else{
+            return true
+        }
+    }
+    pub fn get_filling(&self) -> bool {
+        let transitions = self.transition_types();
+        if matches!(transitions.filling, FillingRateEquation::None){
+            return false 
+        }  else{
+            return true
+        }
+    }
+    pub fn get_conduction_band_retrapping(&self) -> bool {
+        match self {
+              Transitions::NoCbFillRetrapping { .. } => false,
+              Transitions::FillRetrapping     { .. } => false,
+              Transitions::CbRetrapping       { .. } => true,
+              Transitions::FillCbRetrapping   { .. } => true,
+        }
+    }
+    pub fn get_filling_retrapping(&self) -> bool {
+        match self {
+              Transitions::NoCbFillRetrapping { .. } => false,
+              Transitions::FillRetrapping     { .. } => true,
+              Transitions::CbRetrapping       { .. } => false,
+              Transitions::FillCbRetrapping   { .. } => true,
+        }
+    }
+
+    pub fn number_transitions(&self, traps: usize, holes:usize) -> usize {
+
+        let mut total: usize = 1;
+        if self.get_delocalised(){
+            total += 2*traps;
+        }
+        if self.get_localised_recombination(){
+            total += 2*traps*holes;
+        } 
+        if self.get_localised_retrapping(){
+            total += 2*traps*traps.saturating_sub(1);
+        }
+        if self.get_filling(){
+            total += 1;
+        }
+
+        return total
+    }
+
+
+
+
+}
+
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -671,7 +780,8 @@ impl Transitions {
         Float: ElementWise<Float, Output = KT>,
         E: ElementWise<Float, Output = ENeg>,
         ENeg: ElementWise<KT, Output = DRatio>
-            + PrecisionInput<TimePrecision, Output = V>,
+            + PrecisionInput<TimePrecision, Output = V>
+            + ElementWise<Float, Output = ENeg>,
         DRatio: ElementWiseUnary<Output = DExp>,
         DExp: ElementWise<S, Output = DRaw>,
         DRaw: PrecisionInput<TimePrecision, Output = V>,
@@ -681,7 +791,8 @@ impl Transitions {
         B: ElementWise<LExp, Output = LRaw>,
         LRaw: PrecisionInput<TimePrecision, Output = V>,
         R: ElementWise<Float, Output = LZero>,
-        LZero: PrecisionInput<TimePrecision, Output = V>,
+        LZero:  ElementWise<Float, Output = LZero> + 
+                PrecisionInput<TimePrecision, Output = V>,
         W: ElementWise<Float, Output = WeightRaw>,
         WeightRaw: PrecisionInput<TimePrecision, Output = Weight>,
         Weight: ElementWise<V, Output = WeightedRaw>,
@@ -691,7 +802,8 @@ impl Transitions {
         DoseRatio: ElementWise<Available, Output = FillRaw>,
         FillRaw: PrecisionInput<TimePrecision, Output = V>,
         D0: ElementWise<Float, Output = FillZero>,
-        FillZero: PrecisionInput<TimePrecision, Output = V>,
+        FillZero: ElementWise<Float, Output = FillZero>
+            + PrecisionInput< TimePrecision, Output = V>, 
         V: PrecisionInput<TimePrecision>,
     {
         let transitions = match self {
@@ -925,12 +1037,12 @@ mod tests {
             .calculate(&scalar_transition_inputs())
             .expect("selected scalar transition rates should calculate");
         assert_eq!(rates.len(), 7);
-        assert_eq!(rates[0].rate, 0.0); // Ground recombination is disabled.
-        assert_eq!(rates[1].rate, 0.0); // Ground retrapping is disabled.
+        assert_eq!(rates[0].rate, -1.0); // Ground recombination is disabled.
+        assert_eq!(rates[1].rate, -1.0); // Ground retrapping is disabled.
         assert!(rates[2].rate > 0.0); // Excited recombination is enabled.
-        assert_eq!(rates[3].rate, 0.0); // Excited retrapping is disabled.
+        assert_eq!(rates[3].rate, -1.0); // Excited retrapping is disabled.
         assert!(rates[4].rate > 0.0); // Ground delocalisation is enabled.
-        assert_eq!(rates[5].rate, 0.0); // Excited delocalisation is disabled.
+        assert_eq!(rates[5].rate, -1.0); // Excited delocalisation is disabled.
         assert!(rates[6].rate > 0.0); // Filling is controlled by its own selection.
     }
 
@@ -1142,8 +1254,8 @@ mod tests {
 
         let (ground, excited) = selected.calculate(&inputs);
 
-        assert_eq!(ground.expect("ground zero should exist"), 0.0);
-        assert_eq!(excited.expect("excited zero should exist"), 0.0);
+        assert_eq!(ground.expect("ground zero should exist"), -1.0);
+        assert_eq!(excited.expect("excited zero should exist"), -1.0);
     }
 
     #[test]
@@ -1170,11 +1282,11 @@ mod tests {
 
         assert_eq!(
             ground.expect("ground zero vector should exist"),
-            vec![0.0, 0.0, 0.0],
+            vec![-1.0, -1.0, -1.0],
         );
         assert_eq!(
             excited.expect("excited zero vector should exist"),
-            vec![0.0, 0.0, 0.0],
+            vec![-1.0, -1.0, -1.0],
         );
     }
 
@@ -1237,7 +1349,7 @@ mod tests {
             .calculate(&inputs)
             .expect("none filling equation should return zeros");
 
-        assert_eq!(actual, vec![0.0, 0.0, 0.0]);
+        assert_eq!(actual, vec![-1.0, -1.0, -1.0]);
     }
 
 

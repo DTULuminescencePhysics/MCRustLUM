@@ -178,9 +178,17 @@ impl Cube {
         h_no: usize,
         b_no: usize,
         periodic: bool,
+        minimum_t: usize
     ) -> Result<Self, String> {
-        let boundary = Boundary::new(x, y, z, periodic)?;
-        let trap_total = boundary.density_to_number(density)?;
+        let mut boundary = Boundary::new(x, y, z, periodic)?;
+        let mut trap_total = boundary.density_to_number(density)?;
+        if trap_total < minimum_t {
+            let scale = (minimum_t as Float / trap_total as Float).cbrt();
+            boundary = Boundary::new(  boundary.x *scale, boundary.y * scale, boundary.z * scale, periodic, )?; 
+            trap_total = boundary.density_to_number(density)?;
+        }
+
+
         let hole_total = h_no
             .checked_mul(trap_total)
             .ok_or_else(|| "hole count overflowed usize".to_string())?;

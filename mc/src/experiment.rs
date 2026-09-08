@@ -102,7 +102,7 @@ impl MCExperiment {
     ) -> Result<Self, String> {
 
         let mut rng = get_std_rng_for_rep(*rep);
-        let places = ElectronPlaces::random_from_cube(cube, &mut rng)?;
+        let places = ElectronPlaces::random_from_cube(cube, &mut rng)?;     
         let trap_places =
             PlaceAvailability::set_initial_condition(cube.trap_total, *trap_available, &mut rng)?;
         let hole_places =

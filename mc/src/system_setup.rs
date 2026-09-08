@@ -79,6 +79,7 @@ impl MonteCarloSimulation {
             inputs.hole_count,
             inputs.bandtail_count,
             inputs.periodic,
+            100,
         )
     }
     /// Validate and generate the piecewise-linear time/temperature profile.

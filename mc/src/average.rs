@@ -27,7 +27,7 @@ const TEMPORARY_DIRECTORY: &str = "tmp";
 const AVERAGE_FILL_FILE: &str = "average_fill.csv";
 /// Default destination for ensemble event frequencies.
 const AVERAGE_EVENT_FILE: &str = "average_event.csv";
-/// Width of event-frequency bins in seconds.
+/// Width of event-count bins in seconds.
 const EVENT_BIN_WIDTH: TimeFloat = 0.1;
 
 /// Flattens the compressed batches in one result file into individual records.
@@ -134,6 +134,10 @@ struct FillStatistics {
     quantile_0_1: Float,
     /// Linearly interpolated 90th percentile.
     quantile_0_9: Float,
+    /// Linearly interpolated lower quartile.
+    quantile_0_25: Float,
+    /// Linearly interpolated upper quartile.
+    quantile_0_75: Float,
 }
 
 impl FillStatistics {
@@ -155,6 +159,8 @@ impl FillStatistics {
             median: quantile(&values, 0.5),
             quantile_0_1: quantile(&values, 0.1),
             quantile_0_9: quantile(&values, 0.9),
+            quantile_0_25: quantile(&values, 0.25),
+            quantile_0_75: quantile(&values, 0.75),
         }
     }
 
@@ -168,6 +174,8 @@ impl FillStatistics {
             fill_median: self.median,
             fill_quantile_0_1: self.quantile_0_1,
             fill_quantile_0_9: self.quantile_0_9,
+            fill_quantile_0_25: self.quantile_0_25,
+            fill_quantile_0_75: self.quantile_0_75,
         }
     }
 }
@@ -490,10 +498,10 @@ impl EventBin {
         }
     }
 
-    /// Normalize raw counts by repetition count and bin duration.
+    /// Normalize raw counts by repetition count.
     fn averaged(self, repetition_count: usize) -> AverageEventRow {
         debug_assert!(self.end_time > self.start_time);
-        let repetitions = repetition_count as Float * EVENT_BIN_WIDTH as Float;
+        let repetitions = repetition_count as Float;
         AverageEventRow {
             time: self.end_time,
             localised_recombination_ground_count: self.localised_recombination_ground_count
@@ -526,7 +534,7 @@ impl EventBin {
     }
 }
 
-/// Return the all-zero event-frequency row at time zero.
+/// Return the all-zero event-count row at time zero.
 fn initial_event_row() -> AverageEventRow {
     AverageEventRow {
         time: 0.0,
@@ -633,8 +641,8 @@ pub fn average_events() -> Result<(), String> {
 /// `output_file`.
 ///
 /// Events are placed in `EVENT_BIN_WIDTH`-second bins. Counts are divided by
-/// both the number of input trajectories and the bin width, producing observed
-/// frequencies rather than total event counts.
+/// the number of input trajectories. The plotting layer divides these averaged
+/// bin counts by the applicable bin width to produce observed frequencies.
 pub fn average_events_in(
     temporary_directory: impl AsRef<Path>,
     output_file: impl AsRef<Path>,
@@ -773,7 +781,7 @@ mod tests {
         let mut lines = contents.lines();
         assert_eq!(
             lines.next().unwrap(),
-            "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9"
+            "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9,fill_quantile_0_25,fill_quantile_0_75"
         );
         let rows = lines
             .map(|line| {
@@ -783,11 +791,11 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let expected = [
-            [0.0, 100.0, 0.4, 0.2, 0.4, 0.24, 0.56],
-            [1.0, 110.0, 0.5, 0.3, 0.5, 0.26, 0.74],
-            [2.0, 120.0, 0.6, 0.2, 0.6, 0.44, 0.76],
-            [3.0, 130.0, 0.3, 0.1, 0.3, 0.22, 0.38],
-            [4.0, 140.0, 0.5, 0.1, 0.5, 0.42, 0.58],
+            [0.0, 100.0, 0.4, 0.2, 0.4, 0.24, 0.56, 0.3, 0.5],
+            [1.0, 110.0, 0.5, 0.3, 0.5, 0.26, 0.74, 0.35, 0.65],
+            [2.0, 120.0, 0.6, 0.2, 0.6, 0.44, 0.76, 0.5, 0.7],
+            [3.0, 130.0, 0.3, 0.1, 0.3, 0.22, 0.38, 0.25, 0.35],
+            [4.0, 140.0, 0.5, 0.1, 0.5, 0.42, 0.58, 0.45, 0.55],
         ];
 
         assert_eq!(rows.len(), expected.len());
@@ -924,12 +932,12 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0], vec!["0"; 14]);
         assert_eq!(rows[1][0], "0.1");
-        assert_eq!(rows[1][1], "15");
-        assert_eq!(rows[1][3], "5");
-        assert_eq!(rows[1][4], "5");
-        assert_eq!(rows[1][9], "20");
-        assert_eq!(rows[1][10], "5");
-        assert_eq!(rows[1][11], "25");
-        assert_eq!(rows[1][13], "5");
+        assert_eq!(rows[1][1], "1.5");
+        assert_eq!(rows[1][3], "0.5");
+        assert_eq!(rows[1][4], "0.5");
+        assert_eq!(rows[1][9], "2");
+        assert_eq!(rows[1][10], "0.5");
+        assert_eq!(rows[1][11], "2.5");
+        assert_eq!(rows[1][13], "0.5");
     }
 }

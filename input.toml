@@ -27,8 +27,8 @@ e_loc = [1.2]
 e_cb = [2.0]
 e_loc_sigma = [0.0]
 e_cb_sigma = [0.0]
-s_frequency_e = [9.0e10]
-s_frequency_g = [9.0e10]
+s_frequency_e = [9.0e-10]
+s_frequency_g = [9.0e-10]
 
 [initial_conditions]
 trap_available = [1]
@@ -37,25 +37,25 @@ hole_available = [1]
 [localised]
 gs_tun = true
 es_tun = true
-gs_retrap = true
-es_retrap = true
+gs_retrap = false
+es_retrap = false
 vrh = false
-b_gs = [1.2e12]
-b_es = [1.2e12]
-alpha_gs = [9.0e9]
-alpha_es = [9.0e9]
+b_gs = [1.2e-12]
+b_es = [1.2e-12]
+alpha_gs = [9.0e-9]
+alpha_es = [9.0e-9]
 
 [delocalised]
 gs_cb = true
 es_cb = true
-retrap = true
+retrap = false
 s_gs = [1.2e12]
 s_es = [1.2e12]
 mu = [0.1]
 retrap_ratio = [0.5]
 
 [filling]
-fill = true
+fill = false
 d0 = [400.0]
 d_dot = [1.0]
 dd_unit = "second"

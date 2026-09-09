@@ -20,6 +20,9 @@ pub mod filesystem;
 /// Writing consolidated, user-facing simulation output.
 pub mod outputs;
 
+/// Loading consolidated CSV results and producing plots from them.
+pub mod plotting;
+
 use std::error::Error;
 use std::fmt;
 use std::fs;

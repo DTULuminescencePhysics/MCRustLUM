@@ -261,7 +261,7 @@ pub fn read_all_batches<T: DeserializeOwned>(
 ///
 /// Fill statistics are calculated across independent repetitions at the same
 /// profile time. Temperature is the mean of records that occur at that time.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
 pub struct ContinuousValueRow {
     /// Absolute profile time in seconds.
     pub time: TimeFloat,
@@ -277,42 +277,65 @@ pub struct ContinuousValueRow {
     pub fill_quantile_0_1: Float,
     /// Linearly interpolated 90th percentile of the filling fraction.
     pub fill_quantile_0_9: Float,
+    /// Linearly interpolated lower quartile of the filling fraction.
+    #[serde(default = "missing_quantile")]
+    pub fill_quantile_0_25: Float,
+    /// Linearly interpolated upper quartile of the filling fraction.
+    #[serde(default = "missing_quantile")]
+    pub fill_quantile_0_75: Float,
+}
+
+/// Mark quartiles as unavailable when reading CSV files made by older releases.
+fn missing_quantile() -> Float {
+    Float::NAN
 }
 
 /// One row in the averaged event-count output.
 ///
-/// Every count is normalized by both repetition count and bin width and is
-/// therefore an observed event frequency in s⁻¹, not a microscopic rate
-/// equation evaluated at the row time.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// Every count is normalized by the repetition count. Divide a value by the
+/// duration between this row's right edge and the preceding edge to obtain an
+/// observed event frequency in s⁻¹.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
 pub struct AverageEventRow {
     /// Right-hand edge of the event bin, in seconds.
     pub time: TimeFloat,
-    /// Ground-state localised recombinations per second per repetition.
+    /// Ground-state localised recombinations per repetition in this bin.
+    #[serde(rename = "localised_recombination_ground")]
     pub localised_recombination_ground_count: Float,
-    /// Excited-state localised recombinations per second per repetition.
+    /// Excited-state localised recombinations per repetition in this bin.
+    #[serde(rename = "localised_recombination_excited")]
     pub localised_recombination_excited_count: Float,
-    /// Ground-state delocalised recombinations per second per repetition.
+    /// Ground-state delocalised recombinations per repetition in this bin.
+    #[serde(rename = "delocalised_recombination_ground")]
     pub delocalised_recombination_ground_count: Float,
-    /// Excited-state delocalised recombinations per second per repetition.
+    /// Excited-state delocalised recombinations per repetition in this bin.
+    #[serde(rename = "delocalised_recombination_excited")]
     pub delocalised_recombination_excited_count: Float,
-    /// Ground-state localised retrapping events per second per repetition.
+    /// Ground-state localised retrapping events per repetition in this bin.
+    #[serde(rename = "localised_retrapping_ground")]
     pub localised_retrapping_ground_count: Float,
-    /// Excited-state localised retrapping events per second per repetition.
+    /// Excited-state localised retrapping events per repetition in this bin.
+    #[serde(rename = "localised_retrapping_excited")]
     pub localised_retrapping_excited_count: Float,
-    /// Ground-state delocalised retrapping events per second per repetition.
+    /// Ground-state delocalised retrapping events per repetition in this bin.
+    #[serde(rename = "delocalised_retrapping_ground")]
     pub delocalised_retrapping_ground_count: Float,
-    /// Excited-state delocalised retrapping events per second per repetition.
+    /// Excited-state delocalised retrapping events per repetition in this bin.
+    #[serde(rename = "delocalised_retrapping_excited")]
     pub delocalised_retrapping_excited_count: Float,
-    /// All events originating from ground states per second per repetition.
+    /// All events originating from ground states per repetition in this bin.
+    #[serde(rename = "ground")]
     pub ground_count: Float,
-    /// All events originating from excited states per second per repetition.
+    /// All events originating from excited states per repetition in this bin.
+    #[serde(rename = "excited")]
     pub excited_count: Float,
-    /// All recombination events per second per repetition.
+    /// All recombination events per repetition in this bin.
+    #[serde(rename = "recombination")]
     pub recombination_count: Float,
-    /// All retrapping events per second per repetition.
+    /// All retrapping events per repetition in this bin.
+    #[serde(rename = "retrapping")]
     pub retrapping_count: Float,
-    /// All irradiation-driven filling events per second per repetition.
+    /// All irradiation-driven filling events per repetition in this bin.
     pub filling_count: Float,
 }
 
@@ -390,7 +413,7 @@ where
 
     writeln!(
         writer,
-        "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9"
+        "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9,fill_quantile_0_25,fill_quantile_0_75"
     )
     .map_err(|source| CsvOutputError::Write {
         path: path.to_path_buf(),
@@ -404,7 +427,7 @@ where
         })?;
         writeln!(
             writer,
-            "{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{}",
             row.time,
             row.temperature,
             row.fill,
@@ -412,6 +435,8 @@ where
             row.fill_median,
             row.fill_quantile_0_1,
             row.fill_quantile_0_9,
+            row.fill_quantile_0_25,
+            row.fill_quantile_0_75,
         )
         .map_err(|source| CsvOutputError::Write {
             path: path.to_path_buf(),
@@ -425,7 +450,7 @@ where
     })
 }
 
-/// Write normalized event-frequency rows to a CSV file.
+/// Write per-bin event counts averaged across repetitions to a CSV file.
 ///
 /// Rows are streamed and preserve the category breakdown in
 /// [`AverageEventRow`]. The function writes column names before requesting the
@@ -444,7 +469,7 @@ where
 
     writeln!(
         writer,
-        "time,localised_recombination_ground,localised_recombination_excited,delocalised_recombination_ground,delocalised_recombination_excited,localised_retrapping_ground,localised_retrapping_excited,delocalised_retrapping_ground,delocalised_retrapping_excited,ground,excited,recombination, retrapping, filling_count"
+        "time,localised_recombination_ground,localised_recombination_excited,delocalised_recombination_ground,delocalised_recombination_excited,localised_retrapping_ground,localised_retrapping_excited,delocalised_retrapping_ground,delocalised_retrapping_excited,ground,excited,recombination,retrapping,filling_count"
     )
     .map_err(|source| CsvOutputError::Write {
         path: path.to_path_buf(),
@@ -596,6 +621,8 @@ mod tests {
                 fill_median: 0.25,
                 fill_quantile_0_1: 0.21,
                 fill_quantile_0_9: 0.29,
+                fill_quantile_0_25: 0.225,
+                fill_quantile_0_75: 0.275,
             },
             ContinuousValueRow {
                 time: 1.0,
@@ -605,6 +632,8 @@ mod tests {
                 fill_median: 0.5,
                 fill_quantile_0_1: 0.42,
                 fill_quantile_0_9: 0.58,
+                fill_quantile_0_25: 0.45,
+                fill_quantile_0_75: 0.55,
             },
         ]
         .into_iter()
@@ -617,9 +646,9 @@ mod tests {
         assert_eq!(
             contents,
             concat!(
-                "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9\n",
-                "0,273.15,0.25,0.05,0.25,0.21,0.29\n",
-                "1,283.15,0.5,0.1,0.5,0.42,0.58\n",
+                "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9,fill_quantile_0_25,fill_quantile_0_75\n",
+                "0,273.15,0.25,0.05,0.25,0.21,0.29,0.225,0.275\n",
+                "1,283.15,0.5,0.1,0.5,0.42,0.58,0.45,0.55\n",
             )
         );
     }

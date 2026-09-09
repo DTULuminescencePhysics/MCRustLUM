@@ -64,9 +64,26 @@ cargo run -p luminescence -- my_experiment
 ```
 
 The output layout is `run/<name>/`, containing the copied `input.toml`, the
-consolidated `average_fill.csv` and `average_event.csv`, and a `tmp/` directory
-for the per-repetition Monte Carlo files. Automatic names use the first
-available `experiment_N`, starting with `experiment_1`.
+consolidated `average_fill.csv` and `average_event.csv`, six PNG plots, and a
+`tmp/` directory for the per-repetition Monte Carlo files. The plots include
+mean filling with standard-deviation limits, median filling with interquartile
+limits, temperature against time, and aggregate event frequencies. Automatic
+names use the first available `experiment_N`, starting with `experiment_1`.
+
+Plotting can also be used separately from a simulation:
+
+```rust,no_run
+use io::plotting::{EventSeries, PlotOptions, SimulationResults};
+
+let results = SimulationResults::from_csv("average_fill.csv", "average_event.csv")?;
+results.plot_events_vs_time(
+    "smoothed_events.png",
+    &[EventSeries::Recombination, EventSeries::Retrapping],
+    Some(1.0), // rebin into one-second bins
+    PlotOptions::default(),
+)?;
+# Ok::<(), io::plotting::PlotError>(())
+```
 
 ## License
 

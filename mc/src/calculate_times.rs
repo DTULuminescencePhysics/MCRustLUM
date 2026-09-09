@@ -23,7 +23,7 @@ use common::time_temperature::TimeTemperature;
 use common::trap_hole_band_tail::ElectronPlaces;
 
 use common::numeric::{Float, TimeFloat};
-use io::SimulationInputs;
+use io::inputs::SimulationInputs;
 use io::outputs::append_monte_carlo_experiment_batch_to_file;
 use rand::Rng;
 use std::path::Path;
@@ -700,14 +700,13 @@ mod tests {
 
         assert_eq!(
             event,
-            Event::DelocalisedRetrapping {
+            Event::DelocalisedRecombination  {
                 source,
-                destination,
+                hole,
                 state: ElectronicState::Excited,
             }
         );
-        assert_eq!(trap_places.available_count(), 1);
-        assert!(trap_places.is_available(destination));
-        assert_eq!(hole_places.available_count(), 1);
+        assert_eq!(trap_places.available_count(), 0);
+        assert_eq!(hole_places.available_count(), 0);
     }
 }

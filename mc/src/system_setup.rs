@@ -42,7 +42,7 @@ impl MonteCarloSimulation {
     /// ```no_run
     /// # fn main() -> Result<(), String> {
     /// let simulation = mc::system_setup::MonteCarloSimulation::new(
-    ///     io::default_inputs(),
+    ///     io::inputs::default_inputs(),
     ///     10,
     ///     1,
     ///     100,
@@ -228,7 +228,7 @@ mod tests {
     }
 
     fn small_inputs() -> SimulationInputs {
-        let mut inputs = io::default_inputs();
+        let mut inputs = io::inputs::default_inputs();
         inputs.cube.x = 2.0;
         inputs.cube.y = 1.0;
         inputs.cube.z = 1.0;

@@ -10,81 +10,14 @@
 //! [`plot_default_results`] creates a useful standard set in one call.
 
 use crate::outputs::{AverageEventRow, ContinuousValueRow};
+use crate::errors::PlotError;
 use common::numeric::{Float, TimeFloat};
 use plotters::prelude::*;
-use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-/// Error returned while loading, validating, rebinning, or plotting results.
-#[derive(Debug)]
-pub enum PlotError {
-    /// A CSV file could not be opened or parsed.
-    Csv {
-        /// Input path associated with the error.
-        path: PathBuf,
-        /// Error reported by the CSV reader.
-        source: csv::Error,
-    },
-    /// Result data was empty or physically inconsistent.
-    InvalidData {
-        /// Input path containing the invalid data.
-        path: PathBuf,
-        /// Explanation of the violated requirement.
-        message: String,
-    },
-    /// An output directory could not be created.
-    CreateDirectory {
-        /// Directory that could not be created.
-        path: PathBuf,
-        /// Underlying filesystem error.
-        source: std::io::Error,
-    },
-    /// Plotters could not draw or save an image.
-    Draw {
-        /// Destination image path.
-        path: PathBuf,
-        /// Display form of the Plotters backend error.
-        message: String,
-    },
-}
-
-impl fmt::Display for PlotError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Csv { path, source } => {
-                write!(formatter, "failed to read {}: {source}", path.display())
-            }
-            Self::InvalidData { path, message } => {
-                write!(
-                    formatter,
-                    "invalid result data in {}: {message}",
-                    path.display()
-                )
-            }
-            Self::CreateDirectory { path, source } => write!(
-                formatter,
-                "failed to create plot directory {}: {source}",
-                path.display()
-            ),
-            Self::Draw { path, message } => {
-                write!(formatter, "failed to draw {}: {message}", path.display())
-            }
-        }
-    }
-}
-
-impl Error for PlotError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Csv { source, .. } => Some(source),
-            Self::CreateDirectory { source, .. } => Some(source),
-            Self::InvalidData { .. } | Self::Draw { .. } => None,
-        }
-    }
-}
 
 /// Horizontal coordinate used for a filling plot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

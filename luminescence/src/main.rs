@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 /// The current executable requests ten repetitions, one parameter experiment,
 /// and a minimum spatial ensemble of 25 traps.
 fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
-    let inputs = io::read_inputs("input.toml")?;
+    let inputs = io::inputs::read_inputs("input.toml")?;
     let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 40, 1,25)?;
 
     monte_carlo.run()?;

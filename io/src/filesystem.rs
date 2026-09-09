@@ -4,61 +4,11 @@
 
 //! Creation of the directory layout used by a simulation run.
 
-use std::error::Error;
 use std::ffi::OsStr;
-use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use crate::errors::FilesystemError;
 
-/// An error produced while preparing an experiment directory.
-#[derive(Debug)]
-pub enum FilesystemError {
-    /// A supplied folder name was empty, nested, or otherwise unsafe.
-    InvalidFolderName {
-        /// Rejected path supplied as the experiment name.
-        name: PathBuf,
-    },
-    /// A filesystem operation failed.
-    Operation {
-        /// Human-readable filesystem operation being attempted.
-        action: &'static str,
-        /// Path on which the operation failed.
-        path: PathBuf,
-        /// Underlying filesystem error.
-        source: std::io::Error,
-    },
-    /// Every representable automatic experiment number was already occupied.
-    ExperimentNumberExhausted,
-}
-
-impl fmt::Display for FilesystemError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidFolderName { name } => write!(
-                formatter,
-                "experiment folder name must be one normal path component, got {:?}",
-                name
-            ),
-            Self::Operation {
-                action,
-                path,
-                source,
-            } => write!(formatter, "failed to {action} {}: {source}", path.display()),
-            Self::ExperimentNumberExhausted => {
-                formatter.write_str("could not find an available automatic experiment number")
-            }
-        }
-    }
-}
-
-impl Error for FilesystemError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Operation { source, .. } => Some(source),
-            Self::InvalidFolderName { .. } | Self::ExperimentNumberExhausted => None,
-        }
-    }
-}
 
 /// Create an error adapter that adds operation and path context to an I/O error.
 fn operation_error(
@@ -198,6 +148,10 @@ pub fn prepare_experiment_directory(
 
     Ok(experiment_directory)
 }
+
+
+
+
 
 #[cfg(test)]
 mod tests {

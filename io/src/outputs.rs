@@ -10,7 +10,7 @@
 //! those members as a stream, keeping only the current batch in memory.
 
 use common::numeric::{Float, TimeFloat};
-use std::error::Error;
+use crate::errors::{OutputError, CsvOutputError};
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -24,88 +24,6 @@ use flate2::write::GzEncoder;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-/// An error produced while writing or reading temporary experiment output.
-#[derive(Debug)]
-pub enum OutputError {
-    /// The temporary output file could not be opened.
-    Open {
-        /// File that could not be opened.
-        path: PathBuf,
-        /// Underlying filesystem error.
-        source: std::io::Error,
-    },
-    /// A batch could not be encoded or written.
-    Write {
-        /// File to which serialization failed.
-        path: PathBuf,
-        /// Bincode serialization or output error.
-        source: Box<bincode::ErrorKind>,
-    },
-    /// The final bytes of a gzip member could not be written.
-    Finish {
-        /// File whose gzip member could not be finalized.
-        path: PathBuf,
-        /// Underlying compression or filesystem error.
-        source: std::io::Error,
-    },
-    /// Compressed data could not be read.
-    Read {
-        /// Compressed file that could not be read.
-        path: PathBuf,
-        /// Underlying decompression or filesystem error.
-        source: std::io::Error,
-    },
-    /// A batch was incomplete or did not match the requested record type.
-    Decode {
-        /// File containing the malformed or type-incompatible batch.
-        path: PathBuf,
-        /// Bincode deserialization error.
-        source: Box<bincode::ErrorKind>,
-    },
-}
-
-impl fmt::Display for OutputError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Open { path, source } => {
-                write!(formatter, "failed to open {}: {source}", path.display())
-            }
-            Self::Write { path, source } => {
-                write!(
-                    formatter,
-                    "failed to write batch to {}: {source}",
-                    path.display()
-                )
-            }
-            Self::Finish { path, source } => write!(
-                formatter,
-                "failed to finish compressed batch in {}: {source}",
-                path.display(),
-            ),
-            Self::Read { path, source } => {
-                write!(formatter, "failed to read {}: {source}", path.display())
-            }
-            Self::Decode { path, source } => {
-                write!(
-                    formatter,
-                    "failed to decode batch from {}: {source}",
-                    path.display()
-                )
-            }
-        }
-    }
-}
-
-impl Error for OutputError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Open { source, .. } | Self::Finish { source, .. } | Self::Read { source, .. } => {
-                Some(source)
-            }
-            Self::Write { source, .. } | Self::Decode { source, .. } => Some(source.as_ref()),
-        }
-    }
-}
 
 /// Return the stable bincode configuration shared by the writer and reader.
 fn bincode_options() -> impl Options {
@@ -232,7 +150,7 @@ impl<T: DeserializeOwned> Iterator for BatchReader<T> {
 /// # #[derive(Deserialize)]
 /// # struct Event;
 /// # fn process(_: Vec<Event>) {}
-/// # fn example() -> Result<(), io::outputs::OutputError> {
+/// # fn example() -> Result<(), io::errors::OutputError> {
 /// for batch in io::outputs::read_all_batches::<Event>("experiment.bin.gz")? {
 ///     process(batch?);
 /// }
@@ -339,58 +257,7 @@ pub struct AverageEventRow {
     pub filling_count: Float,
 }
 
-/// An error produced while writing consolidated CSV output.
-#[derive(Debug)]
-pub enum CsvOutputError {
-    /// The destination CSV file could not be created.
-    Create {
-        /// Destination path.
-        path: PathBuf,
-        /// Underlying filesystem error.
-        source: std::io::Error,
-    },
-    /// The input iterator could not produce a valid output row.
-    SourceData {
-        /// Destination path for which rows were being generated.
-        path: PathBuf,
-        /// Display form of the upstream row-generation error.
-        message: String,
-    },
-    /// A header, row, or buffered tail could not be written.
-    Write {
-        /// Destination path.
-        path: PathBuf,
-        /// Underlying filesystem error.
-        source: std::io::Error,
-    },
-}
 
-impl fmt::Display for CsvOutputError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Create { path, source } => {
-                write!(formatter, "failed to create {}: {source}", path.display())
-            }
-            Self::SourceData { path, message } => write!(
-                formatter,
-                "failed to produce a row for {}: {message}",
-                path.display()
-            ),
-            Self::Write { path, source } => {
-                write!(formatter, "failed to write {}: {source}", path.display())
-            }
-        }
-    }
-}
-
-impl Error for CsvOutputError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Create { source, .. } | Self::Write { source, .. } => Some(source),
-            Self::SourceData { .. } => None,
-        }
-    }
-}
 
 /// Write consolidated time, temperature, and fill rows to a CSV file.
 ///

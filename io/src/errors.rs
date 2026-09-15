@@ -236,6 +236,10 @@ impl Error for CsvOutputError {
 /// Error returned while loading, validating, rebinning, or plotting results.
 #[derive(Debug)]
 pub enum PlotError {
+    Setup {
+        source: String,
+        message: String,
+    },
     /// A CSV file could not be opened or parsed.
     Csv {
         /// Input path associated with the error.
@@ -269,6 +273,10 @@ pub enum PlotError {
 impl fmt::Display for PlotError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Setup { source, message } => {
+                write!(formatter, "failed to setup {source} with message: {message} ",)
+            }
+
             Self::Csv { path, source } => {
                 write!(formatter, "failed to read {}: {source}", path.display())
             }
@@ -294,9 +302,11 @@ impl fmt::Display for PlotError {
 impl Error for PlotError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::Setup { .. } => None,
             Self::Csv { source, .. } => Some(source),
             Self::CreateDirectory { source, .. } => Some(source),
             Self::InvalidData { .. } | Self::Draw { .. } => None,
         }
     }
 }
+

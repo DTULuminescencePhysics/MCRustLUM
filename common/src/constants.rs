@@ -118,7 +118,7 @@ pub mod physical_constants{
 
 /// Time-unit conversion at the precision used by the simulation clock.
 pub mod time{
-    use std::fmt;    
+    use std::{fmt, str::FromStr};    
     use crate::numeric::{PrecisionInput, TimeFloat, TimePrecision,};
     /// Seconds in one second.
     const SECOND: u32 = 1;
@@ -157,6 +157,23 @@ pub mod time{
         /// Millions of Julian years (`Ma`).
         MaAnnum
     }
+    impl FromStr for TimeUnit {
+        type Err = String;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            match s.to_lowercase().as_str() {
+                "second"   => Ok(Self::Second),
+                "minute"   => Ok(Self::Minute),
+                "hour"     => Ok(Self::Hour),
+                "day"      => Ok(Self::Day),
+                "year"     => Ok(Self::Year),
+                "ka annum" => Ok(Self::KAnnum),
+                "ma annum" => Ok(Self::MaAnnum),
+                _ => Err(format!("Invalid TimeUnit: {s}")),
+            }
+        }
+    }
+
     impl fmt::Display for TimeUnit {
         fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             let name = match self {
@@ -236,7 +253,7 @@ pub mod time{
 }
 /// Temperature-unit conversion at the program's configured precision.
 pub mod temperature {
-    use crate::numeric::{ElementWise, Float, PrecisionInput, ProgramPrecision,};
+    use std::{fmt, str::FromStr};        use crate::numeric::{ElementWise, Float, PrecisionInput, ProgramPrecision,};
     #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
     /// Unit used for temperature values supplied to the simulation.
@@ -246,7 +263,27 @@ pub mod temperature {
         /// Kelvin.
         Kelvin,
     }
+    impl fmt::Display for TemperatureUnit {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let name = match self {
+                TemperatureUnit::Celsius => "K",
+                TemperatureUnit::Kelvin => "°C",
+            };
 
+            formatter.write_str(name)
+        }
+    }
+    impl FromStr for TemperatureUnit {
+        type Err = String;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            match s.to_lowercase().as_str() {
+                "kelvin"   => Ok(Self::Celsius),
+                "celsius"   => Ok(Self::Kelvin),
+                _ => Err(format!("Invalid TemperatureUnit: {s}")),
+            }
+        }
+    }
     /// Convert a scalar or container of temperatures to kelvin at program precision.
     ///
     /// ```

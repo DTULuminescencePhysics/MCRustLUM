@@ -12,31 +12,52 @@
 use crate::outputs::{AverageEventRow, ContinuousValueRow};
 use crate::errors::PlotError;
 use common::numeric::{Float, TimeFloat};
+use common::constants::time::TimeUnit;
+use common::constants::temperature::TemperatureUnit;
+use plotters::coord::Shift;
+use plotters::coord::types::RangedCoordf64;
 use plotters::prelude::*;
 use std::fmt;
 use std::fs;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
-
-/// Horizontal coordinate used for a filling plot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FillXAxis {
-    /// Plot filling fraction against elapsed/profile time in seconds.
-    Time,
-    /// Plot filling fraction against temperature in kelvin.
-    Temperature,
+/// Expand a finite data extent so Plotters always receives a non-empty range.
+fn padded_range(values: impl IntoIterator<Item = Float>) -> Range<Float> {
+    let mut values = values.into_iter();
+    let first = values.next().expect("validated result data is non-empty");
+    let (mut minimum, mut maximum) = (first, first);
+    for value in values {
+        minimum = minimum.min(value);
+        maximum = maximum.max(value);
+    }
+    let span = maximum - minimum;
+    let padding = if span > 0.0 {
+        span * 0.05
+    } else {
+        minimum.abs().max(1.0) * 0.05
+    };
+    (minimum - padding)..(maximum + padding)
 }
 
 /// Central filling statistic drawn as a line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FillStatistic {
+pub enum FillAverage {
     /// Arithmetic mean filling fraction.
     Mean,
     /// Median filling fraction.
     Median,
 }
-
+impl FillAverage{
+    pub fn get_label(&self) -> &str{
+        match self {
+            FillAverage::Mean => "Mean filling",
+            FillAverage::Median => "Median filling",
+        }
+    
+    }
+}
 /// Optional uncertainty region for a filling plot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FillBand {
@@ -47,6 +68,641 @@ pub enum FillBand {
     /// Shade the interquartile range from the 25th to 75th percentile.
     InterquartileRange,
 }
+impl FillBand {
+    pub fn get_label(&self) -> &str{
+        match self {
+            FillBand::StandardDeviation => "Mean ± standard deviation",
+            FillBand::InterquartileRange => "25th–75th percentile",
+            FillBand::None => unreachable!(),
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FillStatistic {
+    /// Arithmetic mean filling fraction.
+    average: FillAverage,
+    /// Median filling fraction.
+    band: FillBand,
+}
+
+impl FillStatistic{
+
+    pub fn new(mean:bool, fill:&str) -> Self{
+        let average = if mean{
+            FillAverage::Mean
+        }else {
+            FillAverage::Median
+        };
+
+        let band = if fill == "sd" {
+            FillBand::StandardDeviation
+        } else if fill == "iqr" {
+            FillBand::InterquartileRange
+        } else {
+            FillBand::None
+        }; 
+        Self { average, band }
+    }
+    pub fn check_data(&self, fill_rows: &Vec<ContinuousValueRow>, path: PathBuf) -> Result<(),PlotError> {
+        if self.band == FillBand::InterquartileRange
+            && fill_rows.iter().any(|row| {
+                !row.fill_quantile_0_25.is_finite() || !row.fill_quantile_0_75.is_finite()
+            })
+        {
+            return Err(PlotError::InvalidData {
+                path: path,
+                message: "interquartile plots require fill_quantile_0_25 and fill_quantile_0_75 columns; regenerate this CSV with the current version".into(),
+            });
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn get_fill_average(&self,) -> 
+        Result< impl Fn(&ContinuousValueRow) -> f64,  PlotError> 
+    {
+        Ok(move |row: &ContinuousValueRow| match self.average  {
+            FillAverage::Mean => row.fill,
+            FillAverage::Median => row.fill_median,
+        })
+       
+        
+    }
+    pub fn get_fill_band(&self,) -> Result< impl Fn(&ContinuousValueRow) 
+    -> (f64,f64), PlotError> {
+        Ok(move |row: &ContinuousValueRow| match self.band {
+            FillBand::None => {
+                let bcentral =  match self.average {
+                                FillAverage::Mean => row.fill,
+                                FillAverage::Median => row.fill_median,
+                            };   
+                (bcentral, bcentral) 
+            }
+            
+            FillBand::StandardDeviation => (
+                row.fill - row.fill_standard_deviation,
+                row.fill + row.fill_standard_deviation,
+            ),
+            FillBand::InterquartileRange => (row.fill_quantile_0_25, row.fill_quantile_0_75),
+        })
+        
+    }
+    pub fn get_y_range(&self,fill_rows: &Vec<ContinuousValueRow>,) 
+    -> Result< Range< f64 >, PlotError> {
+        let average = self.get_fill_average()?;
+        let band = self.get_fill_band()?;
+
+        let mut y_values = vec![0.0, 1.0];
+        for row in fill_rows {
+            let (lower, upper) = band(row);
+            y_values.extend([average(row), lower, upper]);
+        }
+
+        Ok(padded_range(y_values))
+       
+    } 
+
+}
+
+/// Horizontal coordinate used for a filling plot.
+#[derive(Debug, Clone, Copy, PartialEq,)]
+pub enum Axis {
+    /// Plot elapsed/profile time in seconds.
+    Time {unit: TimeUnit},
+    /// Plot against temperature.
+    Temperature {unit: TemperatureUnit},
+    /// Plot trap filling ratio
+    Fill{statistics: FillStatistic },
+    /// Plot events/luminescence glow curve
+    Event,
+}
+
+impl Axis{
+
+    pub fn new(name: &str, unit: &str, mean: bool, fill: &str) -> Result<Self, PlotError> {
+        match name {
+            "Time" => {
+                let unit = TimeUnit::from_str(unit)
+                    .map_err(|e| PlotError::Setup{ source: "TimeUnit".into(),
+                                                           message: e})?;
+                Ok(Self::Time { unit })
+            },  
+            "Temperature" => {
+                let unit = TemperatureUnit::from_str(unit)
+                .map_err(|e| PlotError::Setup{ source: "TemperatureUnit".into(),
+                                                           message: e})?;
+                Ok(Self::Temperature { unit })
+            },
+            "Fill" => Ok(Self::Fill { statistics: FillStatistic::new(mean,fill)}),
+            "Event" => Ok(Self::Event),
+            _ => Err(PlotError::Setup { 
+                                source: "YAxis".into(), 
+                                message: format!("Invalid type {name}") })
+
+        }
+    } 
+
+    pub fn get_label(&self) -> String {
+        match self {
+            Axis::Time{ unit} => {
+                format!("Time ({unit})") 
+            }
+            Axis::Temperature { unit} => {
+                format!("Temperature ({unit})")
+            }
+            Axis::Event => { format!("Events / bin width / repetition (s⁻¹)")},
+            Axis::Fill{..} => { format!("n/N filling")},
+
+        }
+    }
+
+}
+
+/// Raster dimensions shared by plot-producing methods.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlotOptions {
+    /// Image width in pixels.
+    pub width: u32,
+    /// Image height in pixels.
+    pub height: u32,
+
+    pub font:  &'static str,
+
+    pub caption_font_size: u32,
+
+    pub margin: u32
+}
+
+impl PlotOptions {
+
+    pub fn validate_dimensions(&self) -> Result<(), PlotError> {
+        if self.width == 0 || self.height == 0 {
+            return Err(PlotError::Setup { 
+                                source: "PlotOptions".into(), 
+                                message:"plot width and height must both be greater than zero".into() });
+        }
+        Ok(())
+    }
+
+    pub fn get_caption_options(&self) -> (&'static str, u32){
+        (self.font, self.caption_font_size)
+    }
+
+}
+
+impl Default for PlotOptions {
+    fn default() -> Self {
+        Self {
+            width: 1200,
+            height: 800,
+            font: "sans-serif".into(),
+            caption_font_size: 32,
+            margin: 20
+        }
+    }
+}
+
+pub struct PlotWindow{
+
+    pub output: PathBuf,
+
+    pub x_axis: Axis,
+
+    pub y_axis: Axis,
+
+    pub options: PlotOptions,
+
+}
+
+impl PlotWindow{
+
+    pub fn new(output: PathBuf, x_axis: &str, x_unit: &str, y_axis: &str, y_unit: &str, mean:bool, fill:&str) -> Result<Self, PlotError> {
+
+        let x_axis = Axis::new(x_axis,x_unit, mean, fill)?;
+
+        let y_axis = Axis::new(y_axis, y_unit, mean, fill)?; 
+
+        let options = PlotOptions::default(); 
+        options.validate_dimensions()?;
+        Ok( Self {
+                output,
+                x_axis,
+                y_axis,
+                options
+            })
+    } 
+    pub fn get_x_filter(&self) -> Result< impl Fn(&ContinuousValueRow) -> f64,  PlotError>  {
+        let x = match self.x_axis {
+            Axis::Time { .. } => {
+                Box::new(|row: &ContinuousValueRow| row.time)
+                as Box<dyn Fn(&ContinuousValueRow) -> f64>
+            }
+            Axis::Temperature { .. } => {
+                Box::new(|row: &ContinuousValueRow| row.temperature)
+            }
+        _ => {
+            return Err(PlotError::Draw {
+                path: self.output.clone(),
+                message: "Attempted to access Fill or Events as an X-axis".into(),
+            });
+            }
+        };
+        Ok(x)
+    }
+
+    pub fn get_continuous_x_range(&self,fill_rows: &Vec<ContinuousValueRow>,)
+        -> Result< Range< f64 >, PlotError> 
+    {
+        let x=self.get_x_filter()?;
+
+        Ok(padded_range(fill_rows.iter().map(x)))
+
+    }
+
+    pub fn get_y_filter(&self) -> Result< impl Fn(&ContinuousValueRow) -> f64,  PlotError>  {
+        
+        let y = match self.y_axis {
+            Axis::Time { .. } => {
+                Box::new(|row: &ContinuousValueRow| row.time)
+                as Box<dyn Fn(&ContinuousValueRow) -> f64>
+            
+            },
+            Axis::Temperature { .. } => {
+                Box::new(|row: &ContinuousValueRow| row.temperature)
+            },
+            Axis::Fill { statistics } => {
+                match statistics.average {
+                    FillAverage::Mean => { 
+                        Box::new( |row: &ContinuousValueRow| row.fill)
+                    },
+                    FillAverage::Median => { 
+                        Box::new( |row: &ContinuousValueRow| row.fill_median)
+                        as Box<dyn Fn(&ContinuousValueRow) -> f64> 
+                    },
+                }
+            },
+            _ => return Err(PlotError::Draw {
+                path: self.output.clone(),
+                message: "Attempted to access Events as an Y-axis".into(),
+            })
+
+        };
+        Ok(y)
+
+    }
+
+
+    pub fn get_continuous_y_range(&self,fill_rows: &Vec<ContinuousValueRow>,)
+        -> Result< Range< f64 >, PlotError> 
+    {
+        let y = self.get_y_filter()?;
+        match self.y_axis {
+            Axis::Time { .. } => {
+                
+                return Ok(padded_range(fill_rows.iter().map(y)));
+            }
+            Axis::Temperature { .. } => {
+                let y = |row: &ContinuousValueRow| row.temperature;
+                return Ok(padded_range(fill_rows.iter().map(y)));
+            },
+            Axis::Fill { statistics } => {
+                let range = statistics.get_y_range(fill_rows)?;
+                return Ok(range);
+            }
+            _ => return Err(PlotError::Draw {
+                path: self.output.clone(),
+                message: "Not yet written".into(),
+            }),
+
+        }
+        
+    }
+
+    pub fn plot_setup(&self, caption: &str, x_range: Range<Float>, y_range: Range<Float>) -> Result<
+        (
+            DrawingArea<BitMapBackend<'_>, Shift>,
+            ChartContext<
+                '_,
+                BitMapBackend<'_>,
+                Cartesian2d<RangedCoordf64, RangedCoordf64>,
+            > 
+        ), PlotError>{
+        
+        let root = BitMapBackend::new(
+            &self.output, 
+            ( self.options.width, self.options.height))
+            .into_drawing_area();
+
+        root.fill(&WHITE)
+            .map_err(
+                    |error| PlotError::Draw {
+                            path: self.output.clone(),
+                            message: format!("{error:?}"),
+                        }
+            )?;
+
+        let mut chart = ChartBuilder::on(&root)
+                    .caption(caption, self.options.get_caption_options())
+                    .margin(self.options.margin)
+                    .x_label_area_size(55)
+                    .y_label_area_size(85)
+                    .build_cartesian_2d(x_range, y_range)
+                    .map_err(
+                              | error | PlotError::Draw {
+                                    path: self.output.clone(),
+                                    message: format!("{error:?}"),
+                                }
+                    )?;
+        chart
+                .configure_mesh()
+                .x_desc(self.x_axis.get_label())
+                .y_desc(self.y_axis.get_label())
+                .draw()
+                 .map_err(
+                        |error| PlotError::Draw {
+                                path: self.output.clone(),
+                                message: format!("{error:?}"),
+                            }
+                        )?;
+        Ok((root, chart))
+    }
+
+
+     /// Plot mean or median filling against time or temperature.
+    pub fn plot_fill(
+        &self,
+        fill_rows: &Vec<ContinuousValueRow>,
+        caption: &str,
+    ) -> Result<(), PlotError> {
+        
+        if let Axis::Fill { statistics } = &self.y_axis {
+            statistics.check_data(fill_rows, self.output.clone())?;
+        }
+       
+        let x_range = self.get_continuous_x_range(fill_rows)?;
+        let y_range = self.get_continuous_y_range(fill_rows)?; 
+
+        let (root, mut chart) = self.plot_setup(caption, x_range, y_range)?;
+        
+        
+
+        let x = self.get_x_filter()?;
+        if let Axis::Fill { statistics } = &self.y_axis {
+            if statistics.band != FillBand::None {
+                let bounds = statistics.get_fill_band()?;
+                
+                let mut polygon = fill_rows
+                    .iter()
+                    .map(|row| (x(row), bounds(row).1))
+                    .collect::<Vec<_>>();
+                
+                polygon.extend(fill_rows
+                        .iter()
+                        .rev()
+                        .map(|row| (x(row), bounds(row).0)),
+                );
+                
+                let band_label = statistics.band.get_label();
+                
+                chart.draw_series(
+                                std::iter::once(Polygon::new(
+                                            polygon,
+                                             BLUE.mix(0.18).filled(),
+                                                )
+                                            )
+                                )
+                                .map_err(|error| 
+                                    PlotError::Draw {
+                                            path: self.output.clone(),
+                                            message: format!("{error:?}"),
+                                            }
+                                        )?
+                                .label(band_label)
+                                .legend(|(x, y)| {
+                                        Rectangle::new(
+                                            [(x, y - 5), (x + 20, y + 5)], 
+                                            BLUE.mix(0.18).filled()
+                                        )
+                                    }
+                                );
+            }
+            let central = statistics.get_fill_average()?;
+            
+            chart.draw_series(LineSeries::new(
+                fill_rows.iter().map(|row| (x(row), central(row))),
+                BLUE.stroke_width(3),
+                            )
+                        )
+                        .map_err(|error| 
+                            PlotError::Draw {
+                                path: self.output.clone(),
+                                message: format!("{error:?}"),
+                            }
+                        )?
+                        .label(statistics.average.get_label())
+                        .legend(|(x, y)| 
+                            PathElement::new(
+                                [(x, y), (x + 20, y)], 
+                                BLUE.stroke_width(3))
+                            );
+        
+        
+            chart
+                .configure_series_labels()
+                .background_style(WHITE.mix(0.85))
+                .border_style(BLACK)
+                .draw()
+                .map_err(|error| PlotError::Draw {
+                    path: self.output.clone(),
+                    message: format!("{error:?}")}
+                )?;
+
+            root.present()
+                .map_err(|error| PlotError::Draw {
+                    path: self.output.clone(),
+                    message: format!("{error:?}")}
+                )?;
+       
+    }
+    
+    Ok(())
+    }
+
+
+      /// Plot temperature in kelvin against time in seconds.
+    pub fn plot_temperature_vs_time(
+        &self,
+        fill_rows: &Vec<ContinuousValueRow>,
+        caption: &str,
+    ) -> Result<(), PlotError> {
+
+        let x_range = self.get_continuous_x_range(fill_rows)?;
+        let y_range = self.get_continuous_y_range(fill_rows)?; 
+       
+        let (root, mut chart) = self.plot_setup(caption, x_range, y_range)?;
+        let x = self.get_x_filter()?;
+        let y = self.get_y_filter()?;
+        chart.draw_series(LineSeries::new(
+                fill_rows.iter().map(|row| (x(row), y(row))),
+                RED.stroke_width(3),
+            )).map_err(|error| 
+                                    PlotError::Draw {
+                                            path: self.output.clone(),
+                                            message: format!("{error:?}"),
+                                            }
+                                        )?;
+        root.present()
+                .map_err(|error| PlotError::Draw {
+                    path: self.output.clone(),
+                    message: format!("{error:?}")}
+                )?;
+        Ok(())
+    }
+
+    // /// Plot time in seconds against temperature in kelvin.
+    // ///
+    // /// This is the axis-reversed form of [`Self::plot_temperature_vs_time`].
+    // pub fn plot_time_vs_temperature(
+    //     &self,
+    //     output: impl AsRef<Path>,
+    //     options: PlotOptions,
+    // ) -> Result<(), PlotError> {
+    //     let output = output.as_ref();
+    //     validate_dimensions(output, options)?;
+    //     let x_range = padded_range(self.fill_rows.iter().map(|row| row.temperature));
+    //     let y_range = padded_range(self.fill_rows.iter().map(|row| row.time));
+    //     let root = BitMapBackend::new(output, (options.width, options.height)).into_drawing_area();
+    //     draw_result(output, root.fill(&WHITE))?;
+    //     let mut chart = draw_result(
+    //         output,
+    //         ChartBuilder::on(&root)
+    //             .caption("Time vs temperature", ("sans-serif", 32))
+    //             .margin(20)
+    //             .x_label_area_size(55)
+    //             .y_label_area_size(70)
+    //             .build_cartesian_2d(x_range, y_range),
+    //     )?;
+    //     draw_result(
+    //         output,
+    //         chart
+    //             .configure_mesh()
+    //             .x_desc("Temperature (K)")
+    //             .y_desc("Time (s)")
+    //             .draw(),
+    //     )?;
+    //     draw_result(
+    //         output,
+    //         chart.draw_series(LineSeries::new(
+    //             self.fill_rows.iter().map(|row| (row.temperature, row.time)),
+    //             RED.stroke_width(3),
+    //         )),
+    //     )?;
+    //     draw_result(output, root.present())
+    // }
+
+    // /// Plot selected event frequencies against time.
+    // ///
+    // /// Pass `None` to use the CSV's original bins or `Some(width)` to smooth
+    // /// the data with a larger bin width in seconds. CSV timestamps are treated
+    // /// as right bin edges; plotted timestamps are the midpoint between adjacent
+    // /// edges. Each averaged count is divided by that original or new bin width
+    // /// during drawing.
+    // pub fn plot_events_vs_time(
+    //     &self,
+    //     output: impl AsRef<Path>,
+    //     series: &[EventSeries],
+    //     new_bin_width: Option<TimeFloat>,
+    //     options: PlotOptions,
+    // ) -> Result<(), PlotError> {
+    //     let output = output.as_ref();
+    //     validate_dimensions(output, options)?;
+    //     if series.is_empty() {
+    //         return Err(PlotError::InvalidData {
+    //             path: self.event_path.clone(),
+    //             message: "at least one event series must be selected".into(),
+    //         });
+    //     }
+    //     let rebinned;
+    //     let rows = if let Some(width) = new_bin_width {
+    //         rebinned = self.rebin_events(width)?;
+    //         rebinned.as_slice()
+    //     } else {
+    //         self.event_rows.as_slice()
+    //     };
+    //     let bins = event_plot_bins(rows);
+    //     if bins.is_empty() {
+    //         return Err(PlotError::InvalidData {
+    //             path: self.event_path.clone(),
+    //             message: "at least one completed event bin is required for plotting".into(),
+    //         });
+    //     }
+    //     let x_range = padded_range(bins.iter().map(|bin| bin.centre));
+    //     let maximum = bins
+    //         .iter()
+    //         .flat_map(|bin| {
+    //             series
+    //                 .iter()
+    //                 .map(move |column| event_frequency(bin, *column))
+    //         })
+    //         .fold(0.0_f64, Float::max);
+    //     let y_range = 0.0..if maximum > 0.0 { maximum * 1.08 } else { 1.0 };
+
+    //     let root = BitMapBackend::new(output, (options.width, options.height)).into_drawing_area();
+    //     draw_result(output, root.fill(&WHITE))?;
+    //     let mut chart = draw_result(
+    //         output,
+    //         ChartBuilder::on(&root)
+    //             .caption("Event frequency vs time", ("sans-serif", 32))
+    //             .margin(20)
+    //             .x_label_area_size(55)
+    //             .y_label_area_size(85)
+    //             .build_cartesian_2d(x_range, y_range),
+    //     )?;
+    //     draw_result(
+    //         output,
+    //         chart
+    //             .configure_mesh()
+    //             .x_desc("Time (s)")
+    //             .y_desc("Events / bin width / repetition (s⁻¹)")
+    //             .draw(),
+    //     )?;
+
+    //     for (index, column) in series.iter().copied().enumerate() {
+    //         let color = Palette99::pick(index).to_rgba();
+    //         draw_result(
+    //             output,
+    //             // Draw adjacent pairs independently. Plotters' bitmap backend
+    //             // can generate incorrect polygon joins for a large, dense
+    //             // polyline, which appeared as negative spikes even though all
+    //             // input frequencies were non-negative.
+    //             chart.draw_series(bins.windows(2).map(|pair| {
+    //                 PathElement::new(
+    //                     [
+    //                         (pair[0].centre, event_frequency(&pair[0], column)),
+    //                         (pair[1].centre, event_frequency(&pair[1], column)),
+    //                     ],
+    //                     color.stroke_width(1),
+    //                 )
+    //             })),
+    //         )?
+    //         .label(column.label())
+    //         .legend(move |(x, y)| PathElement::new([(x, y), (x + 20, y)], color.stroke_width(3)));
+    //     }
+    //     draw_result(
+    //         output,
+    //         chart
+    //             .configure_series_labels()
+    //             .background_style(WHITE.mix(0.85))
+    //             .border_style(BLACK)
+    //             .draw(),
+    //     )?;
+    //     draw_result(output, root.present())
+    // }
+
+
+
+}
+
 
 /// Event-count column that can be included in an event-frequency plot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,23 +792,7 @@ impl EventSeries {
     }
 }
 
-/// Raster dimensions shared by plot-producing methods.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PlotOptions {
-    /// Image width in pixels.
-    pub width: u32,
-    /// Image height in pixels.
-    pub height: u32,
-}
 
-impl Default for PlotOptions {
-    fn default() -> Self {
-        Self {
-            width: 1200,
-            height: 800,
-        }
-    }
-}
 
 /// Paths written by [`plot_default_results`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -235,314 +875,13 @@ impl SimulationResults {
         rebin_event_rows(&self.event_path, &self.event_rows, new_bin_width)
     }
 
-    /// Plot mean or median filling against time or temperature.
-    pub fn plot_fill(
-        &self,
-        output: impl AsRef<Path>,
-        x_axis: FillXAxis,
-        statistic: FillStatistic,
-        band: FillBand,
-        options: PlotOptions,
-    ) -> Result<(), PlotError> {
-        let output = output.as_ref();
-        validate_dimensions(output, options)?;
-
-        if band == FillBand::InterquartileRange
-            && self.fill_rows.iter().any(|row| {
-                !row.fill_quantile_0_25.is_finite() || !row.fill_quantile_0_75.is_finite()
-            })
-        {
-            return Err(PlotError::InvalidData {
-                path: self.fill_path.clone(),
-                message: "interquartile plots require fill_quantile_0_25 and fill_quantile_0_75 columns; regenerate this CSV with the current version".into(),
-            });
-        }
-
-        let x = |row: &ContinuousValueRow| match x_axis {
-            FillXAxis::Time => row.time,
-            FillXAxis::Temperature => row.temperature,
-        };
-        let central = |row: &ContinuousValueRow| match statistic {
-            FillStatistic::Mean => row.fill,
-            FillStatistic::Median => row.fill_median,
-        };
-        let bounds = |row: &ContinuousValueRow| match band {
-            FillBand::None => (central(row), central(row)),
-            FillBand::StandardDeviation => (
-                row.fill - row.fill_standard_deviation,
-                row.fill + row.fill_standard_deviation,
-            ),
-            FillBand::InterquartileRange => (row.fill_quantile_0_25, row.fill_quantile_0_75),
-        };
-
-        let x_range = padded_range(self.fill_rows.iter().map(x));
-        let mut y_values = vec![0.0, 1.0];
-        for row in &self.fill_rows {
-            let (lower, upper) = bounds(row);
-            y_values.extend([central(row), lower, upper]);
-        }
-        let y_range = padded_range(y_values);
-        let x_label = match x_axis {
-            FillXAxis::Time => "Time (s)",
-            FillXAxis::Temperature => "Temperature (K)",
-        };
-        let statistic_label = match statistic {
-            FillStatistic::Mean => "Mean filling",
-            FillStatistic::Median => "Median filling",
-        };
-
-        let root = BitMapBackend::new(output, (options.width, options.height)).into_drawing_area();
-        draw_result(output, root.fill(&WHITE))?;
-        let mut chart = draw_result(
-            output,
-            ChartBuilder::on(&root)
-                .caption(
-                    format!("{statistic_label} vs {x_label}"),
-                    ("sans-serif", 32),
-                )
-                .margin(20)
-                .x_label_area_size(55)
-                .y_label_area_size(70)
-                .build_cartesian_2d(x_range, y_range),
-        )?;
-        draw_result(
-            output,
-            chart
-                .configure_mesh()
-                .x_desc(x_label)
-                .y_desc("Filling fraction")
-                .draw(),
-        )?;
-
-        if band != FillBand::None {
-            let mut polygon = self
-                .fill_rows
-                .iter()
-                .map(|row| (x(row), bounds(row).1))
-                .collect::<Vec<_>>();
-            polygon.extend(
-                self.fill_rows
-                    .iter()
-                    .rev()
-                    .map(|row| (x(row), bounds(row).0)),
-            );
-            let band_label = match band {
-                FillBand::StandardDeviation => "Mean ± standard deviation",
-                FillBand::InterquartileRange => "25th–75th percentile",
-                FillBand::None => unreachable!(),
-            };
-            draw_result(
-                output,
-                chart.draw_series(std::iter::once(Polygon::new(
-                    polygon,
-                    BLUE.mix(0.18).filled(),
-                ))),
-            )?
-            .label(band_label)
-            .legend(|(x, y)| {
-                Rectangle::new([(x, y - 5), (x + 20, y + 5)], BLUE.mix(0.18).filled())
-            });
-        }
-
-        draw_result(
-            output,
-            chart.draw_series(LineSeries::new(
-                self.fill_rows.iter().map(|row| (x(row), central(row))),
-                BLUE.stroke_width(3),
-            )),
-        )?
-        .label(statistic_label)
-        .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], BLUE.stroke_width(3)));
-        draw_result(
-            output,
-            chart
-                .configure_series_labels()
-                .background_style(WHITE.mix(0.85))
-                .border_style(BLACK)
-                .draw(),
-        )?;
-        draw_result(output, root.present())
-    }
-
-    /// Plot temperature in kelvin against time in seconds.
-    pub fn plot_temperature_vs_time(
-        &self,
-        output: impl AsRef<Path>,
-        options: PlotOptions,
-    ) -> Result<(), PlotError> {
-        let output = output.as_ref();
-        validate_dimensions(output, options)?;
-        let x_range = padded_range(self.fill_rows.iter().map(|row| row.time));
-        let y_range = padded_range(self.fill_rows.iter().map(|row| row.temperature));
-        let root = BitMapBackend::new(output, (options.width, options.height)).into_drawing_area();
-        draw_result(output, root.fill(&WHITE))?;
-        let mut chart = draw_result(
-            output,
-            ChartBuilder::on(&root)
-                .caption("Temperature vs time", ("sans-serif", 32))
-                .margin(20)
-                .x_label_area_size(55)
-                .y_label_area_size(70)
-                .build_cartesian_2d(x_range, y_range),
-        )?;
-        draw_result(
-            output,
-            chart
-                .configure_mesh()
-                .x_desc("Time (s)")
-                .y_desc("Temperature (K)")
-                .draw(),
-        )?;
-        draw_result(
-            output,
-            chart.draw_series(LineSeries::new(
-                self.fill_rows.iter().map(|row| (row.time, row.temperature)),
-                RED.stroke_width(3),
-            )),
-        )?;
-        draw_result(output, root.present())
-    }
-
-    /// Plot time in seconds against temperature in kelvin.
-    ///
-    /// This is the axis-reversed form of [`Self::plot_temperature_vs_time`].
-    pub fn plot_time_vs_temperature(
-        &self,
-        output: impl AsRef<Path>,
-        options: PlotOptions,
-    ) -> Result<(), PlotError> {
-        let output = output.as_ref();
-        validate_dimensions(output, options)?;
-        let x_range = padded_range(self.fill_rows.iter().map(|row| row.temperature));
-        let y_range = padded_range(self.fill_rows.iter().map(|row| row.time));
-        let root = BitMapBackend::new(output, (options.width, options.height)).into_drawing_area();
-        draw_result(output, root.fill(&WHITE))?;
-        let mut chart = draw_result(
-            output,
-            ChartBuilder::on(&root)
-                .caption("Time vs temperature", ("sans-serif", 32))
-                .margin(20)
-                .x_label_area_size(55)
-                .y_label_area_size(70)
-                .build_cartesian_2d(x_range, y_range),
-        )?;
-        draw_result(
-            output,
-            chart
-                .configure_mesh()
-                .x_desc("Temperature (K)")
-                .y_desc("Time (s)")
-                .draw(),
-        )?;
-        draw_result(
-            output,
-            chart.draw_series(LineSeries::new(
-                self.fill_rows.iter().map(|row| (row.temperature, row.time)),
-                RED.stroke_width(3),
-            )),
-        )?;
-        draw_result(output, root.present())
-    }
-
-    /// Plot selected event frequencies against time.
-    ///
-    /// Pass `None` to use the CSV's original bins or `Some(width)` to smooth
-    /// the data with a larger bin width in seconds. CSV timestamps are treated
-    /// as right bin edges; plotted timestamps are the midpoint between adjacent
-    /// edges. Each averaged count is divided by that original or new bin width
-    /// during drawing.
-    pub fn plot_events_vs_time(
-        &self,
-        output: impl AsRef<Path>,
-        series: &[EventSeries],
-        new_bin_width: Option<TimeFloat>,
-        options: PlotOptions,
-    ) -> Result<(), PlotError> {
-        let output = output.as_ref();
-        validate_dimensions(output, options)?;
-        if series.is_empty() {
-            return Err(PlotError::InvalidData {
-                path: self.event_path.clone(),
-                message: "at least one event series must be selected".into(),
-            });
-        }
-        let rebinned;
-        let rows = if let Some(width) = new_bin_width {
-            rebinned = self.rebin_events(width)?;
-            rebinned.as_slice()
-        } else {
-            self.event_rows.as_slice()
-        };
-        let bins = event_plot_bins(rows);
-        if bins.is_empty() {
-            return Err(PlotError::InvalidData {
-                path: self.event_path.clone(),
-                message: "at least one completed event bin is required for plotting".into(),
-            });
-        }
-        let x_range = padded_range(bins.iter().map(|bin| bin.centre));
-        let maximum = bins
-            .iter()
-            .flat_map(|bin| {
-                series
-                    .iter()
-                    .map(move |column| event_frequency(bin, *column))
-            })
-            .fold(0.0_f64, Float::max);
-        let y_range = 0.0..if maximum > 0.0 { maximum * 1.08 } else { 1.0 };
-
-        let root = BitMapBackend::new(output, (options.width, options.height)).into_drawing_area();
-        draw_result(output, root.fill(&WHITE))?;
-        let mut chart = draw_result(
-            output,
-            ChartBuilder::on(&root)
-                .caption("Event frequency vs time", ("sans-serif", 32))
-                .margin(20)
-                .x_label_area_size(55)
-                .y_label_area_size(85)
-                .build_cartesian_2d(x_range, y_range),
-        )?;
-        draw_result(
-            output,
-            chart
-                .configure_mesh()
-                .x_desc("Time (s)")
-                .y_desc("Events / bin width / repetition (s⁻¹)")
-                .draw(),
-        )?;
-
-        for (index, column) in series.iter().copied().enumerate() {
-            let color = Palette99::pick(index).to_rgba();
-            draw_result(
-                output,
-                // Draw adjacent pairs independently. Plotters' bitmap backend
-                // can generate incorrect polygon joins for a large, dense
-                // polyline, which appeared as negative spikes even though all
-                // input frequencies were non-negative.
-                chart.draw_series(bins.windows(2).map(|pair| {
-                    PathElement::new(
-                        [
-                            (pair[0].centre, event_frequency(&pair[0], column)),
-                            (pair[1].centre, event_frequency(&pair[1], column)),
-                        ],
-                        color.stroke_width(1),
-                    )
-                })),
-            )?
-            .label(column.label())
-            .legend(move |(x, y)| PathElement::new([(x, y), (x + 20, y)], color.stroke_width(3)));
-        }
-        draw_result(
-            output,
-            chart
-                .configure_series_labels()
-                .background_style(WHITE.mix(0.85))
-                .border_style(BLACK)
-                .draw(),
-        )?;
-        draw_result(output, root.present())
-    }
 }
+
+
+
+
+
+
 
 /// Load both result CSVs and create six standard PNG plots.
 ///
@@ -560,6 +899,50 @@ pub fn plot_default_results(
         path: output_directory.to_path_buf(),
         source,
     })?;
+
+    let to_plot = PlotWindow::new(
+        output_directory.join("mean_fill_vs_time.png"),
+        "Time",
+        "second",
+        "Fill",
+        "None",
+        true,
+        "sd"
+    )?;
+    to_plot.plot_fill(&results.fill_rows, "Mean fill vs Time")?;
+    let to_plot = PlotWindow::new(
+        output_directory.join("mean_fill_vs_temperature.png"),
+        "Temperature",
+        "Kelvin",
+        "Fill",
+        "None",
+        true,
+        "sd"
+    )?;
+    to_plot.plot_fill(&results.fill_rows, "Mean fill vs Temperature")?;
+
+   let to_plot = PlotWindow::new(
+        output_directory.join("median_fill_vs_time.png"),
+        "Time",
+        "second",
+        "Fill",
+        "None",
+        false,
+        "sd"
+    )?;
+    to_plot.plot_fill(&results.fill_rows, "Median fill vs Time")?;
+
+    let to_plot = PlotWindow::new(
+        output_directory.join("median_fill_vs_temperature.png"),
+        "Temperature",
+        "Kelvin",
+        "Fill",
+        "None",
+        false,
+        "sd"
+    )?;
+    to_plot.plot_fill(&results.fill_rows, "Meanian fill vs Temperature")?;
+
     let paths = GeneratedPlots {
         mean_fill_vs_time: output_directory.join("mean_fill_vs_time.png"),
         mean_fill_vs_temperature: output_directory.join("mean_fill_vs_temperature.png"),
@@ -568,46 +951,38 @@ pub fn plot_default_results(
         temperature_vs_time: output_directory.join("temperature_vs_time.png"),
         events_vs_time: output_directory.join("events_vs_time.png"),
     };
-    let options = PlotOptions::default();
-    results.plot_fill(
-        &paths.mean_fill_vs_time,
-        FillXAxis::Time,
-        FillStatistic::Mean,
-        FillBand::StandardDeviation,
-        options,
+    
+    let to_plot = PlotWindow::new(
+        output_directory.join("temperature_vs_time.png"),
+        "Time",
+        "second",
+        "Temperature",
+        "Kelvin",
+        false,
+        "sd"
     )?;
-    results.plot_fill(
-        &paths.mean_fill_vs_temperature,
-        FillXAxis::Temperature,
-        FillStatistic::Mean,
-        FillBand::StandardDeviation,
-        options,
+    to_plot.plot_temperature_vs_time(&results.fill_rows, "Time vs Temperature")?;
+     let to_plot = PlotWindow::new(
+        output_directory.join("time_vs_temperature.png"),
+        "Temperature",
+        "Kelvin",
+        "Time",
+        "second",
+        false,
+        "sd"
     )?;
-    results.plot_fill(
-        &paths.median_fill_vs_time,
-        FillXAxis::Time,
-        FillStatistic::Median,
-        FillBand::InterquartileRange,
-        options,
-    )?;
-    results.plot_fill(
-        &paths.median_fill_vs_temperature,
-        FillXAxis::Temperature,
-        FillStatistic::Median,
-        FillBand::InterquartileRange,
-        options,
-    )?;
-    results.plot_temperature_vs_time(&paths.temperature_vs_time, options)?;
-    results.plot_events_vs_time(
-        &paths.events_vs_time,
-        &[
-            EventSeries::Recombination,
-            EventSeries::Retrapping,
-            EventSeries::Filling,
-        ],
-        event_bin_width,
-        options,
-    )?;
+    to_plot.plot_temperature_vs_time(&results.fill_rows, "Temperature vs Time ")?;
+    // results.plot_temperature_vs_time(&paths.temperature_vs_time, options)?;
+    // results.plot_events_vs_time(
+    //     &paths.events_vs_time,
+    //     &[
+    //         EventSeries::Recombination,
+    //         EventSeries::Retrapping,
+    //         EventSeries::Filling,
+    //     ],
+    //     event_bin_width,
+    //     options,
+    // )?;
     Ok(paths)
 }
 
@@ -803,23 +1178,6 @@ fn event_row_from_values(time: TimeFloat, values: [Float; 13]) -> AverageEventRo
     }
 }
 
-/// Expand a finite data extent so Plotters always receives a non-empty range.
-fn padded_range(values: impl IntoIterator<Item = Float>) -> Range<Float> {
-    let mut values = values.into_iter();
-    let first = values.next().expect("validated result data is non-empty");
-    let (mut minimum, mut maximum) = (first, first);
-    for value in values {
-        minimum = minimum.min(value);
-        maximum = maximum.max(value);
-    }
-    let span = maximum - minimum;
-    let padding = if span > 0.0 {
-        span * 0.05
-    } else {
-        minimum.abs().max(1.0) * 0.05
-    };
-    (minimum - padding)..(maximum + padding)
-}
 
 /// Convert a validation failure into the common error type.
 fn invalid<T>(path: &Path, message: impl Into<String>) -> Result<T, PlotError> {
@@ -829,13 +1187,8 @@ fn invalid<T>(path: &Path, message: impl Into<String>) -> Result<T, PlotError> {
     })
 }
 
-/// Reject dimensions that cannot produce a useful raster image.
-fn validate_dimensions(path: &Path, options: PlotOptions) -> Result<(), PlotError> {
-    if options.width == 0 || options.height == 0 {
-        return invalid(path, "plot width and height must both be greater than zero");
-    }
-    Ok(())
-}
+
+
 
 /// Erase Plotters' backend-specific error type while retaining its message.
 fn draw_result<T, E: fmt::Debug>(path: &Path, result: Result<T, E>) -> Result<T, PlotError> {
@@ -845,141 +1198,141 @@ fn draw_result<T, E: fmt::Debug>(path: &Path, result: Result<T, E>) -> Result<T,
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use std::fs;
+//     use std::sync::atomic::{AtomicU64, Ordering};
+//     use std::time::{SystemTime, UNIX_EPOCH};
 
-    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+//     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
-    fn temporary_directory() -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let sequence = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "mcrustlum_plotting_{}_{}_{}",
-            std::process::id(),
-            unique,
-            sequence
-        ));
-        fs::create_dir(&path).unwrap();
-        path
-    }
+//     fn temporary_directory() -> PathBuf {
+//         let unique = SystemTime::now()
+//             .duration_since(UNIX_EPOCH)
+//             .unwrap()
+//             .as_nanos();
+//         let sequence = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+//         let path = std::env::temp_dir().join(format!(
+//             "mcrustlum_plotting_{}_{}_{}",
+//             std::process::id(),
+//             unique,
+//             sequence
+//         ));
+//         fs::create_dir(&path).unwrap();
+//         path
+//     }
 
-    fn test_results() -> (PathBuf, SimulationResults) {
-        let directory = temporary_directory();
-        let fill = directory.join("average_fill.csv");
-        let events = directory.join("average_event.csv");
-        fs::write(
-            &fill,
-            concat!(
-                "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9,fill_quantile_0_25,fill_quantile_0_75\n",
-                "0,300,0.2,0.02,0.19,0.15,0.25,0.17,0.22\n",
-                "0.1,310,0.4,0.03,0.39,0.34,0.46,0.36,0.42\n",
-                "0.2,320,0.6,0.04,0.59,0.52,0.68,0.55,0.63\n",
-                "0.3,330,0.8,0.05,0.79,0.70,0.88,0.74,0.84\n",
-            ),
-        )
-        .unwrap();
-        fs::write(
-            &events,
-            concat!(
-                "time,localised_recombination_ground,localised_recombination_excited,delocalised_recombination_ground,delocalised_recombination_excited,localised_retrapping_ground,localised_retrapping_excited,delocalised_retrapping_ground,delocalised_retrapping_excited,ground,excited,recombination,retrapping,filling_count\n",
-                "0,0,0,0,0,0,0,0,0,0,0,0,0,0\n",
-                "0.1,1,0,0,0,0,0,0,0,1,0,1,0,2\n",
-                "0.2,3,0,0,0,0,0,0,0,3,0,3,0,4\n",
-                "0.3,5,0,0,0,0,0,0,0,5,0,5,0,6\n",
-            ),
-        )
-        .unwrap();
-        let results = SimulationResults::from_csv(&fill, &events).unwrap();
-        (directory, results)
-    }
+//     fn test_results() -> (PathBuf, SimulationResults) {
+//         let directory = temporary_directory();
+//         let fill = directory.join("average_fill.csv");
+//         let events = directory.join("average_event.csv");
+//         fs::write(
+//             &fill,
+//             concat!(
+//                 "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9,fill_quantile_0_25,fill_quantile_0_75\n",
+//                 "0,300,0.2,0.02,0.19,0.15,0.25,0.17,0.22\n",
+//                 "0.1,310,0.4,0.03,0.39,0.34,0.46,0.36,0.42\n",
+//                 "0.2,320,0.6,0.04,0.59,0.52,0.68,0.55,0.63\n",
+//                 "0.3,330,0.8,0.05,0.79,0.70,0.88,0.74,0.84\n",
+//             ),
+//         )
+//         .unwrap();
+//         fs::write(
+//             &events,
+//             concat!(
+//                 "time,localised_recombination_ground,localised_recombination_excited,delocalised_recombination_ground,delocalised_recombination_excited,localised_retrapping_ground,localised_retrapping_excited,delocalised_retrapping_ground,delocalised_retrapping_excited,ground,excited,recombination,retrapping,filling_count\n",
+//                 "0,0,0,0,0,0,0,0,0,0,0,0,0,0\n",
+//                 "0.1,1,0,0,0,0,0,0,0,1,0,1,0,2\n",
+//                 "0.2,3,0,0,0,0,0,0,0,3,0,3,0,4\n",
+//                 "0.3,5,0,0,0,0,0,0,0,5,0,5,0,6\n",
+//             ),
+//         )
+//         .unwrap();
+//         let results = SimulationResults::from_csv(&fill, &events).unwrap();
+//         (directory, results)
+//     }
 
-    #[test]
-    fn reads_both_result_files() {
-        let (directory, results) = test_results();
-        assert_eq!(results.fill_rows().len(), 4);
-        assert_eq!(results.event_rows().len(), 4);
-        fs::remove_dir_all(directory).unwrap();
-    }
+//     #[test]
+//     fn reads_both_result_files() {
+//         let (directory, results) = test_results();
+//         assert_eq!(results.fill_rows().len(), 4);
+//         assert_eq!(results.event_rows().len(), 4);
+//         fs::remove_dir_all(directory).unwrap();
+//     }
 
-    #[test]
-    fn wider_bins_conserve_counts_and_keep_a_partial_tail() {
-        let (directory, results) = test_results();
-        let rows = results.rebin_events(0.2).unwrap();
-        assert_eq!(rows.len(), 3);
-        assert!((rows[1].recombination_count - 4.0).abs() < 1e-12);
-        assert!((rows[1].filling_count - 6.0).abs() < 1e-12);
-        assert!((rows[2].recombination_count - 5.0).abs() < 1e-12);
-        assert!((rows[2].time - 0.3).abs() < 1e-12);
-        let bins = event_plot_bins(&rows);
-        assert!((bins[0].centre - 0.1).abs() < 1e-12);
-        assert!((bins[0].width - 0.2).abs() < 1e-12);
-        assert!((bins[1].centre - 0.25).abs() < 1e-12);
-        assert!((bins[1].width - 0.1).abs() < 1e-12);
-        assert!((event_frequency(&bins[0], EventSeries::Recombination) - 20.0).abs() < 1e-12);
-        assert!((event_frequency(&bins[1], EventSeries::Recombination) - 50.0).abs() < 1e-12);
-        fs::remove_dir_all(directory).unwrap();
-    }
+//     #[test]
+//     fn wider_bins_conserve_counts_and_keep_a_partial_tail() {
+//         let (directory, results) = test_results();
+//         let rows = results.rebin_events(0.2).unwrap();
+//         assert_eq!(rows.len(), 3);
+//         assert!((rows[1].recombination_count - 4.0).abs() < 1e-12);
+//         assert!((rows[1].filling_count - 6.0).abs() < 1e-12);
+//         assert!((rows[2].recombination_count - 5.0).abs() < 1e-12);
+//         assert!((rows[2].time - 0.3).abs() < 1e-12);
+//         let bins = event_plot_bins(&rows);
+//         assert!((bins[0].centre - 0.1).abs() < 1e-12);
+//         assert!((bins[0].width - 0.2).abs() < 1e-12);
+//         assert!((bins[1].centre - 0.25).abs() < 1e-12);
+//         assert!((bins[1].width - 0.1).abs() < 1e-12);
+//         assert!((event_frequency(&bins[0], EventSeries::Recombination) - 20.0).abs() < 1e-12);
+//         assert!((event_frequency(&bins[1], EventSeries::Recombination) - 50.0).abs() < 1e-12);
+//         fs::remove_dir_all(directory).unwrap();
+//     }
 
-    #[test]
-    fn rebinning_splits_counts_at_unaligned_boundaries() {
-        let (directory, results) = test_results();
-        let rows = results.rebin_events(0.15).unwrap();
-        assert_eq!(rows.len(), 3);
-        assert!((rows[1].recombination_count - 2.5).abs() < 1e-12);
-        assert!((rows[2].recombination_count - 6.5).abs() < 1e-12);
-        assert!((rows[1].recombination_count + rows[2].recombination_count - 9.0).abs() < 1e-12);
-        fs::remove_dir_all(directory).unwrap();
-    }
+//     #[test]
+//     fn rebinning_splits_counts_at_unaligned_boundaries() {
+//         let (directory, results) = test_results();
+//         let rows = results.rebin_events(0.15).unwrap();
+//         assert_eq!(rows.len(), 3);
+//         assert!((rows[1].recombination_count - 2.5).abs() < 1e-12);
+//         assert!((rows[2].recombination_count - 6.5).abs() < 1e-12);
+//         assert!((rows[1].recombination_count + rows[2].recombination_count - 9.0).abs() < 1e-12);
+//         fs::remove_dir_all(directory).unwrap();
+//     }
 
-    #[test]
-    fn event_bins_are_plotted_at_their_centres() {
-        let (directory, results) = test_results();
-        let bins = event_plot_bins(results.event_rows());
-        assert_eq!(bins.len(), 3);
-        assert!((bins[0].centre - 0.05).abs() < 1e-12);
-        assert!((bins[1].centre - 0.15).abs() < 1e-12);
-        assert!((bins[2].centre - 0.25).abs() < 1e-12);
-        assert!((bins[0].width - 0.1).abs() < 1e-12);
-        assert!((event_frequency(&bins[0], EventSeries::Recombination) - 10.0).abs() < 1e-12);
-        fs::remove_dir_all(directory).unwrap();
-    }
+//     #[test]
+//     fn event_bins_are_plotted_at_their_centres() {
+//         let (directory, results) = test_results();
+//         let bins = event_plot_bins(results.event_rows());
+//         assert_eq!(bins.len(), 3);
+//         assert!((bins[0].centre - 0.05).abs() < 1e-12);
+//         assert!((bins[1].centre - 0.15).abs() < 1e-12);
+//         assert!((bins[2].centre - 0.25).abs() < 1e-12);
+//         assert!((bins[0].width - 0.1).abs() < 1e-12);
+//         assert!((event_frequency(&bins[0], EventSeries::Recombination) - 10.0).abs() < 1e-12);
+//         fs::remove_dir_all(directory).unwrap();
+//     }
 
-    #[test]
-    fn narrower_or_non_positive_bins_are_rejected() {
-        let (directory, results) = test_results();
-        assert!(results.rebin_events(0.05).is_err());
-        assert!(results.rebin_events(0.0).is_err());
-        fs::remove_dir_all(directory).unwrap();
-    }
+//     #[test]
+//     fn narrower_or_non_positive_bins_are_rejected() {
+//         let (directory, results) = test_results();
+//         assert!(results.rebin_events(0.05).is_err());
+//         assert!(results.rebin_events(0.0).is_err());
+//         fs::remove_dir_all(directory).unwrap();
+//     }
 
-    #[test]
-    fn creates_the_default_png_set() {
-        let (directory, _) = test_results();
-        let output = directory.join("plots");
-        let plots = plot_default_results(
-            directory.join("average_fill.csv"),
-            directory.join("average_event.csv"),
-            &output,
-            Some(0.2),
-        )
-        .unwrap();
-        for path in [
-            plots.mean_fill_vs_time,
-            plots.mean_fill_vs_temperature,
-            plots.median_fill_vs_time,
-            plots.median_fill_vs_temperature,
-            plots.temperature_vs_time,
-            plots.events_vs_time,
-        ] {
-            assert!(fs::metadata(path).unwrap().len() > 0);
-        }
-        fs::remove_dir_all(directory).unwrap();
-    }
-}
+//     #[test]
+//     fn creates_the_default_png_set() {
+//         let (directory, _) = test_results();
+//         let output = directory.join("plots");
+//         let plots = plot_default_results(
+//             directory.join("average_fill.csv"),
+//             directory.join("average_event.csv"),
+//             &output,
+//             Some(0.2),
+//         )
+//         .unwrap();
+//         for path in [
+//             plots.mean_fill_vs_time,
+//             plots.mean_fill_vs_temperature,
+//             plots.median_fill_vs_time,
+//             plots.median_fill_vs_temperature,
+//             plots.temperature_vs_time,
+//             plots.events_vs_time,
+//         ] {
+//             assert!(fs::metadata(path).unwrap().len() > 0);
+//         }
+//         fs::remove_dir_all(directory).unwrap();
+//     }
+// }

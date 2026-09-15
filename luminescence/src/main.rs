@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 /// and a minimum spatial ensemble of 25 traps.
 fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
     let inputs = io::inputs::read_inputs("input.toml")?;
-    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 40, 1,25)?;
+    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 10, 1,25)?;
 
     monte_carlo.run()?;
     mc::average::average_fill()?;

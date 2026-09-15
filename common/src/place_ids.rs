@@ -155,7 +155,10 @@ impl PlaceAvailability {
     pub fn available_count(&self) -> usize {
         self.available_count
     }
-
+    /// Returns the unavailablity count
+    pub fn unavailable_count(&self) -> usize {
+        self.total()-self.available_count
+    }
     /// Return the available population as a fraction of the total population.
     ///
     /// In the Monte Carlo trap collection, available identifiers are occupied

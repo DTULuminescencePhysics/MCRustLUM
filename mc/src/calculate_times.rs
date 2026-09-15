@@ -282,50 +282,79 @@ fn choose_delocalised_outcome(
     let mu = parameters.delocalised_mu;
     let recombination_prefactor = 1.0;
 
-    if !mu.is_finite() || mu <= 0.0 {
+    if !mu.is_finite() {
         return Err(format!(
             "delocalised mu must be finite and greater than zero, got {mu}"
         ));
-    }
-   
-    let source_position = &places.traps()[source.index()];
-    
-    let mut current_shortest = TimedCandidate::new_negative_time();
-
-
-    for &hole in hole_places.available() {
-        let distance = cube.distance(source_position, &places.holes()[hole.index()]);
-        current_shortest.find_smallest_candidate(TimedCandidate::delocalised_recombination(
-            recombination_prefactor,
-            mu,
-            distance,
-            source,
-            hole,
-            state,
-            rng,
-            )?
-        )?;
-    }
-
-    if transitions.get_conduction_band_retrapping() && parameters.retrap_ratio > 0.0 {
-        let retrapping_prefactor = recombination_prefactor*parameters.retrap_ratio;
-        for &destination in trap_places.unavailable() {
-            let distance = cube.distance(source_position, &places.traps()[destination.index()]);
+    } else if mu <= 0.0 {
+        if transitions.get_conduction_band_retrapping() && 
+           trap_places.unavailable_count()> 0 && 
+           rng.gen_bool(parameters.retrap_ratio/(1.0+parameters.retrap_ratio))
+        {
+            let trap = {
+                let trap_dest = trap_places.unavailable();
+                if trap_dest.is_empty() {
+                    return Err("filling selected when no empty traps remain".to_string());
+                }
+                trap_dest[rng.gen_range(0..trap_dest.len())]
+            };
+        return Ok( TimedCandidate { 
+            event: 
+                Event::DelocalisedRetrapping { source, destination: trap, state }, 
+            time: 0.0 });
+        } else {
+            let hole_destination = {
+                let empty_holes = hole_places.available();
+                if empty_holes.is_empty() {
+                    return Err("No holes to put electron in".to_string());
+                }
+                empty_holes[rng.gen_range(0..empty_holes.len())]
+            };
+            return Ok( TimedCandidate { 
+                event: 
+                    Event::DelocalisedRecombination { source, hole: hole_destination, state }, 
+                time: 0.0 });
             
-            current_shortest.find_smallest_candidate(TimedCandidate::delocalised_retrapping(
-                retrapping_prefactor,
+        } 
+    } else {
+   
+        let source_position = &places.traps()[source.index()];
+    
+        let mut current_shortest = TimedCandidate::new_negative_time();
+
+        for &hole in hole_places.available() {
+            let distance = cube.distance(source_position, &places.holes()[hole.index()]);
+            current_shortest.find_smallest_candidate(TimedCandidate::delocalised_recombination(
+                recombination_prefactor,
                 mu,
                 distance,
                 source,
-                destination,
+                hole,
                 state,
                 rng,
                 )?
             )?;
         }
-    }
 
-    Ok(current_shortest)
+        if transitions.get_conduction_band_retrapping() && parameters.retrap_ratio > 0.0 {
+            let retrapping_prefactor = recombination_prefactor*parameters.retrap_ratio;
+            for &destination in trap_places.unavailable() {
+                let distance = cube.distance(source_position, &places.traps()[destination.index()]);
+                
+                current_shortest.find_smallest_candidate(TimedCandidate::delocalised_retrapping(
+                    retrapping_prefactor,
+                    mu,
+                    distance,
+                    source,
+                    destination,
+                    state,
+                    rng,
+                    )?
+                )?;
+            }
+        }
+        Ok(current_shortest)
+    }
     
 }
 

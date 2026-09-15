@@ -231,8 +231,7 @@ impl FillStatistic{
             FillAverage::Mean => row.fill,
             FillAverage::Median => row.fill_median,
         })
-       
-        
+ 
     }
     pub fn get_fill_band(&self,) -> Result< impl Fn(&ContinuousValueRow) 
     -> (f64,f64), PlotError> {
@@ -397,6 +396,52 @@ impl PlotWindow{
                 options
             })
     } 
+
+    pub fn x_label(&self) -> &str 
+    {
+        match self.x_axis {
+            Axis::Time { .. } => {
+                "Time"
+            },
+            Axis::Temperature { .. } => {
+                "Temperature"
+            },
+            Axis::Fill { statistics } => {
+                 match statistics.average {
+                    FillAverage::Mean => { 
+                        "Mean filling"
+                    },
+                    FillAverage::Median => { 
+                        "Median filling"
+                    },
+                }
+            }
+            _ => "",
+        }
+    }
+    pub fn y_label(&self) -> &str 
+    {
+        match self.y_axis {
+            Axis::Time { .. } => {
+                "Time"
+            },
+            Axis::Temperature { .. } => {
+                "Temperature"
+            },
+            Axis::Fill { statistics } => {
+                 match statistics.average {
+                    FillAverage::Mean => { 
+                        "Mean filling"
+                    },
+                    FillAverage::Median => { 
+                        "Median filling"
+                    },
+                }
+            }
+            _ => "",
+        }
+    }
+
     pub fn get_x_filter(&self) -> Result< impl Fn(&ContinuousValueRow) -> f64,  PlotError>  {
         let x = match self.x_axis {
             Axis::Time { .. } => {
@@ -533,27 +578,57 @@ impl PlotWindow{
         Ok((root, chart))
     }
 
-
-     /// Plot mean or median filling against time or temperature.
-    pub fn plot_fill(
-        &self,
-        fill_rows: &Vec<ContinuousValueRow>,
-        caption: &str,) 
-        -> Result<(), PlotError> 
+    pub fn plot_legend<'a >(&self,
+        chart: &mut ChartContext<
+                'a,
+                BitMapBackend<'a>,
+                Cartesian2d<RangedCoordf64, RangedCoordf64>,>,) -> Result<(), PlotError> 
     {
         
+        chart
+            .configure_series_labels()
+            .background_style(WHITE.mix(0.85))
+            .border_style(BLACK)
+            .draw()
+            .map_err(|error| PlotError::Draw {
+                path: self.output.clone(),
+                message: format!("{error:?}")}
+            )
+    }
+
+    /// Plot temperature in kelvin against time in seconds.
+    pub fn continuous_data_plot(
+        &self,
+        fill_rows: &Vec<ContinuousValueRow>,
+        caption: &str,
+        legend: bool,
+    ) -> Result<(), PlotError> {
+
         if let Axis::Fill { statistics } = &self.y_axis {
             statistics.check_data(fill_rows, self.output.clone())?;
         }
-       
         let x_range = self.get_continuous_x_range(fill_rows)?;
         let y_range = self.get_continuous_y_range(fill_rows)?; 
-
+       
         let (root, mut chart) = self.plot_setup(caption, x_range, y_range)?;
-        
-        
-
         let x = self.get_x_filter()?;
+        let y = self.get_y_filter()?;
+        chart.draw_series(LineSeries::new(
+                fill_rows.iter().map(|row| (x(row), y(row))),
+                RED.stroke_width(3),
+            )).map_err(|error| 
+                                    PlotError::Draw {
+                                            path: self.output.clone(),
+                                            message: format!("{error:?}"),
+                                            }
+                                        )?
+            .label(self.y_label())
+                        .legend(|(x, y)| 
+                            PathElement::new(
+                                [(x, y), (x + 20, y)], 
+                                RED.stroke_width(3))
+                            );
+        
         if let Axis::Fill { statistics } = &self.y_axis {
             if statistics.band != FillBand::None {
                 let bounds = statistics.get_fill_band()?;
@@ -593,70 +668,11 @@ impl PlotWindow{
                                     }
                                 );
             }
-            let central = statistics.get_fill_average()?;
-            
-            chart.draw_series(LineSeries::new(
-                fill_rows.iter().map(|row| (x(row), central(row))),
-                BLUE.stroke_width(3),
-                            )
-                        )
-                        .map_err(|error| 
-                            PlotError::Draw {
-                                path: self.output.clone(),
-                                message: format!("{error:?}"),
-                            }
-                        )?
-                        .label(statistics.average.get_label())
-                        .legend(|(x, y)| 
-                            PathElement::new(
-                                [(x, y), (x + 20, y)], 
-                                BLUE.stroke_width(3))
-                            );
-        
-        
-            chart
-                .configure_series_labels()
-                .background_style(WHITE.mix(0.85))
-                .border_style(BLACK)
-                .draw()
-                .map_err(|error| PlotError::Draw {
-                    path: self.output.clone(),
-                    message: format!("{error:?}")}
-                )?;
-
-            root.present()
-                .map_err(|error| PlotError::Draw {
-                    path: self.output.clone(),
-                    message: format!("{error:?}")}
-                )?;
-       
         }
-    
-        Ok(())
-    }
+        if legend {
+            self.plot_legend(&mut chart)?;
+        }
 
-      /// Plot temperature in kelvin against time in seconds.
-    pub fn plot_temperature_vs_time(
-        &self,
-        fill_rows: &Vec<ContinuousValueRow>,
-        caption: &str,
-    ) -> Result<(), PlotError> {
-
-        let x_range = self.get_continuous_x_range(fill_rows)?;
-        let y_range = self.get_continuous_y_range(fill_rows)?; 
-       
-        let (root, mut chart) = self.plot_setup(caption, x_range, y_range)?;
-        let x = self.get_x_filter()?;
-        let y = self.get_y_filter()?;
-        chart.draw_series(LineSeries::new(
-                fill_rows.iter().map(|row| (x(row), y(row))),
-                RED.stroke_width(3),
-            )).map_err(|error| 
-                                    PlotError::Draw {
-                                            path: self.output.clone(),
-                                            message: format!("{error:?}"),
-                                            }
-                                        )?;
         root.present()
                 .map_err(|error| PlotError::Draw {
                     path: self.output.clone(),
@@ -736,16 +752,8 @@ impl PlotWindow{
                 .label(column.label())
                 .legend(move |(x, y)| PathElement::new([(x, y), (x + 20, y)], color.stroke_width(3)));
         }
-        chart
-            .configure_series_labels()
-            .background_style(WHITE.mix(0.85))
-            .border_style(BLACK)
-            .draw()
-            .map_err(|error| PlotError::Draw {
-                    path: self.output.clone(),
-                    message: format!("{error:?}"),
-                    })?;
-
+        self.plot_legend(&mut chart)?;
+        
         root.present().map_err(|error| PlotError::Draw {
                     path: self.output.clone(),
                     message: format!("{error:?}"),
@@ -753,8 +761,6 @@ impl PlotWindow{
     
         Ok(())
     }
-
-
 
 
 }
@@ -916,11 +922,6 @@ impl SimulationResults {
 }
 
 
-
-
-
-
-
 /// Load both result CSVs and create six standard PNG plots.
 ///
 /// `event_bin_width` can request smoothing of the event plot. The four fill
@@ -947,7 +948,7 @@ pub fn plot_default_results(
         true,
         "sd"
     )?;
-    to_plot.plot_fill(&results.fill_rows, "Mean fill vs Time")?;
+    to_plot.continuous_data_plot(&results.fill_rows, "Mean fill vs Time", true)?;
     let to_plot = PlotWindow::new(
         output_directory.join("mean_fill_vs_temperature.png"),
         "Temperature",
@@ -957,7 +958,7 @@ pub fn plot_default_results(
         true,
         "sd"
     )?;
-    to_plot.plot_fill(&results.fill_rows, "Mean fill vs Temperature")?;
+    to_plot.continuous_data_plot(&results.fill_rows, "Mean fill vs Temperature", true)?;
 
    let to_plot = PlotWindow::new(
         output_directory.join("median_fill_vs_time.png"),
@@ -968,7 +969,7 @@ pub fn plot_default_results(
         false,
         "sd"
     )?;
-    to_plot.plot_fill(&results.fill_rows, "Median fill vs Time")?;
+    to_plot.continuous_data_plot(&results.fill_rows, "Median fill vs Time", true)?;
 
     let to_plot = PlotWindow::new(
         output_directory.join("median_fill_vs_temperature.png"),
@@ -979,7 +980,7 @@ pub fn plot_default_results(
         false,
         "sd"
     )?;
-    to_plot.plot_fill(&results.fill_rows, "Meanian fill vs Temperature")?;
+    to_plot.continuous_data_plot(&results.fill_rows, "Meanian fill vs Temperature", true)?;
 
     let paths = GeneratedPlots {
         mean_fill_vs_time: output_directory.join("mean_fill_vs_time.png"),
@@ -999,7 +1000,7 @@ pub fn plot_default_results(
         false,
         "sd"
     )?;
-    to_plot.plot_temperature_vs_time(&results.fill_rows, "Time vs Temperature")?;
+    to_plot.continuous_data_plot(&results.fill_rows, "Time vs Temperature", false)?;
     let to_plot = PlotWindow::new(
         output_directory.join("time_vs_temperature.png"),
         "Temperature",
@@ -1009,7 +1010,7 @@ pub fn plot_default_results(
         false,
         "sd"
     )?;
-    to_plot.plot_temperature_vs_time(&results.fill_rows, "Temperature vs Time ")?;
+    to_plot.continuous_data_plot(&results.fill_rows, "Temperature vs Time ", false)?;
     let to_plot = PlotWindow::new(
         output_directory.join("events_vs_time.png"),
         "Time",

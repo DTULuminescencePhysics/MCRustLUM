@@ -282,6 +282,33 @@ impl Candidate{
         )
     
     }
+        /// Sample the destination time for conduction-band recombination.
+    ///
+    /// The distance model supplies a reciprocal rate proportional to
+    /// `prefactor * exp((distance / mu)^2)`. Multiplying this by `-ln(U)`
+    /// therefore makes nearby centres statistically more likely to win.
+    pub fn delocalised_recombination(
+        prefactor: Float,
+        mu: Float,
+        distance: Float,
+        source: PlaceId,
+        hole: PlaceId,
+        state: ElectronicState,
+    ) -> Result<Self, String> {
+        
+        let reciprocal_rate: Option<TimeFloat> = retrapping_probability_by_r(&prefactor, &mu, &distance);
+        let reciprocal_rate = reciprocal_rate.ok_or_else(|| {
+            format!("could not calculate delocalised destination rate for hole: {}", hole.index())
+        })?;
+
+        if reciprocal_rate.is_nan() || reciprocal_rate < 0.0 || reciprocal_rate.is_infinite(){
+             return Ok(Self  { event: Event::DelocalisedRecombination { source, hole, state  }, rate: DISABLED_RATE});
+        }
+       
+        return Ok(Candidate  { event: Event::DelocalisedRecombination { source, hole, state  }, rate: 1.0/reciprocal_rate});
+        
+    }
+
 
 }
 
@@ -344,6 +371,57 @@ impl TimedCandidate {
         }
 
     }
+    /// Takes a vector of candidate weights are summed, a rate equal to [`DISABLED_RATE`], or is not finite or negative is skipped.
+    ///                                             r0 =∑r_i
+    ///                                         τ = -ln(u1)/r0
+    /// A trial time is then found with a single random number call. If this time is less than the current smallest time
+    /// a second random number is generated and multiplied by the total rate. A specific event is chosen according to 
+    ///                 ∑^p_i=1 r_i < u2*r0 ≤ ∑^p _i=1 r_i
+
+    pub fn find_shortest_from_summed_rates(&mut self, candidates: Vec<Candidate>, rng: &mut impl Rng) -> Result<(), String> {
+        
+        let total_rate: TimeFloat = candidates
+        .iter()
+        .filter(|candidate| {
+                candidate.rate != DISABLED_RATE
+                && candidate.rate.is_finite()
+                && candidate.rate >= 0.0
+            })
+        .map(|candidate| candidate.rate)
+        .sum();
+
+        if total_rate == 0.0 {
+            return Ok(());
+        }
+        let u: TimeFloat = rng.sample(rand::distributions::Open01);
+        let event_time: TimeFloat = -u.ln() / total_rate ;
+     
+        if event_time.total_cmp(&self.time).is_lt(){
+            let u_event: TimeFloat = rng.sample(rand::distributions::Open01);
+            let mut target = (u_event * total_rate) as TimeFloat;
+            
+            for candidate in candidates {
+                if candidate.rate <= 0.0 {
+                    continue;
+                }
+
+                if target < candidate.rate {
+                    *self = TimedCandidate { event: candidate.event, time: event_time};
+                    return Ok(());
+                }
+
+                target -= candidate.rate;
+            }
+
+            return Ok(());
+            
+          
+        }else {
+            return Ok(());
+        }
+
+    }
+
     /// Retain an already sampled candidate when it occurs sooner than `self`.
     pub fn find_smallest_candidate(&mut self, candidate: TimedCandidate)-> Result<(), String> { 
         if candidate.time.total_cmp(&self.time).is_lt(){
@@ -354,79 +432,7 @@ impl TimedCandidate {
         }
 
     }
-    /// Sample the destination time for conduction-band recombination.
-    ///
-    /// The distance model supplies a reciprocal rate proportional to
-    /// `prefactor * exp((distance / mu)^2)`. Multiplying this by `-ln(U)`
-    /// therefore makes nearby centres statistically more likely to win.
-    pub fn delocalised_recombination(
-        prefactor: Float,
-        mu: Float,
-        distance: Float,
-        source: PlaceId,
-        hole: PlaceId,
-        state: ElectronicState,
-        rng: &mut impl Rng,
-    ) -> Result<Self, String> {
-        
-        let reciprocal_rate: Option<TimeFloat> = retrapping_probability_by_r(&prefactor, &mu, &distance);
-        let reciprocal_rate = reciprocal_rate.ok_or_else(|| {
-            format!("could not calculate delocalised destination rate for hole: {}", hole.index())
-        })?;
-
-        if reciprocal_rate.is_nan() || reciprocal_rate < 0.0 {
-            return Err(format!(
-                "invalid delocalised destination reciprocal rate: {reciprocal_rate}"
-            ));
-        }
-        if reciprocal_rate.is_infinite() {
-            return Ok(TimedCandidate  { event: Event::DelocalisedRecombination { source, hole, state  }, time: TimeFloat::INFINITY});
-        }
-
-        let u: TimeFloat = rng.sample(rand::distributions::Open01);
-        let time = -u.ln() * reciprocal_rate;
-
-        return Ok(TimedCandidate  { event: Event::DelocalisedRecombination { source, hole, state  }, time});
-        
-    }
-    /// Sample the destination time for conduction-band retrapping.
-    ///
-    /// This uses the same distance competition as delocalised recombination.
-    /// Because `prefactor` multiplies the reciprocal rate, increasing it
-    /// lengthens the sampled retrapping time.
-    pub fn delocalised_retrapping(
-        prefactor: Float,
-        mu: Float,
-        distance: Float,
-        source: PlaceId,
-        destination: PlaceId,
-        state: ElectronicState,
-        rng: &mut impl Rng,
-    ) -> Result<Self, String> {
-        
-        let reciprocal_rate: Option<TimeFloat> = retrapping_probability_by_r(&prefactor, &mu, &distance);
-        let reciprocal_rate = reciprocal_rate.ok_or_else(|| {
-            format!("could not calculate delocalised destination rate for trap: {}", destination.index())
-        })?;
-
-        if reciprocal_rate.is_nan() || reciprocal_rate < 0.0 {
-            return Err(format!(
-                "invalid delocalised destination reciprocal rate: {reciprocal_rate}"
-            ));
-        }
-        if reciprocal_rate.is_infinite() {
-            return Ok(TimedCandidate  { event: Event::DelocalisedRetrapping { source, destination, state }, time: TimeFloat::INFINITY});
-        }
-
-        let u: TimeFloat = rng.sample(rand::distributions::Open01);
-        let time = -u.ln() * reciprocal_rate;
-
-        return Ok(TimedCandidate  { event: Event::DelocalisedRetrapping { source, destination, state  }, time});
-        
-    }
-
-
-
+    
 }
 
 /// Serializable snapshot emitted after a profile step or physical event.

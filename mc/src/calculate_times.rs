@@ -105,25 +105,26 @@ fn build_candidates(
     shortest: &mut TimedCandidate, 
 ) -> Result<(), String> {
 
-
-
-    
-    for &source in trap_places.available() {
-
-        let parameters = trap_parameters.get(source);
-        let (ground_weight, excited_weight) = state_weights(parameters, temperature)?;
-
-        if transitions.get_delocalised(){
+   if transitions.get_delocalised(){
+        let mut delocalised_rates: Vec<Candidate> = Vec::with_capacity(trap_places.available_count()*2);
+        for &source in trap_places.available() {
+            let parameters = trap_parameters.get(source);
+            let (ground_weight, excited_weight) = state_weights(parameters, temperature)?;
             let (ground, excited) = Candidate::delocalised_candidates(
                                                                       transitions.get_delocaised_transitions(), 
                                                                       &parameters, source, temperature, 
                                                                       ground_weight, excited_weight)?;
-            shortest.find_shortest(ground, rng)?;
-            shortest.find_shortest(excited, rng)?;
-                                                
+            delocalised_rates.push(ground);
+            delocalised_rates.push(excited)
         }
-       
-        if transitions.get_localised_recombination(){
+        shortest.find_shortest_from_summed_rates(delocalised_rates, rng)?;
+    }
+
+    if transitions.get_localised_recombination(){
+        let mut localised_rates: Vec<Candidate> = Vec::with_capacity(trap_places.available_count()*hole_places.available_count()*2);
+        for &source in trap_places.available() {
+            let parameters = trap_parameters.get(source);
+            let (ground_weight, excited_weight) = state_weights(parameters, temperature)?;
             for &hole in hole_places.available() {
                 let distance = cube.distance(
                     &places.traps()[source.index()],
@@ -133,12 +134,18 @@ fn build_candidates(
                                                                           transitions.get_locaised_recomb_transitions(), 
                                                                           &parameters, source, hole, temperature, 
                                                                           distance, ground_weight, excited_weight)?;
-                shortest.find_shortest(ground, rng)?;
-                shortest.find_shortest(excited, rng)?;
-     
-           } 
+                localised_rates.push(ground);
+                localised_rates.push(excited)
+            } 
         }
-        if transitions.get_localised_retrapping(){
+        shortest.find_shortest_from_summed_rates(localised_rates, rng)?;
+    }
+
+    if transitions.get_localised_retrapping(){
+        let mut localised_rates: Vec<Candidate> = Vec::with_capacity(trap_places.available_count()*trap_places.unavailable_count()*2);
+        for &source in trap_places.available() {
+            let parameters = trap_parameters.get(source);
+            let (ground_weight, excited_weight) = state_weights(parameters, temperature)?;
             for &destination in trap_places.unavailable() {
                 if destination == source{
                     continue
@@ -147,18 +154,17 @@ fn build_candidates(
                     &places.traps()[source.index()],
                     &places.traps()[destination.index()],
                 );
-
                 let (ground, excited) = Candidate::localised_retrapping_candidates(
                                                                           transitions.get_locaised_retrap_transitions(), 
                                                                           &parameters, source, destination, temperature, 
                                                                           distance, ground_weight, excited_weight)?;
-                shortest.find_shortest(ground, rng)?;
-                shortest.find_shortest(excited, rng)?;
-
-            }
+                localised_rates.push(ground);
+                localised_rates.push(excited)
+            } 
         }
+        shortest.find_shortest_from_summed_rates(localised_rates, rng)?;
     }
-  
+
     if transitions.get_filling(){
         let fill = aggregate_filling_candidate(
             trap_places.available_count(),
@@ -306,11 +312,11 @@ fn choose_delocalised_outcome(
                 }
                 trap_dest[rng.gen_range(0..trap_dest.len())]
             };
-        return Ok( TimedCandidate { 
-            event: 
-                Event::DelocalisedRetrapping { source, destination: trap, state }, 
-            time: 0.0 });
+            return Ok( TimedCandidate { 
+                            event: Event::DelocalisedRetrapping { source, destination: trap, state }, 
+                            time: 0.0 });
         } else {
+
             let hole_destination = {
                 let empty_holes = hole_places.available();
                 if empty_holes.is_empty() {
@@ -319,48 +325,42 @@ fn choose_delocalised_outcome(
                 empty_holes[rng.gen_range(0..empty_holes.len())]
             };
             return Ok( TimedCandidate { 
-                event: 
-                    Event::DelocalisedRecombination { source, hole: hole_destination, state }, 
-                time: 0.0 });
-            
+                    event: Event::DelocalisedRecombination { source, hole: hole_destination, state }, 
+                    time: 0.0 });
         } 
     } else {
    
         let source_position = &places.traps()[source.index()];
-    
-        let mut current_shortest = TimedCandidate::new_negative_time();
+        let mut destinations: Vec<Candidate> = if transitions.get_conduction_band_retrapping() && parameters.retrap_ratio > 0.0 {
+            Vec::with_capacity(hole_places.available_count()+trap_places.unavailable_count())
+        }else {
+            Vec::with_capacity(hole_places.available_count())
+        };
 
         for &hole in hole_places.available() {
             let distance = cube.distance(source_position, &places.holes()[hole.index()]);
-            current_shortest.find_smallest_candidate(TimedCandidate::delocalised_recombination(
-                recombination_prefactor,
-                mu,
-                distance,
-                source,
-                hole,
-                state,
-                rng,
-                )?
-            )?;
+            destinations.push(
+                Candidate::delocalised_recombination(
+                    recombination_prefactor, 
+                    mu, distance, 
+                    source, hole, 
+                    state)?);
         }
 
         if transitions.get_conduction_band_retrapping() && parameters.retrap_ratio > 0.0 {
             let retrapping_prefactor = recombination_prefactor*parameters.retrap_ratio;
             for &destination in trap_places.unavailable() {
                 let distance = cube.distance(source_position, &places.traps()[destination.index()]);
-                
-                current_shortest.find_smallest_candidate(TimedCandidate::delocalised_retrapping(
-                    retrapping_prefactor,
-                    mu,
-                    distance,
-                    source,
-                    destination,
-                    state,
-                    rng,
-                    )?
-                )?;
+                destinations.push(
+                    Candidate::delocalised_recombination(
+                        retrapping_prefactor, 
+                        mu, distance, 
+                        source, destination, 
+                        state)?);
             }
         }
+        let mut current_shortest = TimedCandidate::new_negative_time();
+        current_shortest.find_shortest_from_summed_rates(destinations, rng)?;
         Ok(current_shortest)
     }
     

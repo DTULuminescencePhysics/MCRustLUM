@@ -46,8 +46,8 @@ alpha_gs = [9.0e9]
 alpha_es = [9.0e9]
 
 [delocalised]
-gs_cb = true
-es_cb = true
+gs_cb = false
+es_cb = false
 retrap = false
 s_gs = [1.2e12]
 s_es = [1.2e12]

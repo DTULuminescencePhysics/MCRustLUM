@@ -9,6 +9,8 @@
 
 use std::error::Error;
 use std::ffi::OsString;
+use std::time::Instant;
+
 
 /// Prepare the requested run directory and execute the default simulation workflow.
 fn main() -> Result<(), Box<dyn Error>> {
@@ -23,14 +25,34 @@ fn main() -> Result<(), Box<dyn Error>> {
 /// The current executable requests ten repetitions, one parameter experiment,
 /// and a minimum spatial ensemble of 25 traps.
 fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
-    let inputs = io::inputs::read_inputs("input.toml")?;
-    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 10, 1,25)?;
+    let total_start = Instant::now();
+    let start = Instant::now();
 
+    let inputs = io::inputs::read_inputs("input.toml")?;
+    eprintln!("read inputs:       {:?}", start.elapsed());
+
+    let start = Instant::now();
+    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 2, 1,300)?;
+    eprintln!("system setup:      {:?}", start.elapsed());
+    
+    let start = Instant::now();
     monte_carlo.run()?;
+    eprintln!("Monte Carlo:       {:?}", start.elapsed());
+
+    let start = Instant::now();
     mc::average::average_fill()?;
+    eprintln!("average fill:      {:?}", start.elapsed());
+
+    let start = Instant::now();
     mc::average::average_events()?;
+    eprintln!("average events:    {:?}", start.elapsed());
+
+    let start = Instant::now();
+
     let event_bin = Some(1.0);
     io::plotting::plot_default_results("average_fill.csv", "average_event.csv", ".", event_bin)?;
+    eprintln!("plotting:          {:?}", start.elapsed());
+    eprintln!("total:             {:?}", total_start.elapsed());
 
     Ok(())
 }

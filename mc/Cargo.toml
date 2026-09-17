@@ -2,10 +2,12 @@
 name = "mc"
 version = "0.1.0"
 edition = "2024"
-license = "AGPL-3.0-only"
+license.workspace = true
 
 [dependencies]
 common = { path = "../common" }
 io = { path = "../io" }
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
+rayon = "1.12.0"
+

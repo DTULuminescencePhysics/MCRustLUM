@@ -28,6 +28,9 @@ use io::outputs::append_monte_carlo_experiment_batch_to_file;
 use rand::Rng;
 use std::path::Path;
 
+use std::time::Instant;
+
+
 /// Calculate thermal ground/excited occupation probabilities for one trap family.
 ///
 /// The weights follow the two-state balance between Arrhenius excitation and
@@ -102,7 +105,11 @@ fn build_candidates(
     shortest: &mut TimedCandidate, 
 ) -> Result<(), String> {
 
+
+
+    
     for &source in trap_places.available() {
+
         let parameters = trap_parameters.get(source);
         let (ground_weight, excited_weight) = state_weights(parameters, temperature)?;
 
@@ -115,6 +122,7 @@ fn build_candidates(
             shortest.find_shortest(excited, rng)?;
                                                 
         }
+       
         if transitions.get_localised_recombination(){
             for &hole in hole_places.available() {
                 let distance = cube.distance(
@@ -150,7 +158,7 @@ fn build_candidates(
             }
         }
     }
-        
+  
     if transitions.get_filling(){
         let fill = aggregate_filling_candidate(
             trap_places.available_count(),

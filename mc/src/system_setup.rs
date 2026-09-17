@@ -11,6 +11,7 @@ use common::rate_equation_selection::Transitions;
 use common::time_temperature::TimeTemperature;
 use io::inputs::{CubeSpecification, SimulationInputs, TimeTempSpecification};
 use std::path::Path;
+use rayon::prelude::*;
 
 /// State shared by the repetitions and experiments in one Monte Carlo run.
 ///
@@ -139,35 +140,62 @@ impl MonteCarloSimulation {
     pub fn run_to_directory(&self, output_directory: impl AsRef<Path>) -> Result<(), String> {
         let output_directory = output_directory.as_ref();
         let batch_capacity: usize = 100;
-        for experiment_index in 0..self.experiments {
-            let trap_available = (experiment_value(
-                &self.inputs.initial_conditions.trap_available,
-                experiment_index,
-                "initial_conditions.trap_available",
-            )? * self.cube.trap_total as Float) as usize;
-            let hole_available = (experiment_value(
-                &self.inputs.initial_conditions.hole_available,
-                experiment_index,
-                "initial_conditions.hole_available",
-            )? * self.cube.hole_total as Float) as usize;
-            let experiment_offset = experiment_index*self.repetions; 
-            for repetition_index in 0..self.repetions {
-                let temp_file_path = output_directory.join(format!(
-                    "experiment_results_{}_{}.bin.gz",
-                    experiment_index, repetition_index
-                ));
-                let mut time_temperature = self.time_temperature.clone();
-                time_temperature.reset();
-                let randrep = &experiment_offset + repetition_index;
-                let mut experiment = MCExperiment::initialise(
+        
+        let jobs = (0..self.experiments).map(|experiment_index| {
+            let trap_available = (
+                experiment_value(
+                    &self.inputs.initial_conditions.trap_available,
+                    experiment_index,
+                    "initial_conditions.trap_available",
+                )? * self.cube.trap_total as Float
+            ) as usize;
+        
+            let hole_available = (
+                experiment_value(
+                    &self.inputs.initial_conditions.hole_available,
+                    experiment_index,
+                    "initial_conditions.hole_available",
+                )? * self.cube.hole_total as Float
+            ) as usize;
+
+            Ok((0..self.repetions)
+                .map(|repetition_index| {
+                    (
+                        experiment_index,
+                        repetition_index,
+                        trap_available,
+                        hole_available,
+                    )
+                })
+                .collect::<Vec<_>>())
+        })
+        .collect::<Result<Vec<_>, String>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>(); 
+        
+        jobs.into_par_iter().try_for_each(
+        |(experiment_index, repetition_index, trap_available, hole_available)| {
+            
+            let output_path = output_directory.join(format!(
+                "experiment_results_{experiment_index}_{repetition_index}.bin.gz"
+            ));
+
+            let mut time_temperature = self.time_temperature.clone();
+            time_temperature.reset();
+
+            // Unique across all experiment/repetition pairs.
+            let random_repetition =
+                experiment_index * self.repetions + repetition_index;
+
+            let mut experiment = MCExperiment::initialise(
                     &self.cube,
                     &self.inputs,
                     &trap_available,
                     &hole_available,
                     time_temperature,
                     &experiment_index,
-                    &randrep,
-
+                    &random_repetition,
                 )
                 .map_err(|error| {
                     format!(
@@ -178,27 +206,25 @@ impl MonteCarloSimulation {
                         self.repetions,
                     )
                 })?;
-                experiment
-                    .run(
-                        &self.cube,
-                        &self.inputs,
-                        &self.transitions,
-                        &temp_file_path,
-                        &batch_capacity,
+            experiment
+                .run(
+                    &self.cube,
+                    &self.inputs,
+                    &self.transitions,
+                    &output_path,
+                    &batch_capacity,
+                )
+                .map_err(|error| {
+                    format!(
+                        "experiment {} of {}, repetition {} of {} failed: {error}",
+                        experiment_index + 1,
+                        self.experiments,
+                        repetition_index + 1,
+                        self.repetions,
                     )
-                    .map_err(|error| {
-                        format!(
-                            "experiment {} of {}, repetition {} of {} failed: {error}",
-                            experiment_index + 1,
-                            self.experiments,
-                            repetition_index + 1,
-                            self.repetions,
-                        )
-                    })?;
-            }
-        }
-
-        Ok(())
+                })
+            },
+        )  
     }
 }
 

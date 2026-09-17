@@ -54,7 +54,7 @@ where
     Ratio: ElementWiseUnary<Output = Exp>,
     Exp: ElementWise<S, Output = V>,
     V: PrecisionInput<TimePrecision>,
-{
+{   
     let exponent = exponential_energy_over_kb_t(e_cb, temp)?;
     Some(exponent.element_mul(s_frequency)?.map_to_precision())
 }

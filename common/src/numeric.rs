@@ -18,9 +18,9 @@
 //! [`crate::numeric::PrecisionInput`] converts either
 //! individual values or complete containers between them.
 
-use std::ops::{Add, Div, Mul, Sub};
-use rand::{Rng, RngExt};
 use ndarray::{Array, Array1, ArrayBase, ArrayD, Data, Dimension, Zip};
+use rand::{Rng, RngExt};
+use std::ops::{Add, Div, Mul, Sub};
 
 /// Default floating-point precision used for model parameters and state.
 pub type Float = f64;
@@ -46,90 +46,150 @@ pub trait Numeric: Copy + Clone + PartialOrd + std::fmt::Debug {
 }
 
 impl Numeric for f32 {
-    fn to_float(self) -> Float { self as Float }
-    fn to_time_float(self) -> TimeFloat { self as TimeFloat }
-    fn zero() -> Self { 0.0 }
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0.0
+    }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-       rng.random_range(0.0..=max).to_float()
+        rng.random_range(0.0..=max).to_float()
     }
 }
 impl Numeric for f64 {
-    fn to_float(self) -> Float { self as Float }
-    fn to_time_float(self) -> TimeFloat { self as TimeFloat }
-    fn zero() -> Self { 0.0 }
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0.0
+    }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
         rng.random_range(0.0..=max).to_float()
     }
 }
 impl Numeric for i8 {
-    fn to_float(self) -> Float { self as Float }
-    fn to_time_float(self) -> TimeFloat { self as TimeFloat }
-    fn zero() -> Self { 0 }
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-       rng.random_range(0..=max).to_float()
+        rng.random_range(0..=max).to_float()
     }
 }
 
 impl Numeric for i16 {
-    fn to_float(self) -> Float { self as Float }
-    fn to_time_float(self) -> TimeFloat { self as TimeFloat }
-    fn zero() -> Self { 0 }
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
         rng.random_range(0..=max).to_float()
     }
 }
 
 impl Numeric for i32 {
-    fn to_float(self) -> Float { self as Float }
-    fn to_time_float(self) -> TimeFloat { self as TimeFloat }
-    fn zero() -> Self { 0 }
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
         rng.random_range(0..=max).to_float()
     }
 }
 
 impl Numeric for i64 {
-    fn to_float(self) -> Float { self as Float }
-    fn to_time_float(self) -> TimeFloat { self as TimeFloat }
-    fn zero() -> Self { 0 }
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
         rng.random_range(0..=max).to_float()
     }
 }
 
 impl Numeric for u8 {
-    fn to_float(self) -> Float { self as Float }
-    fn to_time_float(self) -> TimeFloat { self as TimeFloat }
-    fn zero() -> Self { 0 }
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
         rng.random_range(0..=max).to_float()
     }
 }
 
 impl Numeric for u16 {
-    fn to_float(self) -> Float { self as Float }
-    fn to_time_float(self) -> TimeFloat { self as TimeFloat }
-    fn zero() -> Self { 0 }
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
         rng.random_range(0..=max).to_float()
     }
 }
 
 impl Numeric for u32 {
-    fn to_float(self) -> Float { self as Float }
-    fn to_time_float(self) -> TimeFloat { self as TimeFloat }
-    fn zero() -> Self { 0 }
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
         rng.random_range(0..=max).to_float()
     }
 }
 
 impl Numeric for u64 {
-    fn to_float(self) -> Float { self as Float }
-    fn to_time_float(self) -> TimeFloat { self as TimeFloat }
-    fn zero() -> Self { 0 }
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-       rng.random_range(0..=max).to_float()
+        rng.random_range(0..=max).to_float()
     }
 }
 
@@ -143,7 +203,6 @@ pub trait PrecisionTarget {
     type Value: Copy + Mul<Output = Self::Value>;
     /// Convert one supported scalar into the target precision.
     fn from_numeric<T: Numeric>(value: T) -> Self::Value;
-
 }
 
 /// Marker selecting the program-wide [`Float`] precision.
@@ -206,13 +265,33 @@ where
     type Output = Vec<P::Value>;
 
     fn map_to_precision(self) -> Self::Output {
-        self.into_iter()
-            .map(P::from_numeric)
-            .collect()
+        self.into_iter().map(P::from_numeric).collect()
     }
 
     fn multiply_to_precision(self, multiplier: P::Value) -> Self::Output {
         self.into_iter()
+            .map(|value| P::from_numeric(value) * multiplier)
+            .collect()
+    }
+}
+
+// A borrowed slice cannot preserve its borrowed representation because
+// precision conversion may change the element type. Return an owned vector,
+// matching the output used by element-wise operations on slices.
+impl<T, P> PrecisionInput<P> for &[T]
+where
+    T: Numeric,
+    P: PrecisionTarget,
+{
+    type Output = Vec<P::Value>;
+
+    fn map_to_precision(self) -> Self::Output {
+        self.iter().copied().map(P::from_numeric).collect()
+    }
+
+    fn multiply_to_precision(self, multiplier: P::Value) -> Self::Output {
+        self.iter()
+            .copied()
             .map(|value| P::from_numeric(value) * multiplier)
             .collect()
     }
@@ -241,11 +320,7 @@ where
 /// Unlike [`Numeric`], this trait is restricted to real floating-point types
 /// because exponential and fractional-power operations are required.
 pub trait RealNumber:
-    Numeric
-    + Add<Output = Self>
-    + Sub<Output = Self>
-    + Mul<Output = Self>
-    + Div<Output = Self>
+    Numeric + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Div<Output = Self>
 {
     /// Calculate `e` raised to this value.
     fn exp(self) -> Self;
@@ -254,9 +329,9 @@ pub trait RealNumber:
     /// Construct this type from an `f64`, accepting a precision loss for f32.
     fn from_f64(value: f64) -> Self;
     /// Convert any supported numeric scalar to `f64`.
-    fn to_f64<T>(value:T)-> f64 
+    fn to_f64<T>(value: T) -> f64
     where
-        T: Numeric ;
+        T: Numeric;
 }
 
 impl RealNumber for f32 {
@@ -271,9 +346,9 @@ impl RealNumber for f32 {
     fn from_f64(value: f64) -> Self {
         value as f32
     }
-    fn to_f64<T>(value: T) -> f64 
-    where 
-        T:Numeric,
+    fn to_f64<T>(value: T) -> f64
+    where
+        T: Numeric,
     {
         value.to_float() as f64
     }
@@ -292,13 +367,12 @@ impl RealNumber for f64 {
         value
     }
 
-    fn to_f64<T>(value: T) -> Self 
-    where 
-        T:Numeric,
+    fn to_f64<T>(value: T) -> Self
+    where
+        T: Numeric,
     {
         value.to_float() as Self
     }
-
 }
 
 /// Shape-aware binary arithmetic for scalars, vectors, and ndarrays.
@@ -321,7 +395,7 @@ pub trait ElementWise<Rhs = Self> {
     fn element_mul(&self, rhs: &Rhs) -> Option<Self::Output>;
     /// Divide corresponding elements, preserving left-to-right order.
     fn element_div(&self, rhs: &Rhs) -> Option<Self::Output>;
-}   
+}
 
 /// Unary mathematical operations applied independently to every element.
 ///
@@ -369,10 +443,10 @@ macro_rules! impl_element_wise_scalar {
                 <$type>::exp(*self)
             }
 
-            fn element_powf<P>(&self, power: P) -> Self::Output 
-            where 
+            fn element_powf<P>(&self, power: P) -> Self::Output
+            where
                 P: Numeric,
-            {   
+            {
                 let power = <$type as RealNumber>::to_f64(power);
                 <$type>::powf(*self, power as $type)
             }
@@ -575,12 +649,215 @@ where
         self.iter().map(|value| value.exp()).collect()
     }
 
-    fn element_powf<P>(&self, power:P) -> Self::Output 
-    where 
-        P:Numeric,
-    {   
+    fn element_powf<P>(&self, power: P) -> Self::Output
+    where
+        P: Numeric,
+    {
         let power = T::from_f64(T::to_f64(power));
         self.iter().map(|value| value.powf(power)).collect()
+    }
+}
+
+// Borrowed scalar inputs produce owned scalar results. This is needed when a
+// generic input structure stores a scalar by reference, for example
+// `LocalisedTransitionInputs<_, _, &Float, _>`.
+impl<T> ElementWise<T> for &T
+where
+    T: RealNumber,
+{
+    type Output = T;
+
+    fn element_add(&self, rhs: &T) -> Option<Self::Output> {
+        Some(**self + *rhs)
+    }
+
+    fn element_sub(&self, rhs: &T) -> Option<Self::Output> {
+        Some(**self - *rhs)
+    }
+
+    fn element_mul(&self, rhs: &T) -> Option<Self::Output> {
+        Some(**self * *rhs)
+    }
+
+    fn element_div(&self, rhs: &T) -> Option<Self::Output> {
+        Some(**self / *rhs)
+    }
+}
+
+impl<T> ElementWise<&T> for T
+where
+    T: RealNumber,
+{
+    type Output = T;
+
+    fn element_add(&self, rhs: &&T) -> Option<Self::Output> {
+        Some(*self + **rhs)
+    }
+
+    fn element_sub(&self, rhs: &&T) -> Option<Self::Output> {
+        Some(*self - **rhs)
+    }
+
+    fn element_mul(&self, rhs: &&T) -> Option<Self::Output> {
+        Some(*self * **rhs)
+    }
+
+    fn element_div(&self, rhs: &&T) -> Option<Self::Output> {
+        Some(*self / **rhs)
+    }
+}
+
+impl<T> ElementWise<T> for &[T]
+where
+    T: RealNumber,
+{
+    type Output = Vec<T>;
+
+    fn element_add(&self, rhs: &T) -> Option<Self::Output> {
+        Some(self.iter().map(|&value| value + *rhs).collect())
+    }
+
+    fn element_sub(&self, rhs: &T) -> Option<Self::Output> {
+        Some(self.iter().map(|&value| value - *rhs).collect())
+    }
+
+    fn element_mul(&self, rhs: &T) -> Option<Self::Output> {
+        Some(self.iter().map(|&value| value * *rhs).collect())
+    }
+
+    fn element_div(&self, rhs: &T) -> Option<Self::Output> {
+        Some(self.iter().map(|&value| value / *rhs).collect())
+    }
+}
+
+// Paired slices follow the same exact-length rule as paired vectors.
+impl<T> ElementWise<&[T]> for &[T]
+where
+    T: RealNumber,
+{
+    type Output = Vec<T>;
+
+    fn element_add(&self, rhs: &&[T]) -> Option<Self::Output> {
+        (self.len() == rhs.len()).then(|| {
+            self.iter()
+                .zip(rhs.iter())
+                .map(|(&left, &right)| left + right)
+                .collect()
+        })
+    }
+
+    fn element_sub(&self, rhs: &&[T]) -> Option<Self::Output> {
+        (self.len() == rhs.len()).then(|| {
+            self.iter()
+                .zip(rhs.iter())
+                .map(|(&left, &right)| left - right)
+                .collect()
+        })
+    }
+
+    fn element_mul(&self, rhs: &&[T]) -> Option<Self::Output> {
+        (self.len() == rhs.len()).then(|| {
+            self.iter()
+                .zip(rhs.iter())
+                .map(|(&left, &right)| left * right)
+                .collect()
+        })
+    }
+
+    fn element_div(&self, rhs: &&[T]) -> Option<Self::Output> {
+        (self.len() == rhs.len()).then(|| {
+            self.iter()
+                .zip(rhs.iter())
+                .map(|(&left, &right)| left / right)
+                .collect()
+        })
+    }
+}
+
+impl<T> ElementWise<Vec<T>> for &[T]
+where
+    T: RealNumber,
+{
+    type Output = Vec<T>;
+
+    fn element_add(&self, rhs: &Vec<T>) -> Option<Self::Output> {
+        self.element_add(&rhs.as_slice())
+    }
+
+    fn element_sub(&self, rhs: &Vec<T>) -> Option<Self::Output> {
+        self.element_sub(&rhs.as_slice())
+    }
+
+    fn element_mul(&self, rhs: &Vec<T>) -> Option<Self::Output> {
+        self.element_mul(&rhs.as_slice())
+    }
+
+    fn element_div(&self, rhs: &Vec<T>) -> Option<Self::Output> {
+        self.element_div(&rhs.as_slice())
+    }
+}
+
+impl<T> ElementWise<&[T]> for Vec<T>
+where
+    T: RealNumber,
+{
+    type Output = Vec<T>;
+
+    fn element_add(&self, rhs: &&[T]) -> Option<Self::Output> {
+        self.as_slice().element_add(rhs)
+    }
+
+    fn element_sub(&self, rhs: &&[T]) -> Option<Self::Output> {
+        self.as_slice().element_sub(rhs)
+    }
+
+    fn element_mul(&self, rhs: &&[T]) -> Option<Self::Output> {
+        self.as_slice().element_mul(rhs)
+    }
+
+    fn element_div(&self, rhs: &&[T]) -> Option<Self::Output> {
+        self.as_slice().element_div(rhs)
+    }
+}
+
+impl<T> ElementWiseUnary for &[T]
+where
+    T: RealNumber,
+{
+    type Output = Vec<T>;
+
+    fn element_exp(&self) -> Self::Output {
+        self.iter().map(|value| value.exp()).collect()
+    }
+
+    fn element_powf<P>(&self, power: P) -> Self::Output
+    where
+        P: Numeric,
+    {
+        let power = T::from_f64(T::to_f64(power));
+        self.iter().map(|value| value.powf(power)).collect()
+    }
+}
+impl<T> ElementWise<&[T]> for T
+where
+    T: RealNumber,
+{
+    type Output = Vec<T>;
+
+    fn element_add(&self, rhs: &&[T]) -> Option<Self::Output> {
+        Some(rhs.iter().map(|&value| *self + value).collect())
+    }
+
+    fn element_sub(&self, rhs: &&[T]) -> Option<Self::Output> {
+        Some(rhs.iter().map(|&value| *self - value).collect())
+    }
+
+    fn element_mul(&self, rhs: &&[T]) -> Option<Self::Output> {
+        Some(rhs.iter().map(|&value| *self * value).collect())
+    }
+
+    fn element_div(&self, rhs: &&[T]) -> Option<Self::Output> {
+        Some(rhs.iter().map(|&value| *self / value).collect())
     }
 }
 
@@ -597,19 +874,35 @@ where
     type Output = Array<T, D>;
 
     fn element_add(&self, rhs: &ArrayBase<S2, D>) -> Option<Self::Output> {
-        (self.shape() == rhs.shape()).then(|| Zip::from(self).and(rhs).map_collect(|left, right| *left + *right))
+        (self.shape() == rhs.shape()).then(|| {
+            Zip::from(self)
+                .and(rhs)
+                .map_collect(|left, right| *left + *right)
+        })
     }
 
     fn element_sub(&self, rhs: &ArrayBase<S2, D>) -> Option<Self::Output> {
-        (self.shape() == rhs.shape()).then(|| Zip::from(self).and(rhs).map_collect(|left, right| *left - *right))
+        (self.shape() == rhs.shape()).then(|| {
+            Zip::from(self)
+                .and(rhs)
+                .map_collect(|left, right| *left - *right)
+        })
     }
 
     fn element_mul(&self, rhs: &ArrayBase<S2, D>) -> Option<Self::Output> {
-        (self.shape() == rhs.shape()).then(|| Zip::from(self).and(rhs).map_collect(|left, right| *left * *right))
+        (self.shape() == rhs.shape()).then(|| {
+            Zip::from(self)
+                .and(rhs)
+                .map_collect(|left, right| *left * *right)
+        })
     }
 
     fn element_div(&self, rhs: &ArrayBase<S2, D>) -> Option<Self::Output> {
-        (self.shape() == rhs.shape()).then(|| Zip::from(self).and(rhs).map_collect(|left, right| *left / *right))
+        (self.shape() == rhs.shape()).then(|| {
+            Zip::from(self)
+                .and(rhs)
+                .map_collect(|left, right| *left / *right)
+        })
     }
 }
 
@@ -676,9 +969,9 @@ where
         self.mapv(|value| value.exp())
     }
 
-    fn element_powf<P>(&self, power: P) -> Self::Output 
-    where 
-        P:Numeric,
+    fn element_powf<P>(&self, power: P) -> Self::Output
+    where
+        P: Numeric,
     {
         let power = T::from_f64(T::to_f64(power));
         self.mapv(|value| value.powf(power))
@@ -700,28 +993,44 @@ where
         let left = Array1::from(self.clone()).into_dyn();
         let right = rhs.view().into_dyn();
         let left = left.broadcast(right.raw_dim())?;
-        Some(Zip::from(left).and(right).map_collect(|left, right| *left + *right))
+        Some(
+            Zip::from(left)
+                .and(right)
+                .map_collect(|left, right| *left + *right),
+        )
     }
 
     fn element_sub(&self, rhs: &ArrayBase<S, D>) -> Option<Self::Output> {
         let left = Array1::from(self.clone()).into_dyn();
         let right = rhs.view().into_dyn();
         let left = left.broadcast(right.raw_dim())?;
-        Some(Zip::from(left).and(right).map_collect(|left, right| *left - *right))
+        Some(
+            Zip::from(left)
+                .and(right)
+                .map_collect(|left, right| *left - *right),
+        )
     }
 
     fn element_mul(&self, rhs: &ArrayBase<S, D>) -> Option<Self::Output> {
         let left = Array1::from(self.clone()).into_dyn();
         let right = rhs.view().into_dyn();
         let left = left.broadcast(right.raw_dim())?;
-        Some(Zip::from(left).and(right).map_collect(|left, right| *left * *right))
+        Some(
+            Zip::from(left)
+                .and(right)
+                .map_collect(|left, right| *left * *right),
+        )
     }
 
     fn element_div(&self, rhs: &ArrayBase<S, D>) -> Option<Self::Output> {
         let left = Array1::from(self.clone()).into_dyn();
         let right = rhs.view().into_dyn();
         let left = left.broadcast(right.raw_dim())?;
-        Some(Zip::from(left).and(right).map_collect(|left, right| *left / *right))
+        Some(
+            Zip::from(left)
+                .and(right)
+                .map_collect(|left, right| *left / *right),
+        )
     }
 }
 
@@ -737,28 +1046,44 @@ where
         let left = self.view().into_dyn();
         let right = Array1::from(rhs.clone()).into_dyn();
         let right = right.broadcast(left.raw_dim())?;
-        Some(Zip::from(left).and(right).map_collect(|left, right| *left + *right))
+        Some(
+            Zip::from(left)
+                .and(right)
+                .map_collect(|left, right| *left + *right),
+        )
     }
 
     fn element_sub(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         let left = self.view().into_dyn();
         let right = Array1::from(rhs.clone()).into_dyn();
         let right = right.broadcast(left.raw_dim())?;
-        Some(Zip::from(left).and(right).map_collect(|left, right| *left - *right))
+        Some(
+            Zip::from(left)
+                .and(right)
+                .map_collect(|left, right| *left - *right),
+        )
     }
 
     fn element_mul(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         let left = self.view().into_dyn();
         let right = Array1::from(rhs.clone()).into_dyn();
         let right = right.broadcast(left.raw_dim())?;
-        Some(Zip::from(left).and(right).map_collect(|left, right| *left * *right))
+        Some(
+            Zip::from(left)
+                .and(right)
+                .map_collect(|left, right| *left * *right),
+        )
     }
 
     fn element_div(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         let left = self.view().into_dyn();
         let right = Array1::from(rhs.clone()).into_dyn();
         let right = right.broadcast(left.raw_dim())?;
-        Some(Zip::from(left).and(right).map_collect(|left, right| *left / *right))
+        Some(
+            Zip::from(left)
+                .and(right)
+                .map_collect(|left, right| *left / *right),
+        )
     }
 }
 
@@ -770,13 +1095,13 @@ mod tests {
     #[test]
     fn precision_conversion_preserves_scalar_vector_and_array_shapes() {
         let scalar = <i32 as PrecisionInput<ProgramPrecision>>::map_to_precision(3);
-        let vector = <Vec<i16> as PrecisionInput<TimePrecision>>::multiply_to_precision(
-            vec![1, 2, 3],
-            2.5,
-        );
-        let matrix = <ndarray::Array2<i32> as PrecisionInput<ProgramPrecision>>::map_to_precision(
-            array![[1, 2], [3, 4]],
-        );
+        let vector =
+            <Vec<i16> as PrecisionInput<TimePrecision>>::multiply_to_precision(vec![1, 2, 3], 2.5);
+        let matrix =
+            <ndarray::Array2<i32> as PrecisionInput<ProgramPrecision>>::map_to_precision(array![
+                [1, 2],
+                [3, 4]
+            ]);
 
         assert_eq!(scalar, 3.0);
         assert_eq!(vector, vec![2.5, 5.0, 7.5]);
@@ -791,6 +1116,49 @@ mod tests {
         assert_eq!(10.0_f32.element_div(&vector), Some(vec![5.0, 2.5]));
         assert_eq!(vector.element_sub(&2.0_f32), Some(vec![0.0, 2.0]));
         assert_eq!(vector.element_div(&2.0_f32), Some(vec![1.0, 2.0]));
+    }
+
+    #[test]
+    fn borrowed_scalar_operations_preserve_operand_order() {
+        let left = 10.0_f64;
+        let right = 2.0_f64;
+
+        assert_eq!(
+            <&f64 as ElementWise<f64>>::element_sub(&&left, &right),
+            Some(8.0),
+        );
+        assert_eq!(
+            <f64 as ElementWise<&f64>>::element_div(&left, &&right),
+            Some(5.0),
+        );
+    }
+
+    #[test]
+    fn borrowed_slice_operations_match_vector_operations() {
+        let left_values = [2.0_f64, 4.0, 8.0];
+        let right_values = [1.0_f64, 2.0, 4.0];
+        let short_values = [1.0_f64, 2.0];
+        let left = left_values.as_slice();
+        let right = right_values.as_slice();
+        let short = short_values.as_slice();
+        let right_vector = right_values.to_vec();
+
+        assert_eq!(left.element_add(&right), Some(vec![3.0, 6.0, 12.0]));
+        assert_eq!(left.element_div(&right), Some(vec![2.0, 2.0, 2.0]));
+        assert!(left.element_mul(&short).is_none());
+        assert_eq!(left.element_sub(&right_vector), Some(vec![1.0, 2.0, 4.0]));
+        assert_eq!(right_vector.element_mul(&left), Some(vec![2.0, 8.0, 32.0]));
+        assert_eq!(left.element_powf(2), vec![4.0, 16.0, 64.0]);
+    }
+
+    #[test]
+    fn borrowed_slice_precision_conversion_returns_an_owned_vector() {
+        let values = [1_i16, 2, 3];
+        let values = values.as_slice();
+        let converted =
+            <&[i16] as PrecisionInput<TimePrecision>>::multiply_to_precision(values, 2.5);
+
+        assert_eq!(converted, vec![2.5, 5.0, 7.5]);
     }
 
     #[test]
@@ -809,10 +1177,17 @@ mod tests {
         let vector = vec![10.0_f64, 20.0, 30.0];
         let matrix = array![[1.0_f64, 2.0, 3.0], [4.0, 5.0, 6.0]];
 
-        let sum = vector.element_add(&matrix).expect("vector should broadcast");
-        let difference = matrix.element_sub(&vector).expect("vector should broadcast");
+        let sum = vector
+            .element_add(&matrix)
+            .expect("vector should broadcast");
+        let difference = matrix
+            .element_sub(&vector)
+            .expect("vector should broadcast");
 
-        assert_eq!(sum, array![[11.0, 22.0, 33.0], [14.0, 25.0, 36.0]].into_dyn());
+        assert_eq!(
+            sum,
+            array![[11.0, 22.0, 33.0], [14.0, 25.0, 36.0]].into_dyn()
+        );
         assert_eq!(
             difference,
             array![[-9.0, -18.0, -27.0], [-6.0, -15.0, -24.0]].into_dyn(),

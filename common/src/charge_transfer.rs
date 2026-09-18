@@ -116,144 +116,152 @@ pub struct Candidate {
     pub rate: TimeFloat,
 }
 
+
+/// Build ground- and excited-state thermal-release candidates for one trap.
+/// 
+/// Delocalised rates are calculated using [crate::rate_equation_selection::DelocalisedRateEquation::calculate]
+/// Each Arrhenius release rate is weighted by the thermal occupation of
+/// its originating state. A disabled state receives [`DISABLED_RATE`].
+pub fn delocalised_candidates<'a>(
+    transitions: &DelocalisedRateEquation,
+    inputs: DelocalisedTransitionInputs<Vec<Float>, Vec<Float>, &'a [Float]>,
+    sources: &[PlaceId],
+    output: &mut Vec<Candidate>,
+    
+) -> Result<(), String>{
+    
+    let (ground_rate, excited_rate) = transitions.calculate(&inputs);
+
+    let ground_rates = ground_rate
+                            .ok_or_else(|| "could not calculate ground-state rate".to_string())?;
+
+    let excited_rates = excited_rate
+                            .ok_or_else(|| "could not calculate excited-state rate".to_string())?;
+    
+    for ((&source, ground_rate), excited_rate) in sources
+        .iter()
+        .zip(ground_rates)
+        .zip(excited_rates)
+    {  output.push(Candidate {
+            event: Event::Delocalised {
+            source,
+            state: ElectronicState::Ground,
+        },
+        rate: ground_rate,
+        });
+
+        output.push(Candidate {
+            event: Event::Delocalised {
+                source,
+                state: ElectronicState::Excited,
+            },
+            rate: excited_rate,
+        });
+    }
+
+    Ok(())
+
+}
+
+/// Build ground- and excited-state tunnelling candidates to one hole.
+///
+/// Localised recombination rates are calculated using [crate::rate_equation_selection::LocalisedRateEquation::calculate]
+/// The selected equation applies exponential distance attenuation and the
+/// state occupation weights to the trap-to-hole separation.
+pub fn localised_recombination_candidates<'a>(
+    transitions: &LocalisedRateEquation,
+    inputs: LocalisedTransitionInputs<Float, Float, &'a Float, &'a [Float]>,
+    source: PlaceId,
+    holes: &[PlaceId],
+    output: &mut Vec<Candidate>,
+) -> Result<(), String> {
+
+    
+    let (ground_rate, excited_rate) = transitions.calculate(&inputs);
+
+    let ground_rates = ground_rate
+                            .ok_or_else(|| "could not calculate ground-state rate".to_string())?;
+    
+    let excited_rates = excited_rate
+                            .ok_or_else(|| "could not calculate excited-state rate".to_string())?;
+    
+    for ((&hole, ground_rate), excited_rate) in holes
+        .iter()
+        .zip(ground_rates)
+        .zip(excited_rates)
+    { 
+        output.push(Candidate {
+            event: Event::LocalisedRecombination {
+            source,
+            hole,
+            state: ElectronicState::Ground,
+        },
+        rate: ground_rate,
+        });
+
+        output.push(Candidate {
+            event: Event::LocalisedRecombination {
+                source,
+                hole,
+                state: ElectronicState::Excited,
+            },
+            rate: excited_rate,
+        });
+    }
+    
+    Ok(())
+
+}
+
+/// Build ground- and excited-state tunnelling candidates to an empty trap.
+///
+/// Localised retrapping rates are calculated using [crate::rate_equation_selection::LocalisedRateEquation::calculate]
+/// The rate has the same distance-decay form as localised recombination,
+/// but its event transfers occupancy between trap identifiers.
+pub fn localised_retrapping_candidates<'a>(
+    transitions: &LocalisedRateEquation,
+    inputs: LocalisedTransitionInputs<Float, Float, &'a Float, &'a [Float]>,
+    source: PlaceId,
+    destinations: &[PlaceId],
+    output: &mut Vec<Candidate>,
+) -> Result<(), String>{
+
+    let (ground_rate, excited_rate) = transitions.calculate(&inputs);
+    
+    let ground_rates = ground_rate
+                            .ok_or_else(|| "could not calculate ground-state rate".to_string())?;
+    let excited_rates = excited_rate
+                            .ok_or_else(|| "could not calculate excited-state rate".to_string())?;
+
+    for ((&destination, ground_rate), excited_rate) in destinations
+        .iter()
+        .zip(ground_rates)
+        .zip(excited_rates)
+    { 
+        output.push(Candidate {
+            event: Event::LocalisedRetrapping {
+            source,
+            destination,
+            state: ElectronicState::Ground,
+        },
+        rate: ground_rate,
+        });
+
+        output.push(Candidate {
+            event: Event::LocalisedRetrapping {
+                source,
+                destination,
+                state: ElectronicState::Excited,
+            },
+            rate: excited_rate,
+        });
+    }
+    
+    Ok(())
+    
+}
+
 impl Candidate{
-    /// Build ground- and excited-state thermal-release candidates for one trap.
-    /// 
-    /// Delocalised rates are calculated using [crate::rate_equation_selection::DelocalisedRateEquation::calculate]
-    /// Each Arrhenius release rate is weighted by the thermal occupation of
-    /// its originating state. A disabled state receives [`DISABLED_RATE`].
-    pub fn delocalised_candidates(
-        transitions: &DelocalisedRateEquation,
-        parameters: &TrapParameters,
-        source: PlaceId,
-        temperature: Float,
-        ground_weight: Float,
-        excited_weight: Float,
-    ) -> Result<(Self, Self), String>{
-
-        let inputs = DelocalisedTransitionInputs {
-            e_cb_ground: parameters.e_cb_ground,
-            frequency_ground: parameters.de_frequency_ground,
-            e_cb_excited: parameters.e_cb_excited,
-            frequency_excited: parameters.de_frequency_excited,
-            temperature,
-            ground_weight,
-            excited_weight,
-        };
-        
-        let (ground_rate, excited_rate) = transitions.calculate(&inputs);
-
-        let ground_rate = ground_rate
-                               .ok_or_else(|| "could not calculate ground-state rate".to_string())?;
-
-        let excited_rate = excited_rate
-                                .ok_or_else(|| "could not calculate excited-state rate".to_string())?;
-       
-        Ok((
-            Self {event: Event::Delocalised { source, state: ElectronicState::Ground}, rate: ground_rate},
-            Self {event: Event::Delocalised { source, state: ElectronicState::Excited}, rate: excited_rate}
-        ))
-    
-    }
-
-    /// Build ground- and excited-state tunnelling candidates to one hole.
-    ///
-    /// Localised recombination rates are calculated using [crate::rate_equation_selection::LocalisedRateEquation::calculate]
-    /// The selected equation applies exponential distance attenuation and the
-    /// state occupation weights to the trap-to-hole separation.
-    pub fn localised_recombination_candidates(
-        transitions: &LocalisedRateEquation,
-        parameters: &TrapParameters,
-        source: PlaceId,
-        hole: PlaceId,
-        temperature: Float,
-        distance: Float,
-        ground_weight: Float,
-        excited_weight: Float,
-    ) -> Result<(Self, Self), String>{
-
-        let inputs = LocalisedTransitionInputs {
-            alpha_ground: parameters.alpha_ground,
-            frequency_ground: parameters.lo_frequency_ground,
-            alpha_excited: parameters.alpha_excited,
-            frequency_excited: parameters.lo_frequency_excited,
-            ground_weight,
-            excited_weight,
-            distance,
-        };
-
-        let (ground_rate, excited_rate) = transitions.calculate(&inputs);
-
-        let ground_rate = ground_rate
-                               .ok_or_else(|| "could not calculate ground-state rate".to_string())?;
-        
-        let excited_rate = excited_rate
-                                .ok_or_else(|| "could not calculate excited-state rate".to_string())?;
-        
-        Ok((
-            Self {event: Event::LocalisedRecombination { 
-                                source, 
-                                hole, 
-                                state: ElectronicState::Ground }, 
-                 rate: ground_rate},
-            Self {event: Event::LocalisedRecombination { 
-                                source, 
-                                hole, 
-                                state: ElectronicState::Excited },
-                  rate: excited_rate}
-        ))
-    
-    }
-
-    /// Build ground- and excited-state tunnelling candidates to an empty trap.
-    ///
-    /// Localised retrapping rates are calculated using [crate::rate_equation_selection::LocalisedRateEquation::calculate]
-    /// The rate has the same distance-decay form as localised recombination,
-    /// but its event transfers occupancy between trap identifiers.
-    pub fn localised_retrapping_candidates(
-        transitions: &LocalisedRateEquation,
-        parameters: &TrapParameters,
-        source: PlaceId,
-        destination: PlaceId,
-        temperature: Float,
-        distance: Float,
-        ground_weight: Float,
-        excited_weight: Float,
-    ) -> Result<(Self, Self), String>{
-
-        let inputs = LocalisedTransitionInputs {
-            alpha_ground: parameters.alpha_ground,
-            frequency_ground: parameters.lo_frequency_ground,
-            alpha_excited: parameters.alpha_excited,
-            frequency_excited: parameters.lo_frequency_excited,
-            ground_weight,
-            excited_weight,
-            distance,
-        };
-
-        let (ground_rate, excited_rate) = transitions.calculate(&inputs);
-       
-        let ground_rate = ground_rate
-                               .ok_or_else(|| "could not calculate ground-state rate".to_string())?;
-        let excited_rate = excited_rate
-                                .ok_or_else(|| "could not calculate excited-state rate".to_string())?;
-
-        Ok((
-            Self {event: Event::LocalisedRetrapping { 
-                                source, 
-                                destination, 
-                                state: ElectronicState::Ground
-                            }, 
-                 rate: ground_rate},
-            Self { event: Event::LocalisedRetrapping { 
-                                 source, 
-                                 destination, 
-                                 state: ElectronicState::Excited },
-                  rate: excited_rate}
-        ))
-    
-    }
-
     /// Build the aggregate dose-driven filling candidate for all empty traps.
     ///
     /// Filling rates are calculated using [crate::rate_equation_selection::FillingRateEquation::calculate]

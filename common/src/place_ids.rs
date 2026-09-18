@@ -137,10 +137,20 @@ impl PlaceAvailability {
     pub fn available(&self) -> &[PlaceId] {
         &self.ids[..self.available_count]
     }
+    /// Gives a vector of indices of the available PlaceIds
+    pub fn available_indices_vec(&self) -> Vec<usize> {
+        self.available().iter().copied().map(PlaceId::index).collect()
+    }
+
     /// Gives Ids not currently available for reaction
     /// i.e. an unoccupied trap or occupied hole
     pub fn unavailable(&self) -> &[PlaceId] {
         &self.ids[self.available_count..]
+    }
+
+    /// Gives a vector of indices of the unavailable PlaceIds
+    pub fn unavailable_indices_vec(&self) -> Vec<usize> {
+        self.unavailable().iter().copied().map(PlaceId::index).collect()
     }
 
     /// Checks if a given PlaceId is available to the program

@@ -10,13 +10,16 @@
 //! Constructors validate geometry before allocating or randomly generating
 //! site coordinates.
 use crate::numeric::{Float, Numeric};
-use crate::place_ids::PlaceId;
+use crate::place_ids::{PlaceId, PlaceAvailability};
+use crate::rate_equation_inputs::{
+    DelocalisedTransitionInputs, FillingTransitionInputs, LocalisedTransitionInputs,
+};
 use rand::Rng;
 /// A three-dimensional site position.
 ///
 /// Coordinates can be supplied directly or generated within positive x, y,
 /// and z limits.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Coord {
     /// Position along the x axis.
     pub x: Float,
@@ -619,6 +622,221 @@ impl TrapParameterLayout {
             Self::Indexed { records, by_trap } => &records[by_trap[trap.index()].index()],
         }
     }
+    /// Returns the DelocalisedTransitionInputs for all the available traps
+    pub fn get_delocalised<'a>(
+        &self,
+        ground_weights: &'a [Float],
+        excited_weights: &'a [Float],
+        traps: &PlaceAvailability,
+        temperature: Float,
+        ) -> Result<
+        DelocalisedTransitionInputs<Vec<Float>, Vec<Float>, &'a [Float]>,
+        String,> 
+    {
+        let available = traps.available();
+
+        if ground_weights.len() != available.len()
+            || excited_weights.len() != available.len()
+        {
+            return Err(format!(
+                "expected {} weights, found {} ground and {} excited",
+                available.len(),
+                ground_weights.len(),
+                excited_weights.len(),
+            ));
+        }
+
+        let e_cb_ground =  match self {
+            Self::Uniform(parameters) => {
+                vec![parameters.e_cb_ground]
+            }, 
+            Self::Direct(parameters) => {
+                traps.available_indices_vec()
+                    .into_iter()
+                    .map(|index| 
+                    parameters[index]
+                    .e_cb_ground).collect::<Vec<Float>>()
+            },
+            Self::Indexed { records, by_trap } => {
+                traps.available_indices_vec()
+                    .into_iter()
+                    .map(|index| 
+                    records[by_trap[index].index()]
+                    .e_cb_ground).collect::<Vec<Float>>()
+            }
+        };
+      
+        let frequency_ground =  match self {
+            Self::Uniform(parameters) => {
+                vec![parameters.de_frequency_ground]
+            }, 
+            Self::Direct(parameters) => {
+                traps.available_indices_vec()
+                    .into_iter()
+                    .map(|index| 
+                    parameters[index]
+                    .de_frequency_ground).collect::<Vec<Float>>()
+            },
+            Self::Indexed { records, by_trap } => {
+                traps.available_indices_vec()
+                    .into_iter()
+                    .map(|index| 
+                    records[by_trap[index].index()]
+                    .de_frequency_ground).collect::<Vec<Float>>()
+            }
+        };
+        let e_cb_excited = match self {
+            Self::Uniform(parameters) => {
+                vec![parameters.e_cb_excited]
+            }, 
+            Self::Direct(parameters) => {
+                traps.available_indices_vec()
+                    .into_iter()
+                    .map(|index| 
+                    parameters[index]
+                    .e_cb_excited).collect::<Vec<Float>>()
+            },
+            Self::Indexed { records, by_trap } => {
+                traps.available_indices_vec()
+                    .into_iter()
+                    .map(|index| 
+                    records[by_trap[index].index()]
+                    .e_cb_excited).collect::<Vec<Float>>()
+            }
+        };
+        
+        let frequency_excited = match self {
+            Self::Uniform(parameters) => {
+                vec![parameters.de_frequency_excited]
+            }, 
+            Self::Direct(parameters) => {
+                traps.available_indices_vec()
+                    .into_iter()
+                    .map(|index| 
+                    parameters[index]
+                    .de_frequency_excited).collect::<Vec<Float>>()
+            },
+            Self::Indexed { records, by_trap } => {
+                traps.available_indices_vec()
+                    .into_iter()
+                    .map(|index| 
+                    records[by_trap[index].index()]
+                    .de_frequency_excited).collect::<Vec<Float>>()
+            }
+        };
+        
+        Ok(DelocalisedTransitionInputs {
+            e_cb_ground,
+            frequency_ground,
+            e_cb_excited,
+            frequency_excited,
+            temperature,
+            ground_weight: ground_weights,
+            excited_weight: excited_weights,
+        })
+    }
+
+       /// Returns the DelocalisedTransitionInputs for all the available traps
+    pub fn get_localised_recombination<'a>(
+        &self,
+        ground_weight: &'a Float,
+        excited_weight: &'a Float,
+        distance: &'a [Float],
+        trap: &PlaceId,
+        temperature: Float,
+    ) -> Result<
+        LocalisedTransitionInputs<Float, Float, &'a Float, &'a [Float]>,
+        String,> 
+    {
+        Ok( match self {
+            Self::Uniform(parameters) => {
+                LocalisedTransitionInputs {
+                    alpha_ground: parameters.alpha_ground,
+                    frequency_ground: parameters.lo_frequency_ground,
+                    alpha_excited: parameters.alpha_excited,
+                    frequency_excited: parameters.lo_frequency_excited,
+                    ground_weight,
+                    excited_weight,
+                    distance,
+                }
+            },
+             Self::Direct(parameters) => { LocalisedTransitionInputs {
+                    alpha_ground: parameters[trap.index()].alpha_ground,
+                    frequency_ground: parameters[trap.index()].lo_frequency_ground,
+                    alpha_excited: parameters[trap.index()].alpha_excited,
+                    frequency_excited: parameters[trap.index()].lo_frequency_excited,
+                    ground_weight,
+                    excited_weight,
+                    distance,
+                }
+             },
+
+            Self::Indexed { records, by_trap } => {LocalisedTransitionInputs {
+            alpha_ground: records[by_trap[trap.index()].index()].alpha_ground,
+                    frequency_ground: records[by_trap[trap.index()].index()].lo_frequency_ground,
+                    alpha_excited: records[by_trap[trap.index()].index()].alpha_excited,
+                    frequency_excited: records[by_trap[trap.index()].index()].lo_frequency_excited,
+                    ground_weight,
+                    excited_weight,
+                    distance,
+                }
+             },
+        
+        })
+    }
+
+    pub fn get_localised_retrapping<'a>(
+        &self,
+        ground_weight: &'a Float,
+        excited_weight: &'a Float,
+        distance: &'a [Float],
+        trap: &PlaceId,
+        temperature: Float,
+    ) -> Result<
+        LocalisedTransitionInputs<Float, Float, &'a Float, &'a [Float]>,
+        String,> 
+    {
+        Ok( match self {
+            Self::Uniform(parameters) => {
+                LocalisedTransitionInputs {
+                    alpha_ground: parameters.alpha_ground,
+                    frequency_ground: parameters.lo_frequency_ground,
+                    alpha_excited: parameters.alpha_excited,
+                    frequency_excited: parameters.lo_frequency_excited,
+                    ground_weight,
+                    excited_weight,
+                    distance,
+                }
+            },
+             Self::Direct(parameters) => { LocalisedTransitionInputs {
+                    alpha_ground: parameters[trap.index()].alpha_ground,
+                    frequency_ground: parameters[trap.index()].lo_frequency_ground,
+                    alpha_excited: parameters[trap.index()].alpha_excited,
+                    frequency_excited: parameters[trap.index()].lo_frequency_excited,
+                    ground_weight,
+                    excited_weight,
+                    distance,
+                }
+             },
+
+            Self::Indexed { records, by_trap } => {LocalisedTransitionInputs {
+            alpha_ground: records[by_trap[trap.index()].index()].alpha_ground,
+                    frequency_ground: records[by_trap[trap.index()].index()].lo_frequency_ground,
+                    alpha_excited: records[by_trap[trap.index()].index()].alpha_excited,
+                    frequency_excited: records[by_trap[trap.index()].index()].lo_frequency_excited,
+                    ground_weight,
+                    excited_weight,
+                    distance,
+                }
+             },
+        
+        })
+
+       
+        
+       
+    }
+
 }
 
 

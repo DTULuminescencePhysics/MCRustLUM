@@ -11,7 +11,7 @@
 
 use crate::numeric::Float;
 use serde::{Deserialize, Serialize};
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 /// Compact zero-based identifier for a trap, hole, or band-tail site.
 ///
@@ -106,7 +106,7 @@ impl PlaceAvailability {
         let first_new = self.available_count;
         let new_available_end = first_new + n;
         for destination in first_new..new_available_end {
-            let selected = rng.gen_range(destination..self.ids.len());
+            let selected = rng.random_range(destination..self.ids.len());
             self.swap_positions(destination, selected);
         }
 

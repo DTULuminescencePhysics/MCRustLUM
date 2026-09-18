@@ -7,6 +7,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
+use rand_distr::{Distribution, Exp1};
+use rand::Rng;
 
 /// Seed used when [`set_seed`] is not called during program startup.
 pub const DEFAULT_SEED: u64 = 0;
@@ -47,3 +49,7 @@ pub fn get_std_rng_for_rep(rep: usize) -> StdRng  {
     StdRng::seed_from_u64(random_seed)
 
 }
+
+pub fn generatre_exponential_random(rng: &mut impl Rng) -> f64 {
+    Exp1.sample(rng)
+} 

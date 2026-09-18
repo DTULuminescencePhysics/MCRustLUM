@@ -21,8 +21,10 @@ use crate::rate_equation_inputs::{
 use crate::rate_equation_selection::{
     DelocalisedRateEquation, FillingRateEquation, LocalisedRateEquation,
 };
+use crate::random::generatre_exponential_random;
 use crate::rate_equations::{retrapping_probability_by_r};
-use rand::Rng;
+use rand::{Rng, RngExt};
+
 
 
 /// Sentinel rate used internally for a transition pathway disabled by configuration.
@@ -347,9 +349,10 @@ impl TimedCandidate {
         if candidate.rate == 0.0 {
             return Ok(TimedCandidate { event: candidate.event, time: TimeFloat::INFINITY });
         }
-
-        let u: TimeFloat = rng.sample(rand::distributions::Open01);
-        let time = -u.ln() / candidate.rate;
+        let u = generatre_exponential_random(rng)as TimeFloat;
+        
+        // let u: TimeFloat = rng.sample(rand::distributions::Open01);
+        let time = u / candidate.rate;
         Ok(TimedCandidate { event: candidate.event, time})
 
     }
@@ -393,11 +396,12 @@ impl TimedCandidate {
         if total_rate == 0.0 {
             return Ok(());
         }
-        let u: TimeFloat = rng.sample(rand::distributions::Open01);
-        let event_time: TimeFloat = -u.ln() / total_rate ;
+        let u = generatre_exponential_random(rng)as TimeFloat;
+        let event_time: TimeFloat = u / total_rate ;
      
         if event_time.total_cmp(&self.time).is_lt(){
-            let u_event: TimeFloat = rng.sample(rand::distributions::Open01);
+            
+            let u_event: TimeFloat = rng.sample(rand::distr::Open01);
             let mut target = (u_event * total_rate) as TimeFloat;
             
             for candidate in candidates {

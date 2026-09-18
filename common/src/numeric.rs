@@ -19,7 +19,7 @@
 //! individual values or complete containers between them.
 
 use std::ops::{Add, Div, Mul, Sub};
-use rand::Rng;
+use rand::{Rng, RngExt};
 use ndarray::{Array, Array1, ArrayBase, ArrayD, Data, Dimension, Zip};
 
 /// Default floating-point precision used for model parameters and state.
@@ -50,8 +50,7 @@ impl Numeric for f32 {
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0.0 }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-       let out = rng.gen_range(0.0..=max).to_float();
-       out
+       rng.random_range(0.0..=max).to_float()
     }
 }
 impl Numeric for f64 {
@@ -59,8 +58,7 @@ impl Numeric for f64 {
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0.0 }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        let out = rng.gen_range(0.0..=max).to_float();
-        out
+        rng.random_range(0.0..=max).to_float()
     }
 }
 impl Numeric for i8 {
@@ -68,8 +66,7 @@ impl Numeric for i8 {
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        let out = rng.gen_range(0..=max).to_float();
-        out
+       rng.random_range(0..=max).to_float()
     }
 }
 
@@ -78,8 +75,7 @@ impl Numeric for i16 {
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        let out = rng.gen_range(0..=max).to_float();
-        out
+        rng.random_range(0..=max).to_float()
     }
 }
 
@@ -88,8 +84,7 @@ impl Numeric for i32 {
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        let out = rng.gen_range(0..=max).to_float();
-        out
+        rng.random_range(0..=max).to_float()
     }
 }
 
@@ -98,8 +93,7 @@ impl Numeric for i64 {
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        let out = rng.gen_range(0..=max).to_float();
-        out
+        rng.random_range(0..=max).to_float()
     }
 }
 
@@ -108,8 +102,7 @@ impl Numeric for u8 {
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        let out = rng.gen_range(0..=max).to_float();
-        out
+        rng.random_range(0..=max).to_float()
     }
 }
 
@@ -118,8 +111,7 @@ impl Numeric for u16 {
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        let out = rng.gen_range(0..=max).to_float();
-        out
+        rng.random_range(0..=max).to_float()
     }
 }
 
@@ -128,8 +120,7 @@ impl Numeric for u32 {
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        let out = rng.gen_range(0..=max).to_float();
-        out
+        rng.random_range(0..=max).to_float()
     }
 }
 
@@ -138,8 +129,7 @@ impl Numeric for u64 {
     fn to_time_float(self) -> TimeFloat { self as TimeFloat }
     fn zero() -> Self { 0 }
     fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        let out = rng.gen_range(0..=max).to_float();
-        out
+       rng.random_range(0..=max).to_float()
     }
 }
 

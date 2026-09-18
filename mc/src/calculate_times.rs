@@ -25,10 +25,8 @@ use common::trap_hole_band_tail::ElectronPlaces;
 use common::numeric::{Float, TimeFloat};
 use io::inputs::SimulationInputs;
 use io::outputs::append_monte_carlo_experiment_batch_to_file;
-use rand::Rng;
+use rand::{Rng, RngExt};
 use std::path::Path;
-
-use std::time::Instant;
 
 
 /// Calculate thermal ground/excited occupation probabilities for one trap family.
@@ -303,14 +301,14 @@ fn choose_delocalised_outcome(
     } else if mu <= 0.0 {
         if transitions.get_conduction_band_retrapping() && 
            trap_places.unavailable_count()> 0 && 
-           rng.gen_bool(parameters.retrap_ratio/(1.0+parameters.retrap_ratio))
+           rng.random_bool(parameters.retrap_ratio/(1.0+parameters.retrap_ratio))
         {
             let trap = {
                 let trap_dest = trap_places.unavailable();
                 if trap_dest.is_empty() {
                     return Err("filling selected when no empty traps remain".to_string());
                 }
-                trap_dest[rng.gen_range(0..trap_dest.len())]
+                trap_dest[rng.random_range(0..trap_dest.len())]
             };
             return Ok( TimedCandidate { 
                             event: Event::DelocalisedRetrapping { source, destination: trap, state }, 
@@ -322,7 +320,7 @@ fn choose_delocalised_outcome(
                 if empty_holes.is_empty() {
                     return Err("No holes to put electron in".to_string());
                 }
-                empty_holes[rng.gen_range(0..empty_holes.len())]
+                empty_holes[rng.random_range(0..empty_holes.len())]
             };
             return Ok( TimedCandidate { 
                     event: Event::DelocalisedRecombination { source, hole: hole_destination, state }, 
@@ -385,20 +383,20 @@ pub fn choose_filling_outcome(
             return Err("filling selected when no available holes remain".to_string());
         }
 
-        empty_holes[rng.gen_range(0..empty_holes.len())]
+        empty_holes[rng.random_range(0..empty_holes.len())]
     };
 
     if !hole_places.make_available(hole) {
         return Err(format!("filling destination {hole:?} was occupied"));
     }
 
-    if transitions.get_filling_retrapping() && rng.gen_bool(0.5){
+    if transitions.get_filling_retrapping() && rng.random_bool(0.5){
         let hole_destination = {
             let empty_holes = hole_places.available();
             if empty_holes.is_empty() {
                 return Err("No holes to put electron in".to_string());
             }
-            empty_holes[rng.gen_range(0..empty_holes.len())]
+            empty_holes[rng.random_range(0..empty_holes.len())]
         };
         if !hole_places.make_unavailable(hole_destination) {
             return Err(format!("hole destination {hole_destination:?} was occupied"));
@@ -410,7 +408,7 @@ pub fn choose_filling_outcome(
             if trap_dest.is_empty() {
                 return Err("filling selected when no empty traps remain".to_string());
             }
-            trap_dest[rng.gen_range(0..trap_dest.len())]
+            trap_dest[rng.random_range(0..trap_dest.len())]
         };
 
         if !trap_places.make_available(trap) {

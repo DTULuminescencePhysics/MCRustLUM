@@ -266,7 +266,6 @@ impl Default for FillingInputs {
         }
     }
 }
-
 /// All input groups required to configure a simulation.
 ///
 /// This is the top-level structure represented by an input TOML file. Missing

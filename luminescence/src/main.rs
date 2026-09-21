@@ -32,7 +32,7 @@ fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
     eprintln!("read inputs:       {:?}", start.elapsed());
 
     let start = Instant::now();
-    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 100, 1,595)?;
+    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 10, 1,595)?;
     eprintln!("system setup:      {:?}", start.elapsed());
     
     let start = Instant::now();

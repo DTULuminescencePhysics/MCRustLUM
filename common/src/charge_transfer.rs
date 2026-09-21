@@ -14,7 +14,6 @@
 use crate::place_ids::{PlaceId};
 use crate::numeric::{TimeFloat,Float};
 use serde::{Deserialize, Serialize};
-use crate::trap_hole_band_tail::TrapParameters;
 use crate::rate_equation_inputs::{
     DelocalisedTransitionInputs, FillingTransitionInputs, LocalisedTransitionInputs,
 };
@@ -23,7 +22,7 @@ use crate::rate_equation_selection::{
 };
 use crate::random::generatre_exponential_random;
 use crate::rate_equations::{retrapping_probability_by_r};
-use rand::{Rng, RngExt};
+use rand::{Rng, RngExt,};
 
 
 
@@ -295,23 +294,21 @@ impl Candidate{
     /// destinations are chosen only if this aggregate candidate fires.
     pub fn filling_candidate(
         transitions: &FillingRateEquation,
-        d0: &Float, d_dot: &Float,
-        occupied_population: usize,
-        total_population: usize,  
+        filling_inputs: &FillingTransitionInputs<Float,Float,Float,Float>,
     ) -> Result<Self, String> {
 
-        let filling_inputs = FillingTransitionInputs {
-            characteristic_dose: *d0,
-            dose_rate: *d_dot,
-            occupied_population: occupied_population as Float,
-            total_population: total_population as Float,
-        };
+        // if filling_inputs.occupied_population == filling_inputs.total_population{
+        //    return Ok(
+        //     Self{ event: Event::Filling { trap: PlaceId::new(0)?, hole: PlaceId::new(0)?}, rate: DISABLED_RATE}
+        // )
+        // };
 
-        let rate: Option<TimeFloat> = transitions.calculate(&filling_inputs);
+        let rate: Option<TimeFloat> = transitions.calculate(filling_inputs);
         
         let rate = rate
                         .ok_or_else(|| "could not calculate filling rate".to_string())?;
-   
+        
+        
         Ok(
             Self{ event: Event::Filling { trap: PlaceId::new(0)?, hole: PlaceId::new(0)?}, rate: rate}
         )

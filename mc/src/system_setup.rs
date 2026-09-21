@@ -10,6 +10,7 @@ use common::numeric::Float;
 use common::rate_equation_selection::Transitions;
 use common::time_temperature::TimeTemperature;
 use io::inputs::{CubeSpecification, SimulationInputs, TimeTempSpecification};
+use common::rate_equation_inputs::FillingTransitionInputs;
 use std::path::Path;
 use rayon::prelude::*;
 
@@ -209,8 +210,8 @@ impl MonteCarloSimulation {
             experiment
                 .run(
                     &self.cube,
-                    &self.inputs,
                     &self.transitions,
+                    &mut FillingTransitionInputs::get_inputs(self.inputs.filling.d0[experiment_index],self.inputs.filling.d_dot[experiment_index],self.cube.trap_total, trap_available,self.inputs.filling.dd_unit)?,
                     &output_path,
                     &batch_capacity,
                 )

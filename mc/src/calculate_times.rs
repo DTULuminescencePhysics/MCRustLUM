@@ -17,7 +17,7 @@ use common::charge_transfer::{delocalised_candidates, localised_recombination_ca
 use common::place_ids::{PlaceAvailability, PlaceId};
 use common::trap_hole_band_tail::{TrapParameterLayout, TrapParameters};
 use common::crystal::Cube;
-
+use common::rate_equation_inputs::FillingTransitionInputs;
 use common::rate_equation_selection::Transitions;
 use common::time_temperature::TimeTemperature;
 use common::trap_hole_band_tail::{ElectronPlaces, Coord};
@@ -28,42 +28,6 @@ use io::outputs::append_monte_carlo_experiment_batch_to_file;
 use rand::{Rng, RngExt};
 use std::path::Path;
 
-
-/// Construct the one system-wide irradiation-filling candidate.
-///
-/// Dose rate is converted from the configured denominator to dose per second.
-/// The total hazard scales with the number of empty traps; a concrete target
-/// is deliberately deferred until the aggregate event wins.
-fn aggregate_filling_candidate(
-    occupied_population: usize,
-    total_population: usize,
-    inputs: &SimulationInputs,
-    transitions: &Transitions,
-) -> Result<Candidate, String> {
-    let characteristic_dose = *inputs
-        .filling
-        .d0
-        .first()
-        .ok_or_else(|| "filling d0 requires at least one value".to_string())?;
-    let configured_dose_rate = *inputs
-        .filling
-        .d_dot
-        .first()
-        .ok_or_else(|| "filling d_dot requires at least one value".to_string())?;
-    let seconds_per_dose_rate_unit =
-        common::constants::time::unit_multiplier(inputs.filling.dd_unit)
-            .ok_or_else(|| format!("unknown filling dose-rate unit: {}", inputs.filling.dd_unit))?
-            .get_float_precision();
-    let dose_rate = configured_dose_rate / seconds_per_dose_rate_unit;
-
-    Candidate::filling_candidate(
-        transitions.get_filling_transitions(),
-        &characteristic_dose,
-        &dose_rate,
-        occupied_population,
-        total_population,
-    )
-}
 
 /// Sample all enabled events and update the current minimum lifetime.
 ///
@@ -80,7 +44,7 @@ fn build_candidates(
     trap_parameters: &TrapParameterLayout,
     temperature: Float,
     cube: &Cube,
-    inputs: &SimulationInputs,
+    filling_inputs: &mut FillingTransitionInputs,
     transitions: &Transitions,
     rng: &mut impl Rng,
     shortest: &mut TimedCandidate, 
@@ -192,12 +156,12 @@ fn build_candidates(
         }
     }
     if transitions.get_filling(){
-        let fill = aggregate_filling_candidate(
-            trap_places.available_count(),
-            trap_places.total(),
-            inputs,
-            transitions,
-        )?;
+        filling_inputs.update_occ(trap_places.available_count());
+        
+        let fill = Candidate::filling_candidate(
+            transitions.get_filling_transitions(),
+            &filling_inputs,
+            )?;
         shortest.find_shortest(fill, rng)?;
            
     }  
@@ -458,9 +422,9 @@ pub fn run_standard(
     trap_places: &mut PlaceAvailability,
     hole_places: &mut PlaceAvailability,
     trap_parameters: &TrapParameterLayout,
+    filling_inputs: &mut FillingTransitionInputs,
     time_temperature: &mut TimeTemperature,
     cube: &Cube,
-    inputs: &SimulationInputs,
     transitions: &Transitions,
     output_file: &Path,
     mut results: Vec<RecordedEvent>,
@@ -472,9 +436,9 @@ pub fn run_standard(
                     temperature: time_temperature.current_temperature(),
                     event: Event::None,
                 });
+   
     while time_temperature.current_max_dt() != 0.0 {
         let temperature = time_temperature.current_temperature();
-
         // current_max_dt is signed because geological profiles run backwards.
         let signed_profile_dt = time_temperature.current_max_dt();
         let max_dt = signed_profile_dt.abs();
@@ -489,7 +453,7 @@ pub fn run_standard(
             trap_parameters,
             temperature,
             cube,
-            inputs,
+            filling_inputs,
             transitions,
             rng,
             &mut next_event,

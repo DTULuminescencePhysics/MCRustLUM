@@ -17,6 +17,7 @@ use common::place_ids::PlaceAvailability;
 use common::rate_equation_selection::Transitions;
 use common::time_temperature::TimeTemperature;
 use common::trap_hole_band_tail::{ElectronPlaces, TrapParameterLayout};
+use common::rate_equation_inputs::FillingTransitionInputs;
 use io::inputs::SimulationInputs;
 use io::outputs::create_monte_carlo_experiment_file;
 use std::path::Path;
@@ -179,8 +180,8 @@ impl MCExperiment {
     pub fn run(
         &mut self,
         cube: &Cube,
-        inputs: &SimulationInputs,
         transitions: &Transitions,
+        filling_inputs: &mut FillingTransitionInputs,
         output_file: &Path,
         batch_capacity: &usize,
     ) -> Result<(), String> {
@@ -201,9 +202,9 @@ impl MCExperiment {
                     trap_places,
                     hole_places,
                     trap_parameters,
+                    filling_inputs,
                     time_temperature,
                     cube,
-                    inputs,
                     transitions,
                     output_file,
                     results,

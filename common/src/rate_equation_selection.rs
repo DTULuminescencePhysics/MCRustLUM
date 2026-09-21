@@ -9,7 +9,7 @@
 //! The selection types then dispatch to the generic implementations in
 //! [`crate::rate_equations`].
 
-use crate::numeric::{Float, ElementWise, ElementWiseUnary, PrecisionInput, TimePrecision};
+use crate::numeric::{Float,TimeFloat, ElementWise, ElementWiseUnary, PrecisionInput, TimePrecision};
 use crate::rate_equations;
 use crate::rate_equation_inputs::{
     DelocalisedTransitionInputs,
@@ -415,7 +415,7 @@ impl FromStr for LocalisedRateEquation {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FillingRateEquation {
     /// Use the basic filling equation.
-    Basic,
+    FirstOrder,
     /// Disable filling and return a shape-preserving zero.
     None, 
 }
@@ -438,7 +438,7 @@ impl FillingRateEquation {
         V: PrecisionInput<TimePrecision>,
     {
         match *self {
-            Self::Basic => rate_equations::filling_rate(
+            Self::FirstOrder => rate_equations::filling_rate(
                 &inputs.characteristic_dose,
                 &inputs.dose_rate,
                 &inputs.occupied_population,
@@ -456,7 +456,7 @@ impl FillingRateEquation {
     /// Enable or disable the basic filling equation.
     pub fn from_bool(fill: bool) -> Result<Self, String> {
         if fill == true {
-            return Ok(Self::Basic)
+            return Ok(Self::FirstOrder)
         }else {
             return Ok(Self::None)
         }
@@ -471,7 +471,7 @@ impl FromStr for FillingRateEquation {
         let value = value.trim().to_ascii_lowercase();
 
         match value.as_str() {
-            "basic" | "fill" | "filling" => Ok(Self::Basic),
+            "first_order" | "fill" | "filling" => Ok(Self::FirstOrder),
             "none" | "off" | "disabled" => Ok(Self::None),
             _ => Err(format!(
                 "unknown filling rate equation '{value}'; expected basic or none"
@@ -874,6 +874,7 @@ impl Transitions {
             },
         ])
     }
+
 
     /// Parse and validate the complete transition configuration.
     ///

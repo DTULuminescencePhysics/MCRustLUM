@@ -11,9 +11,7 @@
 //! site coordinates.
 use crate::numeric::{Float, TimeFloat, Numeric};
 use crate::place_ids::{PlaceId, PlaceAvailability};
-use crate::rate_equation_inputs::{
-    DelocalisedTransitionInputs, FillingTransitionInputs, LocalisedTransitionInputs,
-};
+use crate::rate_equation_inputs::{DelocalisedTransitionInputs, LocalisedTransitionInputs,};
 use crate::rate_equations::ground_excited_state_weights;
 
 use rand::Rng;

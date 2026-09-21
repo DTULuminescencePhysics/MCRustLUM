@@ -6,6 +6,7 @@
 
 use crate::numeric::{ElementWise, ElementWiseUnary, Float, TimeFloat, PrecisionInput, TimePrecision};
 use crate::rate_equations::ground_excited_state_weights;
+use crate::constants::time::TimeUnit;
 
 /// Identifies the physical pathway associated with a calculated rate.
 ///
@@ -110,6 +111,25 @@ pub struct FillingTransitionInputs<D0 = Float, DDot = Float, N = Float, NTot = F
     pub occupied_population: N,
     /// Total trap population available to be filled.
     pub total_population: NTot,
+}
+impl FillingTransitionInputs{
+
+    pub fn get_inputs(d0:Float, rate: Float, n:usize, total_n:usize, unit:TimeUnit) -> Result<Self,String>{
+        let seconds_per_dose_rate_unit =
+            crate::constants::time::unit_multiplier(unit)
+                .ok_or_else(|| format!("unknown filling dose-rate unit: {}", unit))?
+                .get_float_precision();
+        Ok(Self {
+            characteristic_dose: d0,
+            dose_rate: rate/seconds_per_dose_rate_unit,
+            occupied_population: n as Float,
+            total_population: total_n as Float
+        })
+    }
+    pub fn update_occ(& mut self, n:usize) {
+        self.occupied_population = n as Float;
+
+    }
 }
 
 /// Complete scalar state needed to calculate every configured transition.

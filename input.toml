@@ -40,19 +40,19 @@ es_tun = true
 gs_retrap = false
 es_retrap = false
 vrh = false
-b_gs = [1.2e12]
-b_es = [1.2e12]
-alpha_gs = [9.0e9]
-alpha_es = [9.0e9]
+b_gs = [1000000000000]
+b_es = [1000000000000]
+alpha_gs = [9000000000000]
+alpha_es = [9000000000]
 
 [delocalised]
-gs_cb = false
-es_cb = false
+gs_cb = true
+es_cb = true
 retrap = false
-s_gs = [1.2e12]
-s_es = [1.2e12]
+s_gs = [1000000000000]
+s_es = [1000000000000]
 mu = [0.1]
-retrap_ratio = [0.0]
+retrap_ratio = [0.9]
 
 [filling]
 fill = false

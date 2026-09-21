@@ -9,11 +9,13 @@
 
 //! Constructors validate geometry before allocating or randomly generating
 //! site coordinates.
-use crate::numeric::{Float, Numeric};
+use crate::numeric::{Float, TimeFloat, Numeric};
 use crate::place_ids::{PlaceId, PlaceAvailability};
 use crate::rate_equation_inputs::{
     DelocalisedTransitionInputs, FillingTransitionInputs, LocalisedTransitionInputs,
 };
+use crate::rate_equations::ground_excited_state_weights;
+
 use rand::Rng;
 /// A three-dimensional site position.
 ///
@@ -622,6 +624,69 @@ impl TrapParameterLayout {
             Self::Indexed { records, by_trap } => &records[by_trap[trap.index()].index()],
         }
     }
+    pub fn get_ground_excited_weights<'a>(&self,  traps: &PlaceAvailability, temperature: &Float) -> Result<(Vec<TimeFloat>, Vec<TimeFloat>), String> {
+
+        match self {
+            Self::Uniform(parameters) => {
+
+                let (g, e) = ground_excited_state_weights(
+                            &parameters.excited_energy_gap,
+                            &parameters.s_frequency_e,
+                            &parameters.s_frequency_g,
+                            temperature,
+                            ).ok_or_else(|| "could not calculate ground/excited-state weights".to_string())?;
+                
+                let ground_weights: Vec<TimeFloat> = vec![g];
+                let excited_weights: Vec<TimeFloat> = vec![e];
+                return Ok((ground_weights, excited_weights));
+
+            },
+            Self::Direct(parameters) => {
+                let weights: Vec<(TimeFloat, TimeFloat)> = traps
+                                                .available_indices_vec()
+                                                .into_iter()
+                                                .map(|index| {
+                                                    ground_excited_state_weights(
+                                                        &parameters[index].excited_energy_gap,
+                                                        &parameters[index].s_frequency_e,
+                                                        &parameters[index].s_frequency_g,
+                                                        temperature,
+                                                    )
+                                                    .ok_or_else(|| "could not calculate ground/excited-state weights".to_string())
+                                                })
+                                                .collect::<Result<Vec<_>, _>>()?;
+
+                let (ground_weights, excited_weights): (Vec<TimeFloat>, Vec<TimeFloat>) =
+                                weights.into_iter().unzip();
+                
+                return Ok((ground_weights,excited_weights));
+
+            },
+            Self::Indexed { records, by_trap } => {
+                let weights: Vec<(TimeFloat, TimeFloat)> = traps
+                                                .available_indices_vec()
+                                                .into_iter()
+                                                .map(|index| {
+                                                    ground_excited_state_weights(
+                                                        &records[by_trap[index].index()].excited_energy_gap,
+                                                        &records[by_trap[index].index()].s_frequency_e,
+                                                        &records[by_trap[index].index()].s_frequency_g,
+                                                        temperature,
+                                                    )
+                                                    .ok_or_else(|| "could not calculate ground/excited-state weights".to_string())
+                                                })
+                                                .collect::<Result<Vec<_>, _>>()?;
+
+                let (ground_weights, excited_weights): (Vec<TimeFloat>, Vec<TimeFloat>) =
+                                weights.into_iter().unzip();
+                
+                return Ok((ground_weights,excited_weights));
+            },
+        }
+    }
+
+
+
     /// Returns the DelocalisedTransitionInputs for all the available traps
     pub fn get_delocalised<'a>(
         &self,
@@ -633,19 +698,7 @@ impl TrapParameterLayout {
         DelocalisedTransitionInputs<Vec<Float>, Vec<Float>, &'a [Float]>,
         String,> 
     {
-        let available = traps.available();
-
-        if ground_weights.len() != available.len()
-            || excited_weights.len() != available.len()
-        {
-            return Err(format!(
-                "expected {} weights, found {} ground and {} excited",
-                available.len(),
-                ground_weights.len(),
-                excited_weights.len(),
-            ));
-        }
-
+        
         let e_cb_ground =  match self {
             Self::Uniform(parameters) => {
                 vec![parameters.e_cb_ground]
@@ -736,7 +789,7 @@ impl TrapParameterLayout {
         })
     }
 
-       /// Returns the DelocalisedTransitionInputs for all the available traps
+    /// Returns the LocalisedTransitionInputs for recombination for available traps
     pub fn get_localised_recombination<'a>(
         &self,
         ground_weight: &'a Float,
@@ -785,6 +838,7 @@ impl TrapParameterLayout {
         })
     }
 
+    /// Returns the LocalisedTransitionInputs for retrapping for available traps
     pub fn get_localised_retrapping<'a>(
         &self,
         ground_weight: &'a Float,

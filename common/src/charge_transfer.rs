@@ -133,21 +133,25 @@ pub fn delocalised_candidates<'a>(
     let (ground_rate, excited_rate) = transitions.calculate(&inputs);
 
     let ground_rates = ground_rate
-                            .ok_or_else(|| "could not calculate ground-state rate".to_string())?;
+                            .ok_or_else(|| {format!(
+        "could not calculate ground-state rate: \
+         e_cb={}, frequency={}, weights={}",
+        inputs.e_cb_ground.len(),
+        inputs.frequency_ground.len(),
+        inputs.ground_weight.len(),
+    )})?;
 
     let excited_rates = excited_rate
                             .ok_or_else(|| "could not calculate excited-state rate".to_string())?;
     
-    for ((&source, ground_rate), excited_rate) in sources
-        .iter()
-        .zip(ground_rates)
-        .zip(excited_rates)
-    {  output.push(Candidate {
+    if sources.len() > 1 && ground_rates.len() == 1 {
+        for &source in sources {
+            output.push(Candidate {
             event: Event::Delocalised {
             source,
             state: ElectronicState::Ground,
         },
-        rate: ground_rate,
+        rate: ground_rates[0],
         });
 
         output.push(Candidate {
@@ -155,10 +159,31 @@ pub fn delocalised_candidates<'a>(
                 source,
                 state: ElectronicState::Excited,
             },
-            rate: excited_rate,
+            rate: excited_rates[0],
         });
-    }
+        }
+    }else{
+        for ((&source, ground_rate), excited_rate) in sources
+            .iter()
+            .zip(ground_rates)
+            .zip(excited_rates)
+        {  output.push(Candidate {
+                event: Event::Delocalised {
+                source,
+                state: ElectronicState::Ground,
+            },
+            rate: ground_rate,
+            });
 
+            output.push(Candidate {
+                event: Event::Delocalised {
+                    source,
+                    state: ElectronicState::Excited,
+                },
+                rate: excited_rate,
+            });
+        }
+    }
     Ok(())
 
 }

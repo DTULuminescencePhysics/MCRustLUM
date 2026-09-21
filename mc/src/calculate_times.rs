@@ -19,33 +19,15 @@ use common::trap_hole_band_tail::{TrapParameterLayout, TrapParameters};
 use common::crystal::Cube;
 
 use common::rate_equation_selection::Transitions;
-use common::rate_equations::{ground_excited_state_weights};
 use common::time_temperature::TimeTemperature;
 use common::trap_hole_band_tail::{ElectronPlaces, Coord};
 
-use common::numeric::{Float, TimeFloat};
+use common::numeric::Float;
 use io::inputs::SimulationInputs;
 use io::outputs::append_monte_carlo_experiment_batch_to_file;
 use rand::{Rng, RngExt};
 use std::path::Path;
 
-
-/// Calculate thermal ground/excited occupation probabilities for one trap family.
-///
-/// The weights follow the two-state balance between Arrhenius excitation and
-/// the configured excited-to-ground relaxation frequency.
-fn state_weights(
-    parameters: &TrapParameters,
-    temperature: Float,
-) -> Result<(TimeFloat, TimeFloat), String> {
-    ground_excited_state_weights(
-        &parameters.excited_energy_gap,
-        &parameters.s_frequency_e,
-        &parameters.s_frequency_g,
-        &temperature,
-    )
-    .ok_or_else(|| "could not calculate ground/excited-state weights".to_string())
-}
 
 /// Construct the one system-wide irradiation-filling candidate.
 ///
@@ -104,113 +86,111 @@ fn build_candidates(
     shortest: &mut TimedCandidate, 
 ) -> Result<(), String> {
 
-
-    let mut ground_weights = Vec::with_capacity(trap_places.available_count());
-    let mut excited_weights = Vec::with_capacity(trap_places.available_count());
-
-    for &source in trap_places.available() {
-    let parameters = trap_parameters.get(source);
-    let (ground, excited) =
-        state_weights(parameters, temperature)?;
-        ground_weights.push(ground);
-        excited_weights.push(excited);
-    }
-
-
-    if transitions.get_delocalised(){
-            let mut delocalised_rates: Vec<Candidate> = Vec::with_capacity(trap_places.available_count()*2);
-            let inputs = trap_parameters.get_delocalised(
-                                                                    &ground_weights, 
-                                                                    &excited_weights, 
-                                                                    trap_places, 
-                                                                    temperature)?;
-            delocalised_candidates(transitions.get_delocaised_transitions(), 
-                                    inputs, 
-                                    trap_places.available(),
-                                    &mut delocalised_rates)?;
-
-         
-            shortest.find_shortest_from_summed_rates(delocalised_rates, rng)?;
-    }
-
+    
+    if trap_places.available_count() > 0 {
+        let (ground_weights, 
+            excited_weights) = trap_parameters
+                                         .get_ground_excited_weights(trap_places, &temperature)?;
     
 
-    if transitions.get_localised_recombination(){
-        let mut localised_rates: Vec<Candidate> = Vec::with_capacity(trap_places.available_count()*hole_places.available_count()*2);
-        let mut distance: Vec<Float> = Vec::with_capacity(hole_places.available_count());
-        
-        let hole_coords: Vec<Coord> = hole_places.available_indices_vec()
-                                                .into_iter()
-                                                .map(|index|places.holes()[index])
-                                                .collect();
-        
-        for ((&source, ground_weight),excited_weight) in trap_places.available()
-                                                                                       .iter()
-                                                                                       .zip(&ground_weights)
-                                                                                       .zip(&excited_weights) 
-        {
-            distance.clear();
+        if transitions.get_delocalised(){
+                let mut delocalised_rates: Vec<Candidate> = Vec::with_capacity(trap_places.available_count()*2);
+                let inputs = trap_parameters.get_delocalised(
+                                                                        &ground_weights, 
+                                                                        &excited_weights, 
+                                                                        trap_places, 
+                                                                        temperature)?;
+                delocalised_candidates(transitions.get_delocaised_transitions(), 
+                                        inputs, 
+                                        trap_places.available(),
+                                        &mut delocalised_rates)?;
 
-            let source_coord = &places.traps()[source.index()];
-            distance.extend(hole_coords
-                                .iter()
-                                .map(|hole_coord| 
-                                    cube.distance(source_coord, hole_coord)),
-                            );
-            let inputs = trap_parameters.get_localised_recombination(
-                                                                    &ground_weight, 
-                                                                    &excited_weight, 
-                                                                    &distance, 
-                                                                    &source, 
-                                                                    temperature)?;
-                    
-            localised_recombination_candidates(transitions.get_locaised_recomb_transitions(), 
-                                               inputs, 
-                                               source, 
-                                               hole_places.available(), 
-                                               &mut localised_rates)?;  
+            
+                shortest.find_shortest_from_summed_rates(delocalised_rates, rng)?;
         }
-        shortest.find_shortest_from_summed_rates(localised_rates, rng)?;
-    }
+        let (ground_weights, excited_weights) = if trap_places.available_count() > 1 && ground_weights.len() == 1 {
+            (vec![ground_weights[0]; trap_places.available_count()], vec![excited_weights[0]; trap_places.available_count()])
+        }else{
+            (ground_weights, excited_weights)
+        };
+    
+        if transitions.get_localised_recombination(){
+            let mut localised_rates: Vec<Candidate> = Vec::with_capacity(trap_places.available_count()*hole_places.available_count()*2);
+            let mut distance: Vec<Float> = Vec::with_capacity(hole_places.available_count());
+            
+            let hole_coords: Vec<Coord> = hole_places.available_indices_vec()
+                                                    .into_iter()
+                                                    .map(|index|places.holes()[index])
+                                                    .collect();
+            
+            for ((&source, ground_weight),excited_weight) in trap_places.available()
+                                                                                        .iter()
+                                                                                        .zip(&ground_weights)
+                                                                                        .zip(&excited_weights) 
+            {
+                distance.clear();
 
-    if transitions.get_localised_retrapping(){
-
-        let mut localised_rates: Vec<Candidate> = Vec::with_capacity(trap_places.available_count()*trap_places.unavailable_count()*2);
-        
-        let mut distance: Vec<Float> = Vec::with_capacity(trap_places.unavailable_count());
-        let destination_coords: Vec<Coord> = trap_places.unavailable_indices_vec()
-                                                        .into_iter()
-                                                        .map(|index|places.traps()[index])
-                                                        .collect();
-
-        for ((&source, ground_weight),excited_weight) in trap_places.available()
-                                                                                       .iter()
-                                                                                       .zip(&ground_weights)
-                                                                                       .zip(&excited_weights) {
-
-            distance.clear();            
-            let source_coord = &places.traps()[source.index()];
-            distance.extend(destination_coords
-                                   .iter()
-                                    .map(|dcoord| 
-                                        cube.distance(source_coord, dcoord)),
-                            );
-            let inputs = trap_parameters.get_localised_retrapping(
+                let source_coord = &places.traps()[source.index()];
+                distance.extend(hole_coords
+                                    .iter()
+                                    .map(|hole_coord| 
+                                        cube.distance(source_coord, hole_coord)),
+                                );
+                let inputs = trap_parameters.get_localised_recombination(
                                                                         &ground_weight, 
                                                                         &excited_weight, 
                                                                         &distance, 
                                                                         &source, 
                                                                         temperature)?;
-            
-            localised_retrapping_candidates(transitions.get_locaised_retrap_transitions(), 
-                                            inputs, 
-                                            source, 
-                                            trap_places.unavailable(), 
-                                            &mut localised_rates)?;
+                        
+                localised_recombination_candidates(transitions.get_locaised_recomb_transitions(), 
+                                                inputs, 
+                                                source, 
+                                                hole_places.available(), 
+                                                &mut localised_rates)?;  
+            }
+    
+            shortest.find_shortest_from_summed_rates(localised_rates, rng)?;
         }
-        shortest.find_shortest_from_summed_rates(localised_rates, rng)?;
-    }
 
+        if transitions.get_localised_retrapping(){
+
+            let mut localised_rates: Vec<Candidate> = Vec::with_capacity(trap_places.available_count()*trap_places.unavailable_count()*2);
+            
+            let mut distance: Vec<Float> = Vec::with_capacity(trap_places.unavailable_count());
+            let destination_coords: Vec<Coord> = trap_places.unavailable_indices_vec()
+                                                            .into_iter()
+                                                            .map(|index|places.traps()[index])
+                                                            .collect();
+
+            for ((&source, ground_weight),excited_weight) in trap_places.available()
+                                                                                        .iter()
+                                                                                        .zip(&ground_weights)
+                                                                                        .zip(&excited_weights) {
+
+                distance.clear();            
+                let source_coord = &places.traps()[source.index()];
+                distance.extend(destination_coords
+                                    .iter()
+                                        .map(|dcoord| 
+                                            cube.distance(source_coord, dcoord)),
+                                );
+                let inputs = trap_parameters.get_localised_retrapping(
+                                                                            &ground_weight, 
+                                                                            &excited_weight, 
+                                                                            &distance, 
+                                                                            &source, 
+                                                                            temperature)?;
+                
+                localised_retrapping_candidates(transitions.get_locaised_retrap_transitions(), 
+                                                inputs, 
+                                                source, 
+                                                trap_places.unavailable(), 
+                                                &mut localised_rates)?;
+            }
+            shortest.find_shortest_from_summed_rates(localised_rates, rng)?;
+        }
+    }
     if transitions.get_filling(){
         let fill = aggregate_filling_candidate(
             trap_places.available_count(),

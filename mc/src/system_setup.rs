@@ -285,10 +285,13 @@ mod tests {
         assert_eq!(simulation.cube.bandtail_total, 3);
         assert!(!simulation.inputs.cube.periodic);
         assert!((simulation.time_temperature.current_temperature() - 293.15).abs() < 1.0e-12);
-        assert!(matches!(
-            simulation.transitions,
-            Transitions::CbRetrapping { .. }
-        ));
+        assert_eq!(
+            simulation.transitions.delocalised,
+            DelocalisedRateEquation::Both {
+                re: DelocalisedRateEquationType::FirstOrder,
+            }
+        );
+        assert_eq!(simulation.transitions.localised_retrap, LocalisedRateEquation::Both);
     }
 
     #[test]
@@ -308,33 +311,26 @@ mod tests {
     }
 
     #[test]
-    fn transition_generation_maps_flags_to_equations_and_outer_variant() {
+    fn transition_generation_maps_flags_to_equations() {
         let mut inputs = small_inputs();
         inputs.localised.gs_tun = true;
         inputs.localised.es_tun = false;
-        inputs.localised.gs_retrap = false;
-        inputs.localised.es_retrap = true;
+        inputs.retrapping.localised_gs = false;
+        inputs.retrapping.localised_es = true;
         inputs.delocalised.gs_cb = true;
         inputs.delocalised.es_cb = false;
-        inputs.delocalised.retrap = true;
         inputs.filling.fill = true;
-        inputs.filling.cmbn_whn_fll = true;
 
         let transitions = MonteCarloSimulation::generate_transitions(&inputs).unwrap();
-        match transitions {
-            Transitions::FillCbRetrapping { transitions } => {
-                assert_eq!(
-                    transitions.delocalised,
-                    DelocalisedRateEquation::Ground {
-                        re: DelocalisedRateEquationType::FirstOrder,
-                    },
-                );
-                assert_eq!(transitions.localised_recomb, LocalisedRateEquation::Ground);
-                assert_eq!(transitions.localised_retrap, LocalisedRateEquation::Excited);
-                assert_eq!(transitions.filling, FillingRateEquation::Basic);
-            }
-            other => panic!("expected both retrapping flags, got {other:?}"),
-        }
+        assert_eq!(
+            transitions.delocalised,
+            DelocalisedRateEquation::Ground {
+                re: DelocalisedRateEquationType::FirstOrder,
+            },
+        );
+        assert_eq!(transitions.localised_recomb, LocalisedRateEquation::Ground);
+        assert_eq!(transitions.localised_retrap, LocalisedRateEquation::Excited);
+        assert_eq!(transitions.filling, FillingRateEquation::FirstOrder);
     }
 
     #[test]
@@ -352,13 +348,15 @@ mod tests {
         inputs.initial_conditions.hole_available = vec![1.0, 1.0];
         inputs.localised.gs_tun = false;
         inputs.localised.es_tun = false;
-        inputs.localised.gs_retrap = false;
-        inputs.localised.es_retrap = false;
+        inputs.retrapping.localised_gs = false;
+        inputs.retrapping.localised_es = false;
         inputs.delocalised.gs_cb = false;
         inputs.delocalised.es_cb = false;
-        inputs.delocalised.retrap = false;
+        inputs.retrapping.delocalised = false;
         inputs.filling.fill = false;
-        inputs.filling.cmbn_whn_fll = false;
+        inputs.filling.d0 = vec![400.0, 400.0];
+        inputs.filling.d_dot = vec![1.0, 1.0];
+        inputs.retrapping.filling = false;
 
         let simulation = MonteCarloSimulation::new(inputs, 3, 2,1).unwrap();
         let output_directory = temporary_output_directory("simulation");

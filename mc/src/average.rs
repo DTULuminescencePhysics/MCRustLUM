@@ -884,7 +884,7 @@ mod tests {
                 ),
                 event_record(
                     0.0015,
-                    Event::Filling {
+                    Event::FillingStandard {
                         trap: place,
                         hole: place,
                     },

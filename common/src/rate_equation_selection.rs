@@ -762,15 +762,13 @@ mod tests {
 
     #[test]
     fn calculate_returns_seven_rates_with_stable_transition_kinds() {
-        let selected = Transitions::FillCbRetrapping {
-            transitions: TransitionsTypes {
-                delocalised: DelocalisedRateEquation::Both {
-                    re: DelocalisedRateEquationType::FirstOrder,
-                },
-                localised_recomb: LocalisedRateEquation::Both,
-                localised_retrap: LocalisedRateEquation::Both,
-                filling: FillingRateEquation::Basic,
+        let selected = Transitions {
+            delocalised: DelocalisedRateEquation::Both {
+                re: DelocalisedRateEquationType::FirstOrder,
             },
+            localised_recomb: LocalisedRateEquation::Both,
+            localised_retrap: LocalisedRateEquation::Both,
+            filling: FillingRateEquation::FirstOrder,
         };
 
         let rates = selected
@@ -795,16 +793,13 @@ mod tests {
 
     #[test]
     fn calculate_represents_disabled_pathways_with_zero_rates() {
-        let selected = Transitions::NoCbFillRetrapping {
-            transitions: TransitionsTypes {
-                delocalised: DelocalisedRateEquation::Ground {
-                    re: DelocalisedRateEquationType::FirstOrder,
-                },
-                localised_recomb: LocalisedRateEquation::Excited,
-                localised_retrap: LocalisedRateEquation::None,
-                // Filling is selected independently of later CB retrapping.
-                filling: FillingRateEquation::Basic,
+        let selected = Transitions {
+            delocalised: DelocalisedRateEquation::Ground {
+                re: DelocalisedRateEquationType::FirstOrder,
             },
+            localised_recomb: LocalisedRateEquation::Excited,
+            localised_retrap: LocalisedRateEquation::None,
+            filling: FillingRateEquation::FirstOrder,
         };
 
         let rates = selected
@@ -822,15 +817,13 @@ mod tests {
 
     #[test]
     fn calculate_supports_vector_transition_inputs() {
-        let selected = Transitions::FillCbRetrapping {
-            transitions: TransitionsTypes {
-                delocalised: DelocalisedRateEquation::Both {
-                    re: DelocalisedRateEquationType::FirstOrder,
-                },
-                localised_recomb: LocalisedRateEquation::Both,
-                localised_retrap: LocalisedRateEquation::Both,
-                filling: FillingRateEquation::Basic,
+        let selected = Transitions {
+            delocalised: DelocalisedRateEquation::Both {
+                re: DelocalisedRateEquationType::FirstOrder,
             },
+            localised_recomb: LocalisedRateEquation::Both,
+            localised_retrap: LocalisedRateEquation::Both,
+            filling: FillingRateEquation::FirstOrder,
         };
         let mut inputs = TransitionInputs {
             delocalised: DelocalisedTransitionInputs {
@@ -1068,8 +1061,8 @@ mod tests {
     #[test]
     fn filling_equation_can_be_selected_from_text() {
         assert_eq!(
-            "basic".parse::<FillingRateEquation>().unwrap(),
-            FillingRateEquation::Basic,
+            "first_order".parse::<FillingRateEquation>().unwrap(),
+            FillingRateEquation::FirstOrder,
         );
         assert_eq!(
             "none".parse::<FillingRateEquation>().unwrap(),
@@ -1079,7 +1072,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_filling_selection_uses_filling_rate() {
+    fn first_order_filling_selection_uses_filling_rate() {
         let d0: Float = 4.0;
         let d_dot: Float = 2.0;
         let n: Float = 0.25;
@@ -1091,7 +1084,7 @@ mod tests {
             total_population: n_tot,
         };
 
-        let actual = FillingRateEquation::Basic
+        let actual = FillingRateEquation::FirstOrder
             .calculate(&inputs)
             .expect("basic filling equation should calculate a value");
 
@@ -1128,136 +1121,67 @@ mod tests {
 
 
     #[test]
-    fn retrapping_selection_parses_named_components() {
-        let selected = "cb_fi_gs_es"
-            .parse::<RetrappingSelection>()
-            .expect("retrapping selection should parse");
-
-        assert_eq!(
-            selected,
-            RetrappingSelection {
-                cb: true,
-                filling: true,
-                ground: true,
-                excited: true,
-            },
-        );
-        assert_eq!(selected.localised_rate_equation(), LocalisedRateEquation::Both);
-    }
-
-    #[test]
-    fn transitions_from_strs_uses_named_retrapping_selection() {
+    fn transitions_from_strs_parses_each_equation_selection() {
         let selected = Transitions::from_strs(
-            "cb_fi_gs",
             "both",
             "first",
             "ground",
-            "basic",
+            "excited",
+            "first_order",
         )
         .expect("valid transition configuration should parse");
 
         assert_eq!(
             selected,
-            Transitions::FillCbRetrapping {
-                transitions: TransitionsTypes{
-                    delocalised: DelocalisedRateEquation::Both {
+            Transitions {
+                delocalised: DelocalisedRateEquation::Both {
                     re: DelocalisedRateEquationType::FirstOrder,
                 },
-                   localised_recomb: LocalisedRateEquation::Ground,
-                   localised_retrap: LocalisedRateEquation::Ground,
-                   filling: FillingRateEquation::Basic,
-                } 
+                localised_recomb: LocalisedRateEquation::Ground,
+                localised_retrap: LocalisedRateEquation::Excited,
+                filling: FillingRateEquation::FirstOrder,
             },
         );
     }
 
     #[test]
-    fn cb_retrapping_requires_delocalised_equation() {
+    fn transitions_from_strs_rejects_invalid_localised_retrapping() {
         let result = Transitions::from_strs(
-            "cb",
             "none",
             "first",
             "none",
-            "none",
+            "unknown",
+            "first_order",
         );
 
         assert!(result.is_err());
     }
 
     #[test]
-    fn filling_retrapping_requires_filling_equation() {
-        let result = Transitions::from_strs(
-            "fi",
-            "none",
-            "first",
-            "none",
-            "none",
-        );
+    fn boolean_transition_builder_keeps_all_selections_independent() {
+        let selected = Transitions::from_bool(
+            true,
+            false,
+            false,
+            true,
+            true,
+            "second",
+            false,
+            true,
+        )
+        .unwrap();
 
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn retrapping_selection_accepts_compact_and_separated_forms() {
-        let compact = "cbfigses"
-            .parse::<RetrappingSelection>()
-            .expect("compact retrapping selection should parse");
-        let separated = "cb_fi_gs_es"
-            .parse::<RetrappingSelection>()
-            .expect("separated retrapping selection should parse");
-
-        assert_eq!(compact, separated);
-    }
-
-    #[test]
-    fn retrapping_selection_rejects_duplicate_and_unknown_components() {
-        assert!("cb_cb".parse::<RetrappingSelection>().is_err());
-        assert!("gsesgs".parse::<RetrappingSelection>().is_err());
-        assert!("cb_unknown".parse::<RetrappingSelection>().is_err());
-    }
-
-    #[test]
-    fn retrapping_selection_derives_all_localised_modes() {
         assert_eq!(
-            "none".parse::<RetrappingSelection>().unwrap().localised_rate_equation(),
-            LocalisedRateEquation::None,
+            selected,
+            Transitions {
+                delocalised: DelocalisedRateEquation::Excited {
+                    re: DelocalisedRateEquationType::SecondOrder,
+                },
+                localised_recomb: LocalisedRateEquation::Ground,
+                localised_retrap: LocalisedRateEquation::Excited,
+                filling: FillingRateEquation::FirstOrder,
+            }
         );
-        assert_eq!(
-            "gs".parse::<RetrappingSelection>().unwrap().localised_rate_equation(),
-            LocalisedRateEquation::Ground,
-        );
-        assert_eq!(
-            "es".parse::<RetrappingSelection>().unwrap().localised_rate_equation(),
-            LocalisedRateEquation::Excited,
-        );
-        assert_eq!(
-            "gses".parse::<RetrappingSelection>().unwrap().localised_rate_equation(),
-            LocalisedRateEquation::Both,
-        );
-    }
-
-    #[test]
-    fn boolean_transition_builder_keeps_filling_and_retrapping_flags_independent() {
-        let build = |cb_retrap, fill_retrap| {
-            Transitions::from_bool(
-                true,
-                false,
-                true,
-                false,
-                true,
-                "first",
-                false,
-                true,
-                cb_retrap,
-                fill_retrap,
-            )
-            .unwrap()
-        };
-
-        assert!(matches!(build(false, false), Transitions::NoCbFillRetrapping { .. }));
-        assert!(matches!(build(false, true), Transitions::FillRetrapping { .. }));
-        assert!(matches!(build(true, false), Transitions::CbRetrapping { .. }));
-        assert!(matches!(build(true, true), Transitions::FillCbRetrapping { .. }));
     }
 
     #[test]
@@ -1267,6 +1191,6 @@ mod tests {
         assert!("general:NaN".parse::<DelocalisedRateEquationType>().is_err());
         assert!("both:unknown".parse::<DelocalisedRateEquation>().is_err());
         assert!("unknown".parse::<LocalisedRateEquation>().is_err());
-        assert!("".parse::<RetrappingSelection>().is_err());
+        assert!("basic".parse::<FillingRateEquation>().is_err());
     }
 }

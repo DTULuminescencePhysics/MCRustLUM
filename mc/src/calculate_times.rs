@@ -787,7 +787,8 @@ pub fn run_standard(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::trap_hole_band_tail::Coord;
+    use common::constants::time::TimeUnit;
+    use common::trap_hole_band_tail::{Coord, TrapParameters};
 
     fn selected_transitions(
         localised_recombination: bool,
@@ -804,14 +805,12 @@ mod tests {
             "first",
             localised_retrapping,
             localised_retrapping,
-            false,
-            false,
         )
         .unwrap()
     }
 
-    fn parameters() -> TrapParameters {
-        TrapParameters::new(
+    fn parameters() -> TrapParameterLayout {
+        TrapParameterLayout::uniform(TrapParameters::new(
             0.1, 
             1.0e12, 
             1.0e12, 
@@ -823,16 +822,7 @@ mod tests {
             1.0e12, 
             1.0, 
             1.0, 
-            0.1, 
-            0.5,
-        )
-    }
-
-    fn cb_retrapping_transitions() -> Transitions {
-        Transitions::from_bool(
-            false, false, true, false, false, "first", false, false, true, false,
-        )
-        .unwrap()
+        ))
     }
 
     fn delocalised_test_state() -> (ElectronPlaces, PlaceAvailability, PlaceAvailability, Cube) {
@@ -861,49 +851,73 @@ mod tests {
         let transitions = selected_transitions(true, true, true, false);
         let parameters = parameters();
         let temperature = 300.0;
-        let (ground_weight, excited_weight) =
-            state_weights(&parameters, temperature).unwrap();
+        let mut trap_places = PlaceAvailability::new(2).unwrap();
+        assert!(trap_places.make_available(source));
+        let (ground_weights, excited_weights) = parameters
+            .get_ground_excited_weights(&trap_places, &temperature)
+            .unwrap();
 
-        let delocalised = Candidate::delocalised_candidates(
-            transitions.get_delocaised_transitions(),
-            &parameters,
-            source,
-            temperature,
-            ground_weight,
-            excited_weight,
-        )
-        .unwrap();
-        let recombination = Candidate::localised_recombination_candidates(
-            transitions.get_locaised_recomb_transitions(),
-            &parameters,
-            source,
-            hole,
-            temperature,
-            0.5,
-            ground_weight,
-            excited_weight,
-        )
-        .unwrap();
-        let retrapping = Candidate::localised_retrapping_candidates(
-            transitions.get_locaised_retrap_transitions(),
-            &parameters,
-            source,
-            destination,
-            temperature,
-            0.5,
-            ground_weight,
-            excited_weight,
+        let delocalised_inputs = parameters
+            .get_delocalised(
+                &ground_weights,
+                &excited_weights,
+                &trap_places,
+                temperature,
+            )
+            .unwrap();
+        let mut delocalised = Vec::new();
+        delocalised_candidates(
+            &transitions.delocalised,
+            delocalised_inputs,
+            &[source],
+            &mut delocalised,
         )
         .unwrap();
 
-        let candidates = [
-            delocalised.0,
-            delocalised.1,
-            recombination.0,
-            recombination.1,
-            retrapping.0,
-            retrapping.1,
-        ];
+        let distance = [0.5];
+        let recombination_inputs = parameters
+            .get_localised_recombination(
+                &ground_weights[0],
+                &excited_weights[0],
+                &distance,
+                &source,
+                temperature,
+            )
+            .unwrap();
+        let mut recombination = Vec::new();
+        localised_recombination_candidates(
+            &transitions.localised_recomb,
+            recombination_inputs,
+            source,
+            &[hole],
+            &mut recombination,
+        )
+        .unwrap();
+
+        let retrapping_inputs = parameters
+            .get_localised_retrapping(
+                &ground_weights[0],
+                &excited_weights[0],
+                &distance,
+                &source,
+                temperature,
+            )
+            .unwrap();
+        let mut retrapping = Vec::new();
+        localised_retrapping_candidates(
+            &transitions.localised_retrap,
+            retrapping_inputs,
+            source,
+            &[destination],
+            &mut retrapping,
+        )
+        .unwrap();
+
+        let candidates = delocalised
+            .iter()
+            .chain(&recombination)
+            .chain(&retrapping)
+            .collect::<Vec<_>>();
 
         assert_eq!(candidates.len(), 6);
         assert!(candidates.iter().all(|candidate| candidate.rate > 0.0));
@@ -911,22 +925,19 @@ mod tests {
 
     #[test]
     fn filling_is_one_aggregate_candidate_with_one_sampled_time() {
-        let mut inputs = SimulationInputs::default();
-        inputs.filling.d0 = vec![4.0];
-        inputs.filling.d_dot = vec![2.0];
-        inputs.filling.dd_unit = common::constants::time::TimeUnit::Minute;
+        let inputs = FillingTransitionInputs::get_inputs(
+            4.0,
+            2.0,
+            1,
+            4,
+            TimeUnit::Second,
+        )
+        .unwrap();
         let transitions = selected_transitions(false, false, false, true);
-        let candidate =
-            aggregate_filling_candidate(1, 4, &inputs, &transitions).unwrap();
+        let candidate = filling_candidate(&transitions.filling, &inputs).unwrap();
 
-        assert_eq!(
-            candidate.event,
-            Event::Filling {
-                trap: PlaceId::new(0).unwrap(),
-                hole: PlaceId::new(0).unwrap(),
-            }
-        );
-        assert_eq!(candidate.rate, 0.025);
+        assert_eq!(candidate.event, Event::FillingSelect);
+        assert_eq!(candidate.rate, 2.0);
 
         let mut rng = common::random::get_std_rng_for_rep(0);
         let timed = TimedCandidate::rate_to_lifetime(candidate, &mut rng).unwrap();
@@ -935,30 +946,31 @@ mod tests {
     }
 
     #[test]
-    fn fully_occupied_traps_produce_no_finite_filling_event() {
-        let inputs = SimulationInputs::default();
+    fn filling_candidate_uses_the_converted_dose_rate() {
+        let inputs = FillingTransitionInputs::get_inputs(
+            4.0,
+            120.0,
+            4,
+            4,
+            TimeUnit::Minute,
+        )
+        .unwrap();
         let transitions = selected_transitions(false, false, false, true);
-        let candidate =
-            aggregate_filling_candidate(4, 4, &inputs, &transitions).unwrap();
-        assert_eq!(candidate.rate, 0.0);
+        let candidate = filling_candidate(&transitions.filling, &inputs).unwrap();
 
-        let mut rng = common::random::get_std_rng_for_rep(0);
-        let timed = TimedCandidate::rate_to_lifetime(candidate, &mut rng).unwrap();
-        assert!(timed.time.is_infinite());
+        assert_eq!(inputs.dose_rate, 2.0);
+        assert_eq!(candidate.rate, 2.0);
     }
 
     #[test]
-    fn delocalised_outcome_uses_retrap_ratio_and_updates_selected_destination() {
+    fn delocalised_outcome_uses_retrapping_layout_and_updates_selected_destination() {
         let source = PlaceId::new(0).unwrap();
-        let destination = PlaceId::new(1).unwrap();
         let hole = PlaceId::new(0).unwrap();
-        let transitions = cb_retrapping_transitions();
 
         let (places, mut trap_places, mut hole_places, cube) = delocalised_test_state();
-        let mut recombination_parameters = parameters();
-        recombination_parameters.delocalised_mu = 1.0;
-        recombination_parameters.retrap_ratio = 0.0;
-        let recombination_layout = TrapParameterLayout::uniform(recombination_parameters);
+        let recombination_layout = ReTrapParameterLayout::NoneGaussianReTrappingCB {
+            cb_hole_to_trap: 0.0,
+        };
         let mut rng = common::random::get_std_rng_for_rep(0);
 
         let event = apply_event(
@@ -971,7 +983,6 @@ mod tests {
             &mut hole_places,
             &recombination_layout,
             &cube,
-            &transitions,
             &mut rng,
         )
         .unwrap();
@@ -988,10 +999,9 @@ mod tests {
         assert_eq!(hole_places.available_count(), 0);
 
         let (places, mut trap_places, mut hole_places, cube) = delocalised_test_state();
-        let mut retrapping_parameters = parameters();
-        retrapping_parameters.delocalised_mu = 1.0;
-        retrapping_parameters.retrap_ratio = 1.0;
-        let retrapping_layout = TrapParameterLayout::uniform(retrapping_parameters);
+        let retrapping_layout = ReTrapParameterLayout::NoneGaussianReTrappingCB {
+            cb_hole_to_trap: 1.0,
+        };
 
         let event = apply_event(
             Event::Delocalised {
@@ -1003,20 +1013,19 @@ mod tests {
             &mut hole_places,
             &retrapping_layout,
             &cube,
-            &transitions,
             &mut rng,
         )
         .unwrap();
 
-        assert_eq!(
+        assert!(matches!(
             event,
-            Event::DelocalisedRecombination  {
-                source,
-                hole,
+            Event::DelocalisedRetrapping {
+                source: event_source,
                 state: ElectronicState::Excited,
-            }
-        );
-        assert_eq!(trap_places.available_count(), 0);
-        assert_eq!(hole_places.available_count(), 0);
+                ..
+            } if event_source == source
+        ));
+        assert_eq!(trap_places.available_count(), 1);
+        assert_eq!(hole_places.available_count(), 1);
     }
 }

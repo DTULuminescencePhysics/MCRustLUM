@@ -273,14 +273,28 @@ mod tests {
         )
         .unwrap();
         let transitions = Transitions::from_bool(
-            false, false, false, false, false, "first", false, false, false, false,
+            false, false, false, false, false, "first", false, false,
         )
         .unwrap();
         let mut experiment = MCExperiment::initialise(&cube, &inputs, &0, &0, profile, &0, &0).unwrap();
+        let mut filling_inputs = FillingTransitionInputs::get_inputs(
+            inputs.filling.d0[0],
+            inputs.filling.d_dot[0],
+            0,
+            cube.trap_total,
+            inputs.filling.dd_unit,
+        )
+        .unwrap();
         let output_file = temporary_output_path("standard_experiment");
 
         experiment
-            .run(&cube, &inputs, &transitions, &output_file, &2)
+            .run(
+                &cube,
+                &transitions,
+                &mut filling_inputs,
+                &output_file,
+                &2,
+            )
             .unwrap();
         let batches = read_all_batches::<RecordedEvent>(&output_file)
             .unwrap()

@@ -16,7 +16,7 @@ use common::numeric::Float;
 use common::place_ids::PlaceAvailability;
 use common::rate_equation_selection::Transitions;
 use common::time_temperature::TimeTemperature;
-use common::trap_hole_band_tail::{ElectronPlaces, TrapParameterLayout};
+use common::trap_hole_band_tail::{ElectronPlaces, TrapParameterLayout, ReTrapParameterLayout};
 use common::rate_equation_inputs::FillingTransitionInputs;
 use io::inputs::SimulationInputs;
 use io::outputs::create_monte_carlo_experiment_file;
@@ -75,13 +75,25 @@ pub fn new_uniform_trap_layout(
         experiment_value(&inputs.localised.b_es, *exp, "localised.b_es")?,
         experiment_value(&inputs.localised.alpha_gs, *exp, "localised.alpha_gs")?,
         experiment_value(&inputs.localised.alpha_es, *exp, "localised.alpha_es")?,
-        experiment_value(&inputs.delocalised.mu, *exp, "delocalised.mu")?,
-        experiment_value(
-            &inputs.delocalised.retrap_ratio,
-            *exp,
-            "delocalised.retrap_ratio",
-        )?,
     ))
+}
+
+pub fn new_retrapping_layout(
+    inputs: &SimulationInputs,
+    exp: &usize,
+) -> Result<ReTrapParameterLayout, String> {
+    Ok(ReTrapParameterLayout::new(
+        inputs.delocalised.es_cb || inputs.delocalised.gs_cb, 
+        inputs.filling.fill, 
+        inputs.retrapping.delocalised,
+        inputs.retrapping.filling,
+        inputs.retrapping.gaussian, 
+        experiment_value(&inputs.retrapping.cb_hole_to_trap, *exp, "inputs.retrapping.cb_hole_to_trap")?,
+        experiment_value(&inputs.retrapping.vb_trap_to_hole, *exp, "inputs.retrapping.vb_trap_to_hole")?,
+        experiment_value(&inputs.retrapping.cb_mu, *exp, "inputs.retrapping.cb_mu")?,
+        experiment_value(&inputs.retrapping.vb_mu, *exp, "inputs.retrapping.vb_mu")?,
+    ))
+
 }
 
 /// Mutable state for one independently randomized Monte Carlo repetition.
@@ -101,6 +113,8 @@ pub enum MCExperiment {
         trap_parameters: TrapParameterLayout,
         /// Independent mutable copy of the experimental profile.
         time_temperature: TimeTemperature,
+        /// Retrapping parameters
+        retrapping_parameters: ReTrapParameterLayout,
         /// Repetition-specific random-number generator.
         rng: StdRng,
     },
@@ -118,6 +132,8 @@ pub enum MCExperiment {
         trap_parameters: TrapParameterLayout,
         /// Independent mutable copy of the experimental profile.
         time_temperature: TimeTemperature,
+        /// Retrapping parameters
+        retrapping_parameters: ReTrapParameterLayout,
         /// Repetition-specific random-number generator.
         rng: StdRng,
     },
@@ -148,7 +164,7 @@ impl MCExperiment {
         let hole_places =
             PlaceAvailability::set_initial_condition(cube.hole_total, *hole_available, &mut rng)?;
         let trap_parameters = new_uniform_trap_layout(inputs, exp)?;
-
+        let retrapping_parameters = new_retrapping_layout(inputs, exp)?;
         if cube.bandtail_total == 0 {
             Ok(Self::Standard {
                 places,
@@ -156,6 +172,7 @@ impl MCExperiment {
                 hole_places,
                 trap_parameters,
                 time_temperature,
+                retrapping_parameters,
                 rng
             })
         } else {
@@ -167,6 +184,7 @@ impl MCExperiment {
                 bandtail_places,
                 trap_parameters,
                 time_temperature,
+                retrapping_parameters,
                 rng
             })
         }
@@ -192,6 +210,7 @@ impl MCExperiment {
                 hole_places,
                 trap_parameters,
                 time_temperature,
+                retrapping_parameters,
                 rng
             } => {
                 create_monte_carlo_experiment_file(output_file)
@@ -202,6 +221,7 @@ impl MCExperiment {
                     trap_places,
                     hole_places,
                     trap_parameters,
+                    retrapping_parameters,
                     filling_inputs,
                     time_temperature,
                     cube,

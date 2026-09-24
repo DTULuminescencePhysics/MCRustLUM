@@ -160,10 +160,6 @@ pub struct LocalisedInputs {
     pub gs_tun: bool,
     /// Enable excited-state tunnelling recombination.
     pub es_tun: bool,
-    /// Enable ground-state localised retrapping.
-    pub gs_retrap: bool,
-    /// Enable excited-state localised retrapping.
-    pub es_retrap: bool,
     /// Request variable-range hopping in a future transport model.
     ///
     /// The current standard runner stores but does not act on this flag.
@@ -183,8 +179,6 @@ impl Default for LocalisedInputs {
         Self {
             gs_tun: true,
             es_tun: true,
-            gs_retrap: true,
-            es_retrap: true,
             vrh: false,
             b_gs: vec![1.2e12],
             b_es: vec![1.2e12],
@@ -202,21 +196,10 @@ pub struct DeLocalisedInputs {
     pub gs_cb: bool,
     /// Enable excited-state conduction-band release.
     pub es_cb: bool,
-    /// Enable retrapping from the conduction band.
-    pub retrap: bool,
     /// Ground-state frequency factors.
     pub s_gs: Vec<Float>,
     /// Excited-state frequency factors.
     pub s_es: Vec<Float>,
-    /// Characteristic length in the distance-dependent conduction-band capture model.
-    ///
-    /// Values use the same length unit as the generated site coordinates.
-    pub mu: Vec<Float>,
-    /// Factors multiplying delocalised retrapping mean waiting times.
-    ///
-    /// Positive values participate in conduction-band destination selection;
-    /// zero disables retrapping for that trap family.
-    pub retrap_ratio: Vec<Float>,
 }
 
 impl Default for DeLocalisedInputs {
@@ -224,11 +207,8 @@ impl Default for DeLocalisedInputs {
         Self {
             gs_cb: true,
             es_cb: true,
-            retrap: true,
             s_gs: vec![1.2e12],
             s_es: vec![1.2e12],
-            mu: vec![0.1],
-            retrap_ratio: vec![0.0],
         }
     }
 }
@@ -245,13 +225,6 @@ pub struct FillingInputs {
     pub d_dot: Vec<Float>,
     /// Time denominator used by [`Self::d_dot`].
     pub dd_unit: TimeUnit,
-    /// Allow recombination while the system is being filled.
-    pub cmbn_whn_fll: bool,
-    /// Recombination prefactors reserved for a future filling model.
-    ///
-    /// The current filling-time recombination branch uses a fixed probability
-    /// and does not read these values.
-    pub recm_pre_fll: Vec<Float>,
 }
 
 impl Default for FillingInputs {
@@ -261,11 +234,59 @@ impl Default for FillingInputs {
             d0: vec![400.0],
             d_dot: vec![1.0],
             dd_unit: TimeUnit::Second,
-            cmbn_whn_fll: false,
-            recm_pre_fll: vec![0.0],
         }
     }
 }
+/// Re-trapping configuration
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(default)]
+pub struct ReTrapping {
+
+    /// Enable retrapping for electrons in the conduction band
+    pub delocalised: bool, 
+    /// Enable ground-state localised retrapping.
+    pub localised_gs: bool,
+    /// Enable excited-state localised retrapping.
+    pub localised_es: bool,
+    /// Enable retrapping for electrons freed by the filling process
+    pub filling:bool, 
+    /// Use the gaussian kernel for retrapping
+    pub gaussian:bool,
+    /// Once an electron is promoted to the conduction band what is the 
+    /// preference of choosing a hole over a trap
+    /// 0.0 means a trap is always chosen, 1.0 means an equal likelihood 
+    pub cb_hole_to_trap: Vec<Float>,
+    /// When a hole is produced in the valence band what is the 
+    /// preference of choosing to annihilate a trapped electron over localising the hole
+    /// 0.0 means a hole is always chosen, 1.0 means an equal likelihood 
+    pub vb_trap_to_hole: Vec<Float>,
+    /// Characteristic length in the distance-dependent conduction-band capture model.
+    /// Values use the same length unit as the generated site coordinates.
+    /// If gaussian retrapping is turned on mu_cb controls the distance the electron can travel in 
+    /// the conduction band  
+    pub cb_mu: Vec<Float>, 
+    /// If gaussian retrapping is turned on mu_vb controls the distance the hole can travel in 
+    /// the valence band  
+    pub vb_mu: Vec<Float>, 
+}
+
+impl Default for ReTrapping {
+    fn default() -> Self {
+        Self {
+            delocalised: true,
+            localised_gs: true,
+            localised_es: true,
+            filling: true,
+            gaussian: true,
+            cb_hole_to_trap: vec![1.0],
+            vb_trap_to_hole: vec![1.0],
+            cb_mu: vec![0.1],
+            vb_mu: vec![0.1],
+        }
+    }
+}
+
+
 /// All input groups required to configure a simulation.
 ///
 /// This is the top-level structure represented by an input TOML file. Missing
@@ -293,6 +314,8 @@ pub struct SimulationInputs {
     pub delocalised: DeLocalisedInputs,
     /// Dose-driven filling configuration.
     pub filling: FillingInputs,
+    /// ReTrapping configuration
+    pub retrapping: ReTrapping,
 }
 
 impl Default for SimulationInputs {
@@ -305,6 +328,7 @@ impl Default for SimulationInputs {
             localised: LocalisedInputs::default(),
             delocalised: DeLocalisedInputs::default(),
             filling: FillingInputs::default(),
+            retrapping: ReTrapping::default(),
         }
     }
 }
@@ -404,8 +428,6 @@ mod tests {
             LocalisedInputs {
                 gs_tun: true,
                 es_tun: true,
-                gs_retrap: true,
-                es_retrap: true,
                 vrh: false,
                 b_gs: vec![1.2e12],
                 b_es: vec![1.2e12],
@@ -419,11 +441,8 @@ mod tests {
             DeLocalisedInputs {
                 gs_cb: true,
                 es_cb: true,
-                retrap: true,
                 s_gs: vec![1.2e12],
                 s_es: vec![1.2e12],
-                mu: vec![0.1],
-                retrap_ratio: vec![0.0],
             }
         );
 
@@ -434,8 +453,6 @@ mod tests {
                 d0: vec![400.0],
                 d_dot: vec![1.0],
                 dd_unit: TimeUnit::Second,
-                cmbn_whn_fll: false,
-                recm_pre_fll: vec![0.0],
             }
         );
 
@@ -446,6 +463,21 @@ mod tests {
                 hole_available: vec![1.0],
             }
         );
+        assert_eq!(
+            ReTrapping::default(),
+            ReTrapping {
+                delocalised: true,
+                localised_gs: true,
+                localised_es: true,
+                filling: true,
+                gaussian: true,
+                cb_hole_to_trap: vec![1.0],
+                vb_trap_to_hole: vec![1.0],
+                cb_mu: vec![0.1],
+                vb_mu: vec![0.1],
+            }
+        );
+
     }
 
      use std::time::{SystemTime, UNIX_EPOCH};

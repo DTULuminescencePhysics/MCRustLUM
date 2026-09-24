@@ -91,8 +91,10 @@ pub enum Event {
         /// Original ground or excited state of the released electron.
         state: ElectronicState,
     },
-    /// Irradiation creates a hole and either fills a trap or recombines a carrier.
-    Filling {
+    /// Filling chosen but no outcomes picked yet
+    FillingSelect,
+    /// Normal filling process where new trap and hole are added to the system
+    FillingStandard{
         /// Destination identifier stored by the current filling branch.
         ///
         /// This is a trap ID for ordinary filling. The filling-time
@@ -100,6 +102,27 @@ pub enum Event {
         trap: PlaceId,
         /// Newly activated hole site selected by the filling model.
         hole: PlaceId,
+    },
+    /// Filling process where a hole and trap are lost from the system 
+    FillingLoss{
+        /// Id of the trap lost from the system
+        trap: PlaceId,
+        /// Newly deactivated hole site selected by the filling model.
+        hole: PlaceId,
+    },
+    /// Filling process where a hole is lost and a hole is gained
+    FillingHoleOnly{
+        /// Newly deactivated hole site selected by the filling model.
+        hole_lost: PlaceId,
+        /// Newly activated hole site selected by the filling model.
+        hole_gain: PlaceId
+    },
+    /// Filling process where a trap is lost and a trap is gained
+    FillingTrapOnly{
+        /// Newly deactivated trap site selected by the filling model.
+        trap_lost: PlaceId,
+        /// Newly activated trap site selected by the filling model.
+        trap_gain: PlaceId
     },
     /// Profile boundary or initial sample with no charge-transfer event.
     None,
@@ -285,64 +308,115 @@ pub fn localised_retrapping_candidates<'a>(
     
 }
 
-impl Candidate{
-    /// Build the aggregate dose-driven filling candidate for all empty traps.
-    ///
-    /// Filling rates are calculated using [crate::rate_equation_selection::FillingRateEquation::calculate]
-    /// The underlying rate is `(dose_rate / characteristic_dose) *
-    /// (total_population - occupied_population)`. Concrete electron and hole
-    /// destinations are chosen only if this aggregate candidate fires.
-    pub fn filling_candidate(
-        transitions: &FillingRateEquation,
-        filling_inputs: &FillingTransitionInputs<Float,Float,Float,Float>,
-    ) -> Result<Self, String> {
+/// Build the aggregate dose-driven filling candidate for all empty traps.
+///
+/// Filling rates are calculated using [crate::rate_equation_selection::FillingRateEquation::calculate]
+/// The underlying rate is `(dose_rate / characteristic_dose) *
+/// (total_population - occupied_population)`. Concrete electron and hole
+/// destinations are chosen only if this aggregate candidate fires.
+pub fn filling_candidate(
+    transitions: &FillingRateEquation,
+    filling_inputs: &FillingTransitionInputs<Float,Float,Float,Float>,
+) -> Result<Candidate, String> {
 
-        // if filling_inputs.occupied_population == filling_inputs.total_population{
-        //    return Ok(
-        //     Self{ event: Event::Filling { trap: PlaceId::new(0)?, hole: PlaceId::new(0)?}, rate: DISABLED_RATE}
-        // )
-        // };
+    // if filling_inputs.occupied_population == filling_inputs.total_population{
+    //    return Ok(
+    //     Candidate{ event: Event::FillingSelect, rate: DISABLED_RATE}
+    // )
+    // };
 
-        let rate: Option<TimeFloat> = transitions.calculate(filling_inputs);
-        
-        let rate = rate
-                        .ok_or_else(|| "could not calculate filling rate".to_string())?;
-        
-        
-        Ok(
-            Self{ event: Event::Filling { trap: PlaceId::new(0)?, hole: PlaceId::new(0)?}, rate: rate}
-        )
+    // let rate: Option<TimeFloat> = transitions.calculate(filling_inputs);
     
-    }
-        /// Sample the destination time for conduction-band recombination.
-    ///
-    /// The distance model supplies a reciprocal rate proportional to
-    /// `prefactor * exp((distance / mu)^2)`. Multiplying this by `-ln(U)`
-    /// therefore makes nearby centres statistically more likely to win.
-    pub fn delocalised_recombination(
-        prefactor: Float,
-        mu: Float,
-        distance: Float,
-        source: PlaceId,
-        hole: PlaceId,
-        state: ElectronicState,
-    ) -> Result<Self, String> {
-        
-        let reciprocal_rate: Option<TimeFloat> = retrapping_probability_by_r(&prefactor, &mu, &distance);
-        let reciprocal_rate = reciprocal_rate.ok_or_else(|| {
-            format!("could not calculate delocalised destination rate for hole: {}", hole.index())
-        })?;
-
-        if reciprocal_rate.is_nan() || reciprocal_rate < 0.0 || reciprocal_rate.is_infinite(){
-             return Ok(Self  { event: Event::DelocalisedRecombination { source, hole, state  }, rate: DISABLED_RATE});
-        }
-       
-        return Ok(Candidate  { event: Event::DelocalisedRecombination { source, hole, state  }, rate: 1.0/reciprocal_rate});
-        
-    }
-
+    let rate: TimeFloat = filling_inputs.characteristic_dose/filling_inputs.dose_rate;
+    
+    // let rate = rate
+    //                 .ok_or_else(|| "could not calculate filling rate".to_string())?;
+    
+    
+    Ok(
+        Candidate{ event: Event::FillingSelect, rate: rate}
+    )
 
 }
+
+/// A candidate if using the Gaussian kernel
+pub struct ReciprocalCandidate{
+    /// State change associated with the sampled lifetime.
+    pub place: PlaceId,
+    /// Non-negative waiting time from the current simulation state, in seconds.
+    pub hole: bool,
+    /// Gaussian kernel rate
+    pub rate: TimeFloat
+
+}
+
+/// Sample the destination time for conduction-band recombination.
+///
+/// The distance model supplies a reciprocal rate proportional to
+/// `prefactor * exp((distance / mu)^2)`. Multiplying this by `-ln(U)`
+/// therefore makes nearby centres statistically more likely to win.
+pub fn gaussian_kernel(
+    prefactor: Float,
+    mu: Float,
+    distance: Float,
+    source: PlaceId,
+    hole: bool) -> Result<ReciprocalCandidate, String> {
+    
+    let reciprocal_rate: TimeFloat = retrapping_probability_by_r(&prefactor, &mu, &distance)
+            .ok_or_else(|| format!("could not calculate destination weight: {}", source.index()))?;
+    
+    let rate: TimeFloat = if reciprocal_rate.is_infinite() {
+        0.0
+    } else if reciprocal_rate.is_finite() && reciprocal_rate > 0.0 {
+        reciprocal_rate.recip()
+    } else {
+        DISABLED_RATE
+    };
+
+    return Ok(ReciprocalCandidate  { place: source, hole: hole, rate });
+    
+}
+/// Function that finds the candidate for delocalised and filling processes with weights selected by the gaussian kernel
+pub fn find_shortest_from_summed_reciprocal_rates(candidates: Vec<ReciprocalCandidate>, rng: &mut impl Rng) -> Result<ReciprocalCandidate, String> {
+        
+        let total_rate: TimeFloat = candidates
+        .iter()
+        .filter(|candidate| {
+                candidate.rate != DISABLED_RATE
+                && candidate.rate.is_finite()
+                && candidate.rate >= 0.0
+            })
+        .map(|candidate| candidate.rate)
+        .sum();
+
+        if total_rate == 0.0 {
+            return Err(format!{"Total is zero"});
+        }
+     
+        let u_event: TimeFloat = rng.sample(rand::distr::Open01);
+        let mut target = (u_event * total_rate) as TimeFloat;
+            
+        for candidate in candidates {
+            if candidate.rate <= 0.0 {
+                continue;
+            }
+
+            if target < candidate.rate {
+                return Ok(candidate);
+            }
+
+            target -= candidate.rate;
+        }
+
+        return Err(format!{"No candidate found"});
+            
+          
+       
+
+    }
+
+
+
 
 /// A candidate after its stochastic waiting time has been sampled.
 #[derive(Debug, Clone, Copy)]

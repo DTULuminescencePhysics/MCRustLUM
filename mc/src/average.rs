@@ -492,7 +492,11 @@ impl EventBin {
                 self.retrapping_count += 1;
             }
 
-            Event::Filling { .. } => self.filling_count += 1,
+            Event::FillingStandard { .. } 
+            | Event::FillingLoss{ .. }
+            | Event::FillingHoleOnly { .. } 
+            | Event::FillingTrapOnly { .. } => self.filling_count += 1,
+            
             Event::None => {}
             _ => {}
         }

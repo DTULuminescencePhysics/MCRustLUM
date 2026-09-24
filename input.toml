@@ -31,14 +31,12 @@ s_frequency_e = [9.0e-10]
 s_frequency_g = [9.0e-10]
 
 [initial_conditions]
-trap_available = [1]
-hole_available = [1]
+trap_available = [0]
+hole_available = [0]
 
 [localised]
-gs_tun = true
-es_tun = true
-gs_retrap = false
-es_retrap = false
+gs_tun = false
+es_tun = false
 vrh = false
 b_gs = [1000000000000]
 b_es = [1000000000000]
@@ -46,18 +44,24 @@ alpha_gs = [9000000000000]
 alpha_es = [9000000000]
 
 [delocalised]
-gs_cb = true
-es_cb = true
-retrap = false
+gs_cb = false
+es_cb = false
 s_gs = [1000000000000]
 s_es = [1000000000000]
-mu = [0.1]
-retrap_ratio = [0.9]
 
 [filling]
 fill = true
 d0 = [400.0]
-d_dot = [1.0]
+d_dot = [10.0]
 dd_unit = "second"
-cmbn_whn_fll = false
-recm_pre_fll = [0.0]
+
+[retrapping]
+delocalised = false
+localised_gs = false
+localised_es = false
+filling = true
+gaussian = false
+cb_hole_to_trap = [0.75]
+vb_trap_to_hole = [0.25]
+cb_mu = [0.1]
+vb_mu = [0.1]

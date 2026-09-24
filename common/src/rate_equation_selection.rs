@@ -9,7 +9,7 @@
 //! The selection types then dispatch to the generic implementations in
 //! [`crate::rate_equations`].
 
-use crate::numeric::{Float,TimeFloat, ElementWise, ElementWiseUnary, PrecisionInput, TimePrecision};
+use crate::numeric::{Float, ElementWise, ElementWiseUnary, PrecisionInput, TimePrecision};
 use crate::rate_equations;
 use crate::rate_equation_inputs::{
     DelocalisedTransitionInputs,
@@ -485,7 +485,7 @@ impl FromStr for FillingRateEquation {
 /// `localised_recomb` is configured directly, while `localised_retrap` is
 /// derived from the ground/excited flags in [`RetrappingSelection`].
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TransitionsTypes {
+pub struct Transitions {
     /// Delocalised state selection and kinetic model.
     pub delocalised: DelocalisedRateEquation,
     /// Localised recombination state selection.
@@ -496,280 +496,6 @@ pub struct TransitionsTypes {
     pub filling: FillingRateEquation,
 }
 
-
-/// Groups transition configurations by the two non-localised retrapping flags.
-/// The contained [`TransitionsTypes`] retains the complete equation selection;
-/// the outer variant makes conduction-band and filling retrapping cheap to
-/// dispatch on in the simulation.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Transitions{
-    /// Neither conduction-band nor filling retrapping is enabled.
-    NoCbFillRetrapping {
-        /// Complete set of equation selections.
-        transitions: TransitionsTypes,
-    },
-    /// Only filling retrapping is enabled.
-    FillRetrapping {
-        /// Complete set of equation selections.
-        transitions: TransitionsTypes,
-    },
-    /// Only conduction-band retrapping is enabled.
-    CbRetrapping {
-        /// Complete set of equation selections.
-        transitions: TransitionsTypes,
-    },
-    /// Conduction-band and filling retrapping are both enabled.
-    FillCbRetrapping {
-        /// Complete set of equation selections.
-        transitions: TransitionsTypes,
-    }
-
-}
-impl Transitions {
-    /// Borrow the equation selections shared by every outer retrapping variant.
-    fn transition_types(&self) -> &TransitionsTypes {
-        match self {
-            Transitions::NoCbFillRetrapping { transitions }
-            | Transitions::FillRetrapping { transitions }
-            | Transitions::CbRetrapping { transitions }
-            | Transitions::FillCbRetrapping { transitions } => transitions,
-        }
-    }
-    /// Return the configured ground/excited conduction-band release equation.
-    pub fn get_delocaised_transitions(&self) -> &DelocalisedRateEquation {
-        let t = self.transition_types(); 
-        &t.delocalised
-    }
-    /// Return the configured localised trap-to-hole tunnelling selection.
-    pub fn get_locaised_recomb_transitions(&self) -> &LocalisedRateEquation {
-        let t = self.transition_types(); 
-        &t.localised_recomb
-    }
-    /// Return the configured localised trap-to-trap tunnelling selection.
-    pub fn get_locaised_retrap_transitions(&self) -> &LocalisedRateEquation {
-        let t = self.transition_types(); 
-        &t.localised_retrap
-    }
-    /// Return the configured irradiation-driven filling equation.
-    pub fn get_filling_transitions(&self) -> &FillingRateEquation {
-        let t = self.transition_types(); 
-        &t.filling
-    }
-    /// Return whether thermal release to the conduction band is enabled.
-    pub fn get_delocalised(&self) -> bool {
-        let transitions = self.transition_types();
-    
-        if matches!(transitions.delocalised, DelocalisedRateEquation::None){
-            return false 
-        }  else{
-            return true
-        }
-    }
-    /// Return whether direct trap-to-hole tunnelling is enabled.
-    pub fn get_localised_recombination(&self) -> bool {
-       let transitions = self.transition_types();
-        if matches!(transitions.localised_recomb, LocalisedRateEquation::None){
-            return false 
-        }  else{
-            return true
-        }
-    }
-    /// Return whether direct trap-to-trap tunnelling is enabled.
-    pub fn get_localised_retrapping(&self) -> bool {
-        let transitions = self.transition_types();
-        if matches!(transitions.localised_retrap, LocalisedRateEquation::None){
-            return false 
-        }  else{
-            return true
-        }
-    }
-    /// Return whether external-dose filling is enabled.
-    pub fn get_filling(&self) -> bool {
-        let transitions = self.transition_types();
-        if matches!(transitions.filling, FillingRateEquation::None){
-            return false 
-        }  else{
-            return true
-        }
-    }
-    /// Return whether released conduction-band electrons may be retrapped.
-    pub fn get_conduction_band_retrapping(&self) -> bool {
-        match self {
-              Transitions::NoCbFillRetrapping { .. } => false,
-              Transitions::FillRetrapping     { .. } => false,
-              Transitions::CbRetrapping       { .. } => true,
-              Transitions::FillCbRetrapping   { .. } => true,
-        }
-    }
-    /// Return whether a filling event may take the recombination branch.
-    pub fn get_filling_retrapping(&self) -> bool {
-        match self {
-              Transitions::NoCbFillRetrapping { .. } => false,
-              Transitions::FillRetrapping     { .. } => true,
-              Transitions::CbRetrapping       { .. } => false,
-              Transitions::FillCbRetrapping   { .. } => true,
-        }
-    }
-
-    /// Return an upper-bound count of candidates for the supplied site counts.
-    ///
-    /// The count includes two state-resolved candidates for each enabled
-    /// microscopic source/destination pairing, one aggregate filling
-    /// candidate when enabled, and one inert profile-boundary candidate.
-    pub fn number_transitions(&self, traps: usize, holes:usize) -> usize {
-
-        let mut total: usize = 1;
-        if self.get_delocalised(){
-            total += 2*traps;
-        }
-        if self.get_localised_recombination(){
-            total += 2*traps*holes;
-        } 
-        if self.get_localised_retrapping(){
-            total += 2*traps*traps.saturating_sub(1);
-        }
-        if self.get_filling(){
-            total += 1;
-        }
-
-        return total
-    }
-
-
-
-
-}
-
-
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// Independent switches for the available retrapping pathways.
-/// Text configuration uses the abbreviations `cb` (conduction band), `fi`
-/// (filling), `gs` (ground state), and `es` (excited state). Components may be
-/// compact or separated with `-` and `_`, for example `cbfigs` and `cb_fi_gs`
-/// are equivalent.
-///
-/// ```
-/// use common::rate_equation_selection::RetrappingSelection;
-///
-/// let selection: RetrappingSelection = "cb_fi_gs".parse()?;
-/// assert!(selection.cb && selection.filling && selection.ground);
-/// assert!(!selection.excited);
-/// # Ok::<(), String>(())
-/// ```
-pub struct RetrappingSelection {
-    /// Enable retrapping from the conduction band.
-    pub cb: bool,
-    /// Enable retrapping during filling.
-    pub filling: bool,
-    /// Enable localised ground-state retrapping.
-    pub ground: bool,
-    /// Enable localised excited-state retrapping.
-    pub excited: bool,
-}
-
-impl RetrappingSelection {
-    /// Create a retrapping selection from independent pathway flags.
-    pub fn new(cb:bool,filling:bool,ground:bool,excited:bool) -> Self{
-        Self { cb, filling, ground, excited }
-    }
-
-    /// Return a selection with every retrapping pathway disabled.
-    pub fn none() -> Self {
-        Self {
-            cb: false,
-            filling: false,
-            ground: false,
-            excited: false,
-        }
-    }
-
-    /// Collapse the two state flags into the corresponding localised mode.
-    pub fn localised_rate_equation(&self) -> LocalisedRateEquation {
-        match (self.ground, self.excited) {
-            (true, true) => LocalisedRateEquation::Both,
-            (true, false) => LocalisedRateEquation::Ground,
-            (false, true) => LocalisedRateEquation::Excited,
-            (false, false) => LocalisedRateEquation::None,
-        }
-    }
-
-    /// Choose the outer transition variant from the CB and filling flags.
-    pub fn transitionselection(&self, transitions: TransitionsTypes) -> Transitions {
-        match (self.cb, self.filling) {
-            (true, true) => Transitions::FillCbRetrapping{transitions}, 
-            (true, false) => Transitions::CbRetrapping{transitions},
-            (false, true) => Transitions::FillRetrapping{transitions},
-            (false, false) => Transitions::NoCbFillRetrapping{transitions}
-        }
-    }
-}
-
-impl FromStr for RetrappingSelection {
-    type Err = String;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let normalized = value
-            .trim()
-            .to_ascii_lowercase()
-            .replace(['-', '_'], "");
-
-        if matches!(normalized.as_str(), "none" | "off" | "disabled" | "noretrapping") {
-            return Ok(Self::none());
-        }
-
-        if normalized.is_empty() {
-            return Err("retrapping selection cannot be empty".to_string());
-        }
-
-        let mut selection = Self::none();
-        let mut remaining = normalized.as_str();
-
-        // Consume fixed two-character tokens so both compact and separated
-        // forms share one parser after separators have been removed.
-        while !remaining.is_empty() {
-            if let Some(rest) = remaining.strip_prefix("cb") {
-                if selection.cb {
-                    return Err(format!(
-                        "duplicate conduction-band retrapping component in '{value}'"
-                    ));
-                }
-                selection.cb = true;
-                remaining = rest;
-            } else if let Some(rest) = remaining.strip_prefix("fi") {
-                if selection.filling {
-                    return Err(format!(
-                        "duplicate filling retrapping component in '{value}'"
-                    ));
-                }
-                selection.filling = true;
-                remaining = rest;
-            } else if let Some(rest) = remaining.strip_prefix("gs") {
-                if selection.ground {
-                    return Err(format!(
-                        "duplicate ground-state retrapping component in '{value}'"
-                    ));
-                }
-                selection.ground = true;
-                remaining = rest;
-            } else if let Some(rest) = remaining.strip_prefix("es") {
-                if selection.excited {
-                    return Err(format!(
-                        "duplicate excited-state retrapping component in '{value}'"
-                    ));
-                }
-                selection.excited = true;
-                remaining = rest;
-            } else {
-                return Err(format!(
-                    "unknown retrapping component in '{value}' near '{remaining}'"
-                ));
-            }
-        }
-
-        Ok(selection)
-    }
-}
 
 impl Transitions {
     /// Calculate the seven physical transitions used by the simulation.
@@ -823,25 +549,17 @@ impl Transitions {
             + PrecisionInput< TimePrecision, Output = V>, 
         V: PrecisionInput<TimePrecision>,
     {
-        let transitions = match self {
-            Self::NoCbFillRetrapping { transitions }
-            | Self::FillRetrapping { transitions }
-            | Self::CbRetrapping { transitions }
-            | Self::FillCbRetrapping { transitions } => transitions,
-        };
-
+        
         let (delocalised_ground, delocalised_excited) =
-            transitions.delocalised.calculate(&inputs.delocalised);
+            self.delocalised.calculate(&inputs.delocalised);
 
-        let (recombination_ground, recombination_excited) = transitions
-            .localised_recomb
-            .calculate(&inputs.localised_recombination);
+        let (recombination_ground, recombination_excited) = 
+            self.localised_recomb.calculate(&inputs.localised_recombination);
 
-        let (retrapping_ground, retrapping_excited) = transitions
-            .localised_retrap
-            .calculate(&inputs.localised_retrapping);
+        let (retrapping_ground, retrapping_excited) = 
+            self.localised_retrap.calculate(&inputs.localised_retrapping);
 
-        let filling_rate = transitions.filling.calculate(&inputs.filling)?;
+        let filling_rate = self.filling.calculate(&inputs.filling)?;
 
         Some([
             TransitionRate {
@@ -874,7 +592,66 @@ impl Transitions {
             },
         ])
     }
+    /// Return whether thermal release to the conduction band is enabled.
+    pub fn get_delocalised(&self) -> bool {
+        
+        if matches!(self.delocalised, DelocalisedRateEquation::None){
+            return false 
+        }  else{
+            return true
+        }
+    }
+    /// Return whether direct trap-to-hole tunnelling is enabled.
+    pub fn get_localised_recombination(&self) -> bool {
+      
+        if matches!(self.localised_recomb, LocalisedRateEquation::None){
+            return false 
+        }  else{
+            return true
+        }
+    }
+    /// Return whether direct trap-to-trap tunnelling is enabled.
+    pub fn get_localised_retrapping(&self) -> bool {
+       
+        if matches!(self.localised_retrap, LocalisedRateEquation::None){
+            return false 
+        }  else{
+            return true
+        }
+    }
+    /// Return whether external-dose filling is enabled.
+    pub fn get_filling(&self) -> bool {
+        
+        if matches!(self.filling, FillingRateEquation::None){
+            return false 
+        }  else{
+            return true
+        }
+    }
+   
+    /// Return an upper-bound count of candidates for the supplied site counts.
+    ///
+    /// The count includes two state-resolved candidates for each enabled
+    /// microscopic source/destination pairing, one aggregate filling
+    /// candidate when enabled, and one inert profile-boundary candidate.
+    pub fn number_transitions(&self, traps: usize, holes:usize) -> usize {
 
+        let mut total: usize = 1;
+        if self.get_delocalised(){
+            total += 2*traps;
+        }
+        if self.get_localised_recombination(){
+            total += 2*traps*holes;
+        } 
+        if self.get_localised_retrapping(){
+            total += 2*traps*traps.saturating_sub(1);
+        }
+        if self.get_filling(){
+            total += 1;
+        }
+
+        return total
+    }
 
     /// Parse and validate the complete transition configuration.
     ///
@@ -882,13 +659,12 @@ impl Transitions {
     /// while that equation is disabled. The localised retrapping mode is
     /// derived from the `gs` and `es` components of `retrapping`.
     pub fn from_strs(
-        retrapping: &str,
         delocalised_selection: &str,
         delocalised_type: &str,
         localised_recombination: &str,
+        localised_retrapping: &str,
         filling: &str,
     ) -> Result<Self, String> {
-        let retrapping = retrapping.parse::<RetrappingSelection>()?;
         let delocalised = DelocalisedRateEquation::from_strs(
             delocalised_selection,
             delocalised_type,
@@ -897,28 +673,15 @@ impl Transitions {
             .parse::<LocalisedRateEquation>()?;
         let filling = filling.parse::<FillingRateEquation>()?;
 
-        if retrapping.cb && matches!(delocalised, DelocalisedRateEquation::None) {
-            return Err(
-                "conduction-band retrapping requires a non-none delocalised rate equation"
-                    .to_string(),
-            );
-        }
-
-        if retrapping.filling && matches!(filling, FillingRateEquation::None) {
-            return Err(
-                "filling retrapping requires a non-none filling rate equation"
-                    .to_string(),
-            );
-        }
-        let localised_retrap = retrapping.localised_rate_equation();
-        let transitions = TransitionsTypes{
+        let localised_retrap = localised_retrapping
+            .parse::<LocalisedRateEquation>()?;
+  
+       Ok(Self{
             delocalised,
             localised_recomb,
             localised_retrap,
             filling
-        };
-        Ok(retrapping.transitionselection(transitions)) 
-
+        })
     }
 
     /// Build a complete transition selection from input-file boolean flags.
@@ -927,27 +690,20 @@ impl Transitions {
     /// `general:<order>`). The remaining values enable the corresponding
     /// ground, excited, filling, and retrapping pathways.
     pub fn from_bool(gs_tun: bool, es_tun:bool, gs_cb: bool, es_cb:bool,
-                     fill:bool, value2: &str, gs_retrap:bool, es_retrap:bool,
-                     cb_retrap:bool, fill_retrap:bool,
-    ) -> Result<Self, String> {
+                     fill:bool, value2: &str, gs_retrap:bool, es_retrap:bool,) -> Result<Self, String> {
 
         let delocalised = DelocalisedRateEquation::from_bool(gs_cb, es_cb, value2)?;
         let localised_recomb = LocalisedRateEquation::from_bool(gs_tun, es_tun)?;
         let filling = FillingRateEquation::from_bool(fill)?;
         let localised_retrap = LocalisedRateEquation::from_bool(gs_retrap, es_retrap)?;
-         let transitions = TransitionsTypes{
+        Ok(Self{
             delocalised,
             localised_recomb,
             localised_retrap,
-            filling
-        };
+            filling 
+        })
 
-        match (cb_retrap, fill_retrap) {
-            (true, true) => return Ok(Transitions::FillCbRetrapping{transitions}),
-            (true, false) => return Ok(Transitions::CbRetrapping{transitions}),
-            (false, true) => return Ok(Transitions::FillRetrapping{transitions}),
-            (false, false) => return Ok(Transitions::NoCbFillRetrapping{transitions}),
-        }
+       
     }
 
 }

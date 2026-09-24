@@ -12,10 +12,11 @@
 //! rebuilt whenever temperature changes by one kelvin or a control-point
 //! boundary is reached.
 
-use common::charge_transfer::{ElectronicState, Event, Candidate, TimedCandidate, RecordedEvent};
-use common::charge_transfer::{delocalised_candidates, localised_recombination_candidates,localised_retrapping_candidates}; 
+use common::charge_transfer::{ElectronicState, Event, Candidate, ReciprocalCandidate, TimedCandidate, RecordedEvent};
+use common::charge_transfer::{delocalised_candidates, localised_recombination_candidates,localised_retrapping_candidates, 
+    filling_candidate, gaussian_kernel, find_shortest_from_summed_reciprocal_rates}; 
 use common::place_ids::{PlaceAvailability, PlaceId};
-use common::trap_hole_band_tail::{TrapParameterLayout, TrapParameters};
+use common::trap_hole_band_tail::{TrapParameterLayout, ReTrapParameterLayout};
 use common::crystal::Cube;
 use common::rate_equation_inputs::FillingTransitionInputs;
 use common::rate_equation_selection::Transitions;
@@ -23,7 +24,6 @@ use common::time_temperature::TimeTemperature;
 use common::trap_hole_band_tail::{ElectronPlaces, Coord};
 
 use common::numeric::Float;
-use io::inputs::SimulationInputs;
 use io::outputs::append_monte_carlo_experiment_batch_to_file;
 use rand::{Rng, RngExt};
 use std::path::Path;
@@ -64,7 +64,7 @@ fn build_candidates(
                                                                         &excited_weights, 
                                                                         trap_places, 
                                                                         temperature)?;
-                delocalised_candidates(transitions.get_delocaised_transitions(), 
+                delocalised_candidates(&transitions.delocalised, 
                                         inputs, 
                                         trap_places.available(),
                                         &mut delocalised_rates)?;
@@ -107,7 +107,7 @@ fn build_candidates(
                                                                         &source, 
                                                                         temperature)?;
                         
-                localised_recombination_candidates(transitions.get_locaised_recomb_transitions(), 
+                localised_recombination_candidates(&transitions.localised_recomb, 
                                                 inputs, 
                                                 source, 
                                                 hole_places.available(), 
@@ -146,7 +146,7 @@ fn build_candidates(
                                                                             &source, 
                                                                             temperature)?;
                 
-                localised_retrapping_candidates(transitions.get_locaised_retrap_transitions(), 
+                localised_retrapping_candidates(&transitions.localised_retrap, 
                                                 inputs, 
                                                 source, 
                                                 trap_places.unavailable(), 
@@ -155,15 +155,17 @@ fn build_candidates(
             shortest.find_shortest_from_summed_rates(localised_rates, rng)?;
         }
     }
+
     if transitions.get_filling(){
         filling_inputs.update_occ(trap_places.available_count());
         
-        let fill = Candidate::filling_candidate(
-            transitions.get_filling_transitions(),
+        let fill = filling_candidate(
+            &transitions.filling,
             &filling_inputs,
             )?;
+            
         shortest.find_shortest(fill, rng)?;
-           
+        
     }  
 
     Ok(())
@@ -180,14 +182,14 @@ fn apply_event(
     places: &ElectronPlaces,
     trap_places: &mut PlaceAvailability,
     hole_places: &mut PlaceAvailability,
-    trap_parameters: &TrapParameterLayout,
+    retrapping_parameters: &ReTrapParameterLayout,
     cube: &Cube,
-    transitions: &Transitions,
     rng: &mut impl Rng,
 ) -> Result<Event, String> {
     match event {
         Event::LocalisedRecombination { source, hole, .. }
-        | Event::DelocalisedRecombination { source, hole, .. } => {
+        | Event::DelocalisedRecombination { source, hole, .. } 
+        | Event::FillingLoss { trap: source, hole } => {
             if !trap_places.make_unavailable(source) {
                 return Err(format!("recombination source {source:?} was not occupied"));
             }
@@ -196,7 +198,8 @@ fn apply_event(
             }
         }
         Event::LocalisedRetrapping { source, destination, .. }
-        | Event::DelocalisedRetrapping { source, destination, .. } => {
+        | Event::DelocalisedRetrapping { source, destination, .. } 
+        | Event::FillingTrapOnly { trap_lost: source, trap_gain: destination } => {
             if !trap_places.make_unavailable(source) {
                 return Err(format!("retrapping source {source:?} was not occupied"));
             }
@@ -207,58 +210,40 @@ fn apply_event(
             }
         }
         Event::Delocalised { source, state } => {
-            let outcome = choose_delocalised_outcome(
+            let delocal_outcome = choose_delocalised_outcome(
                 source,
                 places,
                 trap_places,
                 hole_places,
-                trap_parameters.get(source),
+                retrapping_parameters,
                 cube,
-                transitions,
                 state,
                 rng
             )?;
-
-            if !trap_places.make_unavailable(source) {
-                return Err(format!("delocalised source {source:?} was not occupied"));
-            }
-
-            match outcome {
-                TimedCandidate {
-                    event: selected_event @ Event::DelocalisedRecombination { hole, .. },
-                    ..
-                } => {
-                    if !hole_places.make_unavailable(hole) {
-                        return Err(format!(
-                            "delocalised recombination hole {hole:?} was not available"
-                        ));
-                    }
-                    return Ok(selected_event);
-                }
-                TimedCandidate {
-                    event: selected_event @ Event::DelocalisedRetrapping { destination, .. },
-                    ..
-                } => {
-                    if !trap_places.make_available(destination) {
-                        return Err(format!(
-                            "delocalised retrapping destination {destination:?} was occupied"
-                        ));
-                    }
-                    return Ok(selected_event);
-                }
-                _ => {
-                    return Err(format!(
-                            "An event that is not Delocalised Recombination or Retrapping \\
-                            has been returned when a delocalised transition has been selected.
-                            \\This error should never occur. Panic -- A LOT!"
-                    ));
-                }
-            }
+            return Ok(delocal_outcome);   
         }
-        Event::Filling { .. } => {
-            let filling = choose_filling_outcome(trap_places, hole_places, transitions, rng)?;
+
+        Event::FillingSelect { .. } => {
+            let filling = choose_filling_outcome(places, trap_places, hole_places, retrapping_parameters, cube, rng)?;
             return Ok(filling)
         }
+        Event::FillingStandard{trap, hole} => {
+            if !hole_places.make_available(hole) {
+                return Err(format!("retrapping hole {hole:?} was not available"));
+            }
+            if !trap_places.make_available(trap) {
+                return Err(format!("filling destination {trap:?} was already occupied"));
+            }
+        },
+        Event::FillingHoleOnly { hole_lost, hole_gain } => {
+            if !hole_places.make_unavailable(hole_lost) {
+                return Err(format!("recombination source {hole_lost:?} was not occupied"));
+            }
+            if !hole_places.make_available(hole_gain) {
+                return Err(format!("recombination hole {hole_gain:?} was not available"));
+            }
+        },
+    
         Event::None => return Ok(Event::None),
     }
 
@@ -275,86 +260,148 @@ fn apply_event(
 fn choose_delocalised_outcome(
     source: PlaceId,
     places: &ElectronPlaces,
-    trap_places: &PlaceAvailability,
-    hole_places: &PlaceAvailability,
-    parameters: &TrapParameters,
+    trap_places: &mut PlaceAvailability,
+    hole_places: &mut PlaceAvailability,
+    parameters: &ReTrapParameterLayout,
     cube: &Cube,
-    transitions: &Transitions,
     state: ElectronicState,
     rng: &mut impl Rng,
-) -> Result<TimedCandidate, String> {
-    let mu = parameters.delocalised_mu;
-    let recombination_prefactor = 1.0;
+)  -> Result<Event , String,> {
+        
+        if !trap_places.make_unavailable(source) {
+                return Err(format!("Delocalised source {source:?} was not occupied"));
+        }
 
-    if !mu.is_finite() {
-        return Err(format!(
-            "delocalised mu must be finite and greater than zero, got {mu}"
-        ));
-    } else if mu <= 0.0 {
-        if transitions.get_conduction_band_retrapping() && 
-           trap_places.unavailable_count()> 0 && 
-           rng.random_bool(parameters.retrap_ratio/(1.0+parameters.retrap_ratio))
-        {
-            let trap = {
-                let trap_dest = trap_places.unavailable();
-                if trap_dest.is_empty() {
-                    return Err("filling selected when no empty traps remain".to_string());
+        match parameters {
+            ReTrapParameterLayout::GaussianReTrappingCBFill { cb_hole_to_trap, cb_mu, ..} | 
+            ReTrapParameterLayout::GaussianFillReTrappingCB { cb_hole_to_trap, cb_mu, ..} |
+            ReTrapParameterLayout::GaussianReTrappingCB { cb_hole_to_trap, mu: cb_mu }
+            => {
+                let source_position = &places.traps()[source.index()];
+                let mut destinations: Vec<ReciprocalCandidate> = Vec::with_capacity(hole_places.available_count()+trap_places.unavailable_count());
+                for &hole in hole_places.available() {
+                    let distance = cube.distance(source_position, &places.holes()[hole.index()]);
+                    destinations.push(
+                        gaussian_kernel(
+                            1.0, 
+                            *cb_mu, distance, 
+                            hole, 
+                            true)?);
                 }
-                trap_dest[rng.random_range(0..trap_dest.len())]
-            };
-            return Ok( TimedCandidate { 
-                            event: Event::DelocalisedRetrapping { source, destination: trap, state }, 
-                            time: 0.0 });
-        } else {
+                for &trap in trap_places.unavailable() {
+                let distance = cube.distance(source_position, &places.traps()[trap.index()]);
+                destinations.push(
+                    gaussian_kernel(
+                        *cb_hole_to_trap, 
+                        *cb_mu, distance, 
+                        trap, 
+                        false)?);
+                }
+                let choice = find_shortest_from_summed_reciprocal_rates(destinations, rng)?;
+                if choice.hole {
+                    if !hole_places.make_unavailable(choice.place) {
+                        return Err(format!(
+                            "delocalised recombination hole {:?} was not available", choice.place.index()
+                        ));
+                    }
+                    return Ok(Event::DelocalisedRecombination { source, hole: choice.place, state });
 
-            let hole_destination = {
+                }else {
+                    if !trap_places.make_available(choice.place) {
+                        return Err(format!(
+                            "delocalised retrapping destination {:?} was occupied", choice.place.index()
+                        ));
+                    }
+                    return Ok(Event::DelocalisedRetrapping { source, destination: choice.place, state  } );
+
+                }
+            },
+            ReTrapParameterLayout::NoneGaussianReTrappingCBFill { cb_hole_to_trap,.. } |
+            ReTrapParameterLayout::NoneGaussianFillReTrappingCB { cb_hole_to_trap } | 
+            ReTrapParameterLayout::NoneGaussianReTrappingCB { cb_hole_to_trap }
+            => {
+                if rng.random_bool(*cb_hole_to_trap){
+                    let trap = {
+                        let trap_dest = trap_places.unavailable();
+                        if trap_dest.is_empty() {
+                            return Err("filling selected when no empty traps remain".to_string());
+                        }
+                        trap_dest[rng.random_range(0..trap_dest.len())]
+                    };
+                    if !trap_places.make_available(trap) {
+                        return Err(format!(
+                            "delocalised retrapping destination {:?} was occupied", trap.index()
+                        ));
+                    }
+                    return Ok(Event::DelocalisedRetrapping { source, destination: trap, state });
+
+                } else {
+                    let hole = {
+                    let empty_holes = hole_places.available();
+                    if empty_holes.is_empty() {
+                        return Err("No holes to put electron in".to_string());
+                    }
+                    empty_holes[rng.random_range(0..empty_holes.len())]
+                    };
+                    if !hole_places.make_unavailable(hole) {
+                        return Err(format!(
+                            "delocalised recombination hole {:?} was not available", hole.index()
+                        ));
+                    }
+                    return Ok( Event::DelocalisedRecombination { source, hole, state });    
+                }
+            },
+            ReTrapParameterLayout::GaussianCBReTrappingFill {cb_mu, .. } |
+            ReTrapParameterLayout::GaussianCBFill { cb_mu, .. } | 
+            ReTrapParameterLayout::GaussianCB { mu: cb_mu } 
+            => {
+          
+                let source_position = &places.traps()[source.index()];
+                let mut destinations: Vec<ReciprocalCandidate> = Vec::with_capacity(hole_places.available_count()+trap_places.unavailable_count());
+                for &hole in hole_places.available() {
+                    let distance = cube.distance(source_position, &places.holes()[hole.index()]);
+                    destinations.push(
+                        gaussian_kernel(
+                            1.0, 
+                            *cb_mu, distance, 
+                            hole, 
+                            true)?);
+                }
+                let choice = find_shortest_from_summed_reciprocal_rates(destinations, rng)?;
+                if !hole_places.make_unavailable(choice.place) {
+                        return Err(format!(
+                            "delocalised recombination hole {:?} was not available", choice.place.index()
+                        ));
+                    }
+                return Ok(Event::DelocalisedRecombination { source, hole: choice.place, state  });
+
+            },
+            ReTrapParameterLayout::NoneGaussianCBReTrappingFill { .. } |
+            ReTrapParameterLayout::NoneGaussianCBFill |
+            ReTrapParameterLayout::NoneGaussianCB => {
+                let hole = {
                 let empty_holes = hole_places.available();
                 if empty_holes.is_empty() {
                     return Err("No holes to put electron in".to_string());
                 }
                 empty_holes[rng.random_range(0..empty_holes.len())]
-            };
-            return Ok( TimedCandidate { 
-                    event: Event::DelocalisedRecombination { source, hole: hole_destination, state }, 
-                    time: 0.0 });
-        } 
-    } else {
-   
-        let source_position = &places.traps()[source.index()];
-        let mut destinations: Vec<Candidate> = if transitions.get_conduction_band_retrapping() && parameters.retrap_ratio > 0.0 {
-            Vec::with_capacity(hole_places.available_count()+trap_places.unavailable_count())
-        }else {
-            Vec::with_capacity(hole_places.available_count())
-        };
-
-        for &hole in hole_places.available() {
-            let distance = cube.distance(source_position, &places.holes()[hole.index()]);
-            destinations.push(
-                Candidate::delocalised_recombination(
-                    recombination_prefactor, 
-                    mu, distance, 
-                    source, hole, 
-                    state)?);
-        }
-
-        if transitions.get_conduction_band_retrapping() && parameters.retrap_ratio > 0.0 {
-            let retrapping_prefactor = recombination_prefactor*parameters.retrap_ratio;
-            for &destination in trap_places.unavailable() {
-                let distance = cube.distance(source_position, &places.traps()[destination.index()]);
-                destinations.push(
-                    Candidate::delocalised_recombination(
-                        retrapping_prefactor, 
-                        mu, distance, 
-                        source, destination, 
-                        state)?);
+                };
+                if !hole_places.make_unavailable(hole) {
+                        return Err(format!(
+                            "delocalised recombination hole {:?} was not available", hole.index()
+                        ));
+                    }
+                return Ok( Event::DelocalisedRecombination { source, hole, state },);
+            },
+            _ => {
+                return Err(format!("A delocalsied transition destination has been asked for but delocalised transitions are not on. 
+                                    This should never happen!"))
             }
+
         }
-        let mut current_shortest = TimedCandidate::new_negative_time();
-        current_shortest.find_shortest_from_summed_rates(destinations, rng)?;
-        Ok(current_shortest)
+
     }
-    
-}
+
 
 /// Resolve an aggregate irradiation event into population changes.
 ///
@@ -363,50 +410,286 @@ fn choose_delocalised_outcome(
 /// recombination is enabled, a fixed 0.5 branch instead consumes an active
 /// hole; the returned [`Event::Filling`] records the selected identifiers.
 pub fn choose_filling_outcome(
+    places: &ElectronPlaces,
     trap_places: &mut PlaceAvailability,
     hole_places: &mut PlaceAvailability,
-    transitions: &Transitions,
+    parameters: &ReTrapParameterLayout,
+    cube: &Cube,
     rng: &mut impl Rng,
 ) -> Result<Event, String> {
     
-    let hole = {
-        let empty_holes = hole_places.unavailable();
-        if empty_holes.is_empty() {
-            return Err("filling selected when no available holes remain".to_string());
+    match parameters {
+        ReTrapParameterLayout::GaussianCBReTrappingFill{cb_hole_to_trap,cb_mu,vb_trap_to_hole, vb_mu} |
+        ReTrapParameterLayout::GaussianReTrappingFill{cb_hole_to_trap,cb_mu,vb_trap_to_hole, vb_mu} |
+        ReTrapParameterLayout::GaussianReTrappingCBFill{cb_hole_to_trap,cb_mu,vb_trap_to_hole, vb_mu} 
+        => {
+            let source_position = Coord::random_in(cube.boundary.x, cube.boundary.y, cube.boundary.z, rng)?;
+            
+            let mut destinations: Vec<ReciprocalCandidate> = Vec::with_capacity(hole_places.unavailable_count()+trap_places.available_count());
+            for &hole in hole_places.unavailable() {
+                let distance = cube.distance(&source_position, &places.holes()[hole.index()]);
+                destinations.push(
+                    gaussian_kernel(
+                        1.0, 
+                        *vb_mu, distance, 
+                        hole,
+                    true)?);
+            }
+            for &trap in trap_places.available() {
+                let distance = cube.distance(&source_position, &places.traps()[trap.index()]);
+                destinations.push(
+                    gaussian_kernel(
+                        *vb_trap_to_hole, 
+                        *vb_mu, distance, 
+                        trap, false)?);
+            }
+
+            let hole = find_shortest_from_summed_reciprocal_rates(destinations, rng)?;
+            if hole.hole {
+                if !hole_places.make_available(hole.place) {
+                    return Err(format!("filling destination {:?} was occupied",hole.place));
+                }  
+            }else {
+                if !trap_places.make_unavailable(hole.place) {
+                    return Err(format!("filling destination {:?} was occupied",hole.place));
+                }
+            }
+            
+            let mut destinations: Vec<ReciprocalCandidate> = Vec::with_capacity(trap_places.unavailable_count()+hole_places.available_count());
+            for &trap in trap_places.unavailable() {
+                let distance = cube.distance(&source_position, &places.traps()[trap.index()]);
+                destinations.push(
+                    gaussian_kernel(
+                        1.0, 
+                        *cb_mu, distance, 
+                        trap, false)?);
+            }
+            for &hole in hole_places.available() {
+                let distance = cube.distance(&source_position, &places.holes()[hole.index()]);
+                destinations.push(
+                    gaussian_kernel(
+                        *cb_hole_to_trap, 
+                        *cb_mu, distance, 
+                        hole,
+                    true)?);
+            }
+            let trap = find_shortest_from_summed_reciprocal_rates(destinations, rng)?;
+            if trap.hole {
+                if !hole_places.make_unavailable(trap.place) {
+                    return Err(format!("filling destination {:?} was occupied",trap.place));
+                }
+            } else {
+                if !trap_places.make_available(trap.place) {
+                    return Err(format!("filling destination {:?} was occupied",trap.place));
+                }
+                
+            }
+            match (hole.hole, trap.hole){
+                (true, true)   => return Ok(Event::FillingHoleOnly { hole_lost: trap.place, hole_gain: hole.place }),
+                (true, false)  => return Ok(Event::FillingStandard { trap: trap.place, hole: hole.place }),
+                (false, true)  => return Ok(Event::FillingLoss { trap: hole.place, hole:trap.place }),
+                (false, false) => return Ok(Event::FillingTrapOnly { trap_lost: hole.place, trap_gain: trap.place }),
+            }
+            
+        },
+        ReTrapParameterLayout::NoneGaussianCBReTrappingFill{cb_hole_to_trap,vb_trap_to_hole} |
+        ReTrapParameterLayout::NoneGaussianReTrappingFill{cb_hole_to_trap,vb_trap_to_hole} |
+        ReTrapParameterLayout::NoneGaussianReTrappingCBFill{cb_hole_to_trap,vb_trap_to_hole}
+        => {
+            // If true electron in conduction band goes straight to a hole
+            let cb_hole = rng.random_bool(*cb_hole_to_trap);
+            // If true the hole has gone to an occupied trap and annihilated it
+            let vb_trap = rng.random_bool(*vb_trap_to_hole);
+
+            match (cb_hole, vb_trap){
+            (true, true) => { // electron to hole, hole to trap
+                let hole = {
+                    let empty_holes = trap_places.available();
+                    if empty_holes.is_empty() {
+                        return Ok(Event::None);
+                        // return Err("Filling selected but no traps for hole to annihilate remain".to_string());
+                    }
+                    empty_holes[rng.random_range(0..empty_holes.len())]
+                };
+
+                if !trap_places.make_unavailable(hole) {
+                    return Err(format!("Hole annihilation trap {hole:?} was not occupied"));
+                }
+
+                let trap = {
+                    let trap_dest = hole_places.available();
+                    if trap_dest.is_empty() {
+                        trap_places.make_available(hole);
+                        return Ok(Event::None);
+                        // return Err("Filling selected but no holes for electron to recombine with remain".to_string());
+                    }
+                    trap_dest[rng.random_range(0..trap_dest.len())]
+                };
+
+                if !hole_places.make_unavailable(trap) {
+                    return Err(format!("Hole to be recombined with via filling {trap:?} was occupied"));
+                }
+                return Ok(Event::FillingLoss { trap, hole });
+            },
+            (true, false) => { // electron to hole, hole to hole
+                let hole = {
+                    let empty_holes = hole_places.unavailable();
+                    if empty_holes.is_empty() {
+                        return Ok(Event::None);
+                        // return Err("Filling selected when no available holes remain".to_string());
+                    }
+                    empty_holes[rng.random_range(0..empty_holes.len())]
+                };
+
+                if !hole_places.make_available(hole) {
+                    return Err(format!("Filling destination {hole:?} was occupied"));
+                }
+                let trap = {
+                    let trap_dest = hole_places.available();
+                    if trap_dest.is_empty() {
+                        hole_places.make_unavailable(hole);
+                        return Ok(Event::None);
+                        // return Err("Filling recombination selected when no available holes remaining".to_string());
+                    }
+                    trap_dest[rng.random_range(0..trap_dest.len())]
+                };
+
+                if !hole_places.make_unavailable(trap) {
+                    return Err(format!("Filling recombination destination {trap:?} was already occupied"));
+                }
+                return Ok(Event::FillingHoleOnly { hole_lost: trap, hole_gain: hole });
+            },
+            (false, true) => { // electron to trap, hole to trap
+                let trap = {
+                    let trap_dest = trap_places.unavailable();
+                    if trap_dest.is_empty() {
+                        return Ok(Event::None);
+                        // return Err("Filling selected when no empty traps remain".to_string());
+                    }
+                    trap_dest[rng.random_range(0..trap_dest.len())]
+                };
+
+                if !trap_places.make_available(trap) {
+                    return Err(format!("Filling destination {trap:?} was occupied"));
+                }
+
+                let hole = {
+                    let empty_holes = trap_places.available();
+                    if empty_holes.is_empty() {
+                        trap_places.make_unavailable(trap);
+                        return Ok(Event::None);
+
+                        // return Err("Filling trap annihilation selected when no traps are occupied".to_string());
+                    }
+                    empty_holes[rng.random_range(0..empty_holes.len())]
+                };
+
+                if !trap_places.make_unavailable(hole) {
+                    return Err(format!("Filling trap annihilation destination {hole:?} was empty"));
+                }
+                
+                return Ok(Event::FillingTrapOnly { trap_lost: hole, trap_gain: trap });
+            },
+            (false, false) =>  { // electron to trap, hole to hole
+                let hole = {
+                    let empty_holes = hole_places.unavailable();
+                    if empty_holes.is_empty() {
+                        return Ok(Event::None);
+                        // return Err("Filling selected when no available holes remain".to_string());
+                    }
+                    empty_holes[rng.random_range(0..empty_holes.len())]
+                };
+
+                if !hole_places.make_available(hole) {
+                    return Err(format!("Filling destination {hole:?} was occupied"));
+                }
+                let trap = {
+                    let trap_dest = trap_places.unavailable();
+                    if trap_dest.is_empty() {
+                        hole_places.make_unavailable(hole);
+                        return Ok(Event::None);
+                        // return Err("Filling selected when no empty traps remain".to_string());
+                    }
+                    trap_dest[rng.random_range(0..trap_dest.len())]
+                };
+
+                if !trap_places.make_available(trap) {
+                    return Err(format!("Filling destination {trap:?} was occupied"));
+                }
+                return Ok(Event::FillingStandard { trap, hole });
+            }
         }
 
-        empty_holes[rng.random_range(0..empty_holes.len())]
-    };
+        },
+        ReTrapParameterLayout::GaussianFill{cb_mu,vb_mu} |
+        ReTrapParameterLayout::GaussianCBFill{cb_mu, vb_mu} |
+        ReTrapParameterLayout::GaussianFillReTrappingCB{cb_mu, vb_mu, ..} 
+        => {
+            let source_position = Coord::random_in(cube.boundary.x, cube.boundary.y, cube.boundary.z, rng)?;
+            let mut destinations: Vec<ReciprocalCandidate> = Vec::with_capacity(hole_places.unavailable_count());
+                for &hole in hole_places.unavailable() {
+                    let distance = cube.distance(&source_position, &places.holes()[hole.index()]);
+                    destinations.push(
+                        gaussian_kernel(
+                            1.0, 
+                            *vb_mu, distance, 
+                            hole,
+                        true)?);
+                }
+            let hole = find_shortest_from_summed_reciprocal_rates(destinations, rng)?;
+            if !hole_places.make_available(hole.place) {
+                return Err(format!("Filling destination {:?} was occupied",hole.place.index()));
+            }
+            
+            let mut destinations: Vec<ReciprocalCandidate> = Vec::with_capacity(trap_places.unavailable_count());
+                for &trap in trap_places.unavailable() {
+                    let distance = cube.distance(&source_position, &places.traps()[trap.index()]);
+                    destinations.push(
+                        gaussian_kernel(
+                            1.0, 
+                            *cb_mu, distance, 
+                            trap, false)?);
+            }
+            let trap = find_shortest_from_summed_reciprocal_rates(destinations, rng)?;
+            if !trap_places.make_available(trap.place) {
+                return Err(format!("Filling destination {:?} was occupied",trap.place.index()));
+            }
+            return Ok(Event::FillingStandard { trap: trap.place, hole: hole.place,}); 
+           
+        },
 
-    if !hole_places.make_available(hole) {
-        return Err(format!("filling destination {hole:?} was occupied"));
-    }
-
-    if transitions.get_filling_retrapping() && rng.random_bool(0.5){
-        let hole_destination = {
-            let empty_holes = hole_places.available();
+        ReTrapParameterLayout::NoneGaussianFill |
+        ReTrapParameterLayout::NoneGaussianCBFill |
+        ReTrapParameterLayout::NoneGaussianFillReTrappingCB{..} 
+        => {
+            let hole = {
+            let empty_holes = hole_places.unavailable();
             if empty_holes.is_empty() {
-                return Err("No holes to put electron in".to_string());
+                return Err("Filling selected when no available holes remain".to_string());
             }
-            empty_holes[rng.random_range(0..empty_holes.len())]
-        };
-        if !hole_places.make_unavailable(hole_destination) {
-            return Err(format!("hole destination {hole_destination:?} was occupied"));
-        }
-        return Ok(Event::Filling { trap:hole_destination, hole });
-    } else { 
-        let trap = {
-            let trap_dest = trap_places.unavailable();
-            if trap_dest.is_empty() {
-                return Err("filling selected when no empty traps remain".to_string());
-            }
-            trap_dest[rng.random_range(0..trap_dest.len())]
-        };
 
-        if !trap_places.make_available(trap) {
-            return Err(format!("filling destination {trap:?} was occupied"));
-        }
-        return Ok(Event::Filling { trap, hole });
+            empty_holes[rng.random_range(0..empty_holes.len())]
+            };
+
+            if !hole_places.make_available(hole) {
+                return Err(format!("Filling destination {hole:?} was occupied"));
+            }
+            let trap = {
+                let trap_dest = trap_places.unavailable();
+                if trap_dest.is_empty() {
+                    return Err("Filling selected when no empty traps remain".to_string());
+                }
+                trap_dest[rng.random_range(0..trap_dest.len())]
+            };
+
+            if !trap_places.make_available(trap) {
+                return Err(format!("Filling destination {trap:?} was occupied"));
+            }
+            return Ok(Event::FillingStandard { trap, hole, });
+        },
+
+        _ => {return Err(format!("A filling event has been asked for but filling transitions are not on. This should never happen! The type was {:?}",parameters))}
+
     }
 
 }
@@ -422,6 +705,7 @@ pub fn run_standard(
     trap_places: &mut PlaceAvailability,
     hole_places: &mut PlaceAvailability,
     trap_parameters: &TrapParameterLayout,
+    retrapping_parameters: &ReTrapParameterLayout,
     filling_inputs: &mut FillingTransitionInputs,
     time_temperature: &mut TimeTemperature,
     cube: &Cube,
@@ -471,9 +755,8 @@ pub fn run_standard(
                     places,
                     trap_places,
                     hole_places,
-                    trap_parameters,
+                    retrapping_parameters,
                     cube,
-                    transitions,
                     rng,
                 )?;
                 results.push(RecordedEvent {

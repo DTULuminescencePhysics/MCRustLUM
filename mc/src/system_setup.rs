@@ -116,10 +116,8 @@ impl MonteCarloSimulation {
             inputs.delocalised.es_cb,
             inputs.filling.fill,
             "first",
-            inputs.localised.gs_retrap,
-            inputs.localised.es_retrap,
-            inputs.delocalised.retrap,
-            inputs.filling.cmbn_whn_fll,
+            inputs.retrapping.localised_gs,
+            inputs.retrapping.localised_es,
         )
     }
 
@@ -207,11 +205,18 @@ impl MonteCarloSimulation {
                         self.repetions,
                     )
                 })?;
+            let mut filling_inputs = FillingTransitionInputs::get_inputs(
+                self.inputs.filling.d0[experiment_index],
+                self.inputs.filling.d_dot[experiment_index],
+                trap_available,
+                self.cube.trap_total,
+                self.inputs.filling.dd_unit)?;
+            
             experiment
                 .run(
                     &self.cube,
                     &self.transitions,
-                    &mut FillingTransitionInputs::get_inputs(self.inputs.filling.d0[experiment_index],self.inputs.filling.d_dot[experiment_index],self.cube.trap_total, trap_available,self.inputs.filling.dd_unit)?,
+                    &mut filling_inputs,
                     &output_path,
                     &batch_capacity,
                 )

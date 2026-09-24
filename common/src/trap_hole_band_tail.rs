@@ -13,8 +13,8 @@ use crate::numeric::{Float, TimeFloat, Numeric};
 use crate::place_ids::{PlaceId, PlaceAvailability};
 use crate::rate_equation_inputs::{DelocalisedTransitionInputs, LocalisedTransitionInputs,};
 use crate::rate_equations::ground_excited_state_weights;
-
 use rand::Rng;
+
 /// A three-dimensional site position.
 ///
 /// Coordinates can be supplied directly or generated within positive x, y,
@@ -455,14 +455,6 @@ pub struct TrapParameters {
     pub alpha_ground: Float,
     /// Excited-state tunnelling decay constant in inverse coordinate units.
     pub alpha_excited: Float,
-    /// Delocalised destination length scale in the same units as coordinates.
-    pub delocalised_mu: Float,
-    /// Factor multiplying the delocalised retrapping mean waiting time.
-    ///
-    /// With the current reciprocal-rate model, larger positive values make
-    /// retrapping slower relative to the unit recombination factor; zero
-    /// disables conduction-band retrapping destinations.
-    pub retrap_ratio: Float,
 }
 impl TrapParameters {
     /// Construct a complete trap-family parameter record without validation.
@@ -481,8 +473,6 @@ impl TrapParameters {
         lo_frequency_excited: Float,
         alpha_ground: Float,
         alpha_excited: Float,
-        delocalised_mu: Float,
-        retrap_ratio: Float,
     ) -> Self {
         Self {
             excited_energy_gap,
@@ -496,8 +486,6 @@ impl TrapParameters {
             lo_frequency_excited,
             alpha_ground,
             alpha_excited,
-            delocalised_mu,
-            retrap_ratio,
         }
     }
 }
@@ -536,8 +524,7 @@ impl TrapParameterLayout {
                        s_frequency_g: Float, e_cb: Float, 
                        s_gs: Float, s_es: Float, 
                        b_gs: Float, b_es: Float, 
-                       alpha_gs: Float, alpha_es: Float, 
-                       mu: Float, retrap_ratio: Float) -> Self {
+                       alpha_gs: Float, alpha_es: Float,) -> Self {
 
         let parameters = TrapParameters::new(excited_energy_gap,
                                                              s_frequency_e,
@@ -549,9 +536,7 @@ impl TrapParameterLayout {
                                                              b_gs,
                                                              b_es,
                                                              alpha_gs,
-                                                             alpha_es,
-                                                             mu,
-                                                             retrap_ratio,);
+                                                             alpha_es,);
         TrapParameterLayout::uniform(parameters)
     }
 
@@ -622,6 +607,7 @@ impl TrapParameterLayout {
             Self::Indexed { records, by_trap } => &records[by_trap[trap.index()].index()],
         }
     }
+    /// Finds the weighting for the ground and excited states
     pub fn get_ground_excited_weights<'a>(&self,  traps: &PlaceAvailability, temperature: &Float) -> Result<(Vec<TimeFloat>, Vec<TimeFloat>), String> {
 
         match self {
@@ -887,6 +873,219 @@ impl TrapParameterLayout {
        
         
        
+    }
+
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ReTrapParameterLayout{
+    /// No delocalised or retrapping transitions
+    None,
+    /// No delocalised retrapping and no filling
+    /// CB -> destination chosen at random
+    NoneGaussianCB,
+    /// No delocalised retrapping and no filling 
+    /// CB -> destination chosen using gaussian kernel
+    GaussianCB{
+        /// Gaussian kernel spread
+        mu: Float
+    },
+    /// Delocalised retrapping from CB and no filling 
+    /// CB -> destination chosen at random
+    NoneGaussianReTrappingCB{
+        /// hole or trap chosen according to cb_hole_to_trap and
+        cb_hole_to_trap: Float
+    },
+    /// Delocalised retrapping from CB and no filling 
+    /// CB -> destination chosen using gaussian kernel 
+    /// with hole/trap preference controlled by cb_hole_to_trap 
+    GaussianReTrappingCB{
+        /// hole or trap chosen according to cb_hole_to_trap
+        cb_hole_to_trap: Float, 
+        /// Gaussian kernel spread
+        mu: Float
+    },
+    /// No delocalised transitions and filling
+    /// trap and hole chosen at random
+    NoneGaussianFill,
+    /// No delocalised transitions and filling
+    /// trap and hole chosen using gaussian kernel
+    GaussianFill{
+        /// Gaussian kernel spread in conduction band
+        cb_mu: Float, 
+        /// Gaussian kernel spread in valence band
+        vb_mu: Float
+    },
+    /// No delocalised transitions and filling with retrapping
+    /// with hole/trap preference controlled by cb_hole_to_trap and
+    /// annihilation/hole preference controlled by vb_trap_to_hole
+    NoneGaussianReTrappingFill{
+        /// hole or trap chosen according to cb_hole_to_trap
+        cb_hole_to_trap: Float,
+        /// annihilation/hole preference controlled by vb_trap_to_hole
+        vb_trap_to_hole: Float
+    },
+    /// No delocalised transitions and filling with retrapping
+    /// with hole/trap preference controlled by cb_hole_to_trap and
+    /// annihilation/hole preference controlled by vb_trap_to_hole
+    /// and destinations chosen using gaussian kernel
+    GaussianReTrappingFill{
+        /// hole or trap chosen according to cb_hole_to_trap
+        cb_hole_to_trap: Float, 
+        /// Gaussian kernel spread in conduction band
+        cb_mu: Float, 
+        /// annihilation/hole preference controlled by vb_trap_to_hole
+        vb_trap_to_hole: Float, 
+        /// Gaussian kernel spread in valence band
+        vb_mu: Float},
+    /// No delocalised retrapping and filling
+    /// traps and holes chosen at random
+    NoneGaussianCBFill,
+    /// No delocalised retrapping and filling
+    /// traps and holes chosen using gaussian kernel
+    GaussianCBFill{
+        /// Gaussian kernel spread in conduction band
+        cb_mu: Float,
+        /// Gaussian kernel spread in valence band
+        vb_mu: Float
+    },
+    /// Delocalised retrapping from CB and filling 
+    NoneGaussianFillReTrappingCB{
+        /// hole or trap chosen according to cb_hole_to_trap 
+        cb_hole_to_trap: Float, 
+    },
+        /// Delocalised retrapping from CB and filling 
+    GaussianFillReTrappingCB{
+        /// hole or trap chosen according to cb_hole_to_trap 
+        cb_hole_to_trap: Float,
+        /// Gaussian kernel spread in conduction band
+        cb_mu: Float,
+        /// Gaussian kernel spread in valence band
+        vb_mu: Float
+    },
+    /// No delocalised retrapping and filling retrapping
+    NoneGaussianCBReTrappingFill{
+        /// hole or trap chosen according to cb_hole_to_trap 
+        cb_hole_to_trap: Float, 
+        /// Gaussian kernel spread in valence band
+        vb_trap_to_hole: Float
+    },
+    /// No delocalised retrapping and filling retrapping
+    GaussianCBReTrappingFill{
+        /// hole or trap chosen according to cb_hole_to_trap
+        cb_hole_to_trap: Float,
+        /// Gaussian kernel spread in conduction band
+        cb_mu: Float,
+        /// annihilation/hole preference controlled by vb_trap_to_hole
+        vb_trap_to_hole: Float, 
+        /// Gaussian kernel spread in valence band
+        vb_mu: Float
+    }, 
+
+    /// Delocalised retrapping from CB and filling retrapping
+    /// with hole/trap preference controlled by cb_hole_to_trap and
+    /// annihilation/hole preference controlled by vb_trap_to_hole
+    NoneGaussianReTrappingCBFill{
+        /// hole or trap chosen according to cb_hole_to_trap 
+        cb_hole_to_trap: Float, 
+        /// Gaussian kernel spread in valence band
+        vb_trap_to_hole: Float
+    },
+    /// Delocalised retrapping from CB and filling retrapping
+    /// with hole/trap preference controlled by cb_hole_to_trap and
+    /// annihilation/hole preference controlled by vb_trap_to_hole
+    /// and destinations chosen using gaussian kernel
+    GaussianReTrappingCBFill{
+        /// hole or trap chosen according to cb_hole_to_trap
+        cb_hole_to_trap: Float,
+        /// Gaussian kernel spread in conduction band
+        cb_mu: Float,
+        /// annihilation/hole preference controlled by vb_trap_to_hole
+        vb_trap_to_hole: Float, 
+        /// Gaussian kernel spread in valence band
+        vb_mu: Float
+    },
+
+
+}
+/// returns the retrapping preference
+pub fn retrapping_weight(ratio:Float) -> Float{
+    ratio/(1.0+ratio)
+}
+impl ReTrapParameterLayout{
+    /// Function to set up retrapping parameters
+    pub fn new(delocal: bool, filling: bool, 
+        delocal_retrap: bool, fill_retrap: bool, 
+        gaussian: bool, cb_hole_to_trap: Float,
+        vb_trap_to_hole: Float, cb_mu: Float, vb_mu: Float) -> Self{
+            let cb_hole_to_trap = retrapping_weight(cb_hole_to_trap);
+            let vb_trap_to_hole = retrapping_weight(vb_trap_to_hole);
+
+        match (delocal, filling){
+            (true,true) => {
+                if delocal_retrap && fill_retrap{
+                    if gaussian {
+                        return Self::GaussianReTrappingCBFill { cb_hole_to_trap, cb_mu, vb_trap_to_hole, vb_mu };
+                    } else {
+                        return Self::NoneGaussianReTrappingCBFill { cb_hole_to_trap, vb_trap_to_hole }
+                    }
+                } else if delocal_retrap{
+                    if gaussian {
+                        return Self::GaussianFillReTrappingCB { cb_hole_to_trap, cb_mu, vb_mu };
+                    }else{
+                       return Self::NoneGaussianFillReTrappingCB { cb_hole_to_trap }; 
+                    }
+                } else if fill_retrap{
+                    if gaussian {
+                        return Self::GaussianCBReTrappingFill { cb_hole_to_trap, cb_mu, vb_trap_to_hole, vb_mu };
+                    }else{
+                        return Self::NoneGaussianCBReTrappingFill { cb_hole_to_trap, vb_trap_to_hole };
+                    }
+                }
+                else {
+                    if gaussian {
+                        return Self::GaussianCBFill { cb_mu, vb_mu };
+                    }else{
+                        return Self::NoneGaussianCBFill;
+                    }
+                }
+
+        },
+        (true,false) =>{
+                if delocal_retrap{
+                    if gaussian {
+                        return Self::GaussianReTrappingCB { cb_hole_to_trap, mu: cb_mu };
+                    }else{
+                        return Self::NoneGaussianReTrappingCB { cb_hole_to_trap };
+                    }
+                }else{
+                    if gaussian {
+                        return Self::GaussianCB { mu: cb_mu };
+                    }else{
+                        return Self::NoneGaussianCB;
+                    }
+                }
+            }
+        (false,true) => {
+                if fill_retrap {
+                    if gaussian {
+                        return Self::GaussianReTrappingFill{cb_hole_to_trap, cb_mu, vb_trap_to_hole, vb_mu};
+                    }else{
+                        return Self::NoneGaussianReTrappingCBFill { cb_hole_to_trap, vb_trap_to_hole };
+                    }
+                } else{
+                    if gaussian {
+                        return Self::GaussianFill { cb_mu, vb_mu };
+                    }else{
+                        return Self::NoneGaussianFill;
+                    }
+                }
+
+            }
+        (false,false)=>{
+                return Self::None;
+            }
+        }
     }
 
 }

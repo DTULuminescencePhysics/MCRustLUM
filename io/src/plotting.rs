@@ -4,10 +4,10 @@
 
 //! Plot consolidated Monte Carlo CSV results with Plotters.
 //!
-//! [`SimulationResults::from_csv`] loads the `average_fill.csv` and
+//! [`crate::plotting::SimulationResults::from_csv`] loads the `average_fill.csv` and
 //! `average_event.csv` files produced after a simulation. Individual methods
 //! create filling, temperature, and event-frequency plots, while
-//! [`plot_default_results`] creates a useful standard set in one call.
+//! [`crate::plotting::plot_default_results`] creates a useful standard set in one call.
 
 use crate::outputs::{AverageEventRow, ContinuousValueRow};
 use crate::errors::PlotError;
@@ -156,6 +156,7 @@ pub enum FillAverage {
     Median,
 }
 impl FillAverage{
+    /// Return the legend label for this central filling statistic.
     pub fn get_label(&self) -> &str{
         match self {
             FillAverage::Mean => "Mean filling",
@@ -175,6 +176,10 @@ pub enum FillBand {
     InterquartileRange,
 }
 impl FillBand {
+    /// Return the legend label for this uncertainty band.
+    ///
+    /// This method must not be called for [`FillBand::None`], which has no
+    /// visible legend entry.
     pub fn get_label(&self) -> &str{
         match self {
             FillBand::StandardDeviation => "Mean ± standard deviation",
@@ -193,6 +198,11 @@ pub struct FillStatistic {
 
 impl FillStatistic{
 
+    /// Select a central statistic and optional uncertainty band.
+    ///
+    /// `mean` chooses the arithmetic mean when true and the median otherwise.
+    /// The `fill` values `"sd"` and `"iqr"` select a standard-deviation or
+    /// interquartile band; every other value disables the band.
     pub fn new(mean:bool, fill:&str) -> Self{
         let average = if mean{
             FillAverage::Mean
@@ -209,6 +219,10 @@ impl FillStatistic{
         }; 
         Self { average, band }
     }
+    /// Validate that the rows contain the fields required by the selected band.
+    ///
+    /// `path` is included in any [`PlotError::InvalidData`] returned for an
+    /// incompatible legacy CSV.
     pub fn check_data(&self, fill_rows: &Vec<ContinuousValueRow>, path: PathBuf) -> Result<(),PlotError> {
         if self.band == FillBand::InterquartileRange
             && fill_rows.iter().any(|row| {
@@ -224,6 +238,7 @@ impl FillStatistic{
         }
     }
 
+    /// Return a row accessor for the selected mean or median filling value.
     pub fn get_fill_average(&self,) -> 
         Result< impl Fn(&ContinuousValueRow) -> f64,  PlotError> 
     {
@@ -233,6 +248,10 @@ impl FillStatistic{
         })
  
     }
+    /// Return a row accessor for the lower and upper uncertainty bounds.
+    ///
+    /// When no band is selected, both returned values equal the selected
+    /// central statistic.
     pub fn get_fill_band(&self,) -> Result< impl Fn(&ContinuousValueRow) 
     -> (f64,f64), PlotError> {
         Ok(move |row: &ContinuousValueRow| match self.band {
@@ -252,6 +271,7 @@ impl FillStatistic{
         })
         
     }
+    /// Calculate a padded vertical range containing the selected line and band.
     pub fn get_y_range(&self,fill_rows: &Vec<ContinuousValueRow>,) 
     -> Result< Range< f64 >, PlotError> {
         let average = self.get_fill_average()?;
@@ -284,6 +304,11 @@ pub enum Axis {
 
 impl Axis{
 
+    /// Parse an axis selection and its unit from plotting configuration strings.
+    ///
+    /// Supported names are `"Time"`, `"Temperature"`, `"Fill"`, and
+    /// `"Event"`. Time and temperature units are parsed only for their
+    /// corresponding axes.
     pub fn new(name: &str, unit: &str, mean: bool, fill: &str) -> Result<Self, PlotError> {
         match name {
             "Time" => {
@@ -307,6 +332,7 @@ impl Axis{
         }
     } 
 
+    /// Return the complete human-readable axis label, including units.
     pub fn get_label(&self) -> String {
         match self {
             Axis::Time{ unit} => {
@@ -340,6 +366,7 @@ pub struct PlotOptions {
 
 impl PlotOptions {
 
+    /// Reject zero-width or zero-height bitmap dimensions.
     pub fn validate_dimensions(&self) -> Result<(), PlotError> {
         if self.width == 0 || self.height == 0 {
             return Err(PlotError::Setup { 
@@ -349,6 +376,7 @@ impl PlotOptions {
         Ok(())
     }
 
+    /// Return the font family and point size used for plot captions.
     pub fn get_caption_options(&self) -> (&'static str, u32){
         (self.font, self.caption_font_size)
     }
@@ -381,6 +409,7 @@ pub struct PlotWindow{
 
 impl PlotWindow{
 
+    /// Construct a plot destination with parsed axes and default rendering options.
     pub fn new(output: PathBuf, x_axis: &str, x_unit: &str, y_axis: &str, y_unit: &str, mean:bool, fill:&str) -> Result<Self, PlotError> {
 
         let x_axis = Axis::new(x_axis,x_unit, mean, fill)?;
@@ -397,6 +426,7 @@ impl PlotWindow{
             })
     } 
 
+    /// Return the short series label for the horizontal axis selection.
     pub fn x_label(&self) -> &str 
     {
         match self.x_axis {
@@ -419,6 +449,7 @@ impl PlotWindow{
             _ => "",
         }
     }
+    /// Return the short series label for the vertical axis selection.
     pub fn y_label(&self) -> &str 
     {
         match self.y_axis {
@@ -442,6 +473,10 @@ impl PlotWindow{
         }
     }
 
+    /// Return a row accessor for a continuous time or temperature x-axis.
+    ///
+    /// Fill and event axes are rejected because they are not supported as
+    /// horizontal coordinates for continuous-data plots.
     pub fn get_x_filter(&self) -> Result< impl Fn(&ContinuousValueRow) -> f64,  PlotError>  {
         let x = match self.x_axis {
             Axis::Time { .. } => {
@@ -461,6 +496,7 @@ impl PlotWindow{
         Ok(x)
     }
 
+    /// Calculate a padded horizontal range from the configured row accessor.
     pub fn get_continuous_x_range(&self,fill_rows: &Vec<ContinuousValueRow>,)
         -> Result< Range< f64 >, PlotError> 
     {
@@ -470,6 +506,10 @@ impl PlotWindow{
 
     }
 
+    /// Return a row accessor for the selected continuous vertical value.
+    ///
+    /// Event axes are rejected because event plots use their own binned drawing
+    /// path.
     pub fn get_y_filter(&self) -> Result< impl Fn(&ContinuousValueRow) -> f64,  PlotError>  {
         
         let y = match self.y_axis {
@@ -503,6 +543,7 @@ impl PlotWindow{
     }
 
 
+    /// Calculate a padded vertical range for the configured continuous axis.
     pub fn get_continuous_y_range(&self,fill_rows: &Vec<ContinuousValueRow>,)
         -> Result< Range< f64 >, PlotError> 
     {
@@ -529,6 +570,10 @@ impl PlotWindow{
         
     }
 
+    /// Create and configure the bitmap drawing area and Cartesian chart.
+    ///
+    /// The returned drawing area must remain alive while the chart is used and
+    /// should be presented after all series and legends have been drawn.
     pub fn plot_setup(&self, caption: &str, x_range: Range<Float>, y_range: Range<Float>) -> Result<
         (
             DrawingArea<BitMapBackend<'_>, Shift>,
@@ -578,6 +623,7 @@ impl PlotWindow{
         Ok((root, chart))
     }
 
+    /// Draw the configured series legend onto an existing chart.
     pub fn plot_legend<'a >(&self,
         chart: &mut ChartContext<
                 'a,

@@ -4,9 +4,10 @@
 
 //! Loading and representing simulation configuration.
 //!
-//! Use [`read_inputs`] when a TOML file is supplied and [`default_inputs`]
+//! Use [`inputs::read_inputs`] when a TOML file is supplied and
+//! [`inputs::default_inputs`]
 //! when the built-in configuration is sufficient. Both paths return the same
-//! [`SimulationInputs`] type, so downstream simulation code does not need to
+//! [`inputs::SimulationInputs`] type, so downstream simulation code does not need to
 //! know where the values came from.
 
 
@@ -23,7 +24,6 @@ pub mod outputs;
 
 /// Loading consolidated CSV results and producing plots from them.
 pub mod plotting;
-
 
 
 

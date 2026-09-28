@@ -408,7 +408,8 @@ fn choose_delocalised_outcome(
 /// Irradiation first activates one previously inactive hole site. Normally it
 /// also occupies a uniformly selected empty trap. When filling-time
 /// recombination is enabled, a fixed 0.5 branch instead consumes an active
-/// hole; the returned [`Event::Filling`] records the selected identifiers.
+/// hole; the returned filling event records the selected identifiers and the
+/// branch that was taken.
 pub fn choose_filling_outcome(
     places: &ElectronPlaces,
     trap_places: &mut PlaceAvailability,
@@ -430,7 +431,7 @@ pub fn choose_filling_outcome(
                 let distance = cube.distance(&source_position, &places.holes()[hole.index()]);
                 destinations.push(
                     gaussian_kernel(
-                        1.0, 
+                        *vb_trap_to_hole, 
                         *vb_mu, distance, 
                         hole,
                     true)?);
@@ -439,7 +440,7 @@ pub fn choose_filling_outcome(
                 let distance = cube.distance(&source_position, &places.traps()[trap.index()]);
                 destinations.push(
                     gaussian_kernel(
-                        *vb_trap_to_hole, 
+                        1.0, 
                         *vb_mu, distance, 
                         trap, false)?);
             }
@@ -460,7 +461,7 @@ pub fn choose_filling_outcome(
                 let distance = cube.distance(&source_position, &places.traps()[trap.index()]);
                 destinations.push(
                     gaussian_kernel(
-                        1.0, 
+                        *cb_hole_to_trap, 
                         *cb_mu, distance, 
                         trap, false)?);
             }
@@ -468,7 +469,7 @@ pub fn choose_filling_outcome(
                 let distance = cube.distance(&source_position, &places.holes()[hole.index()]);
                 destinations.push(
                     gaussian_kernel(
-                        *cb_hole_to_trap, 
+                        1.0, 
                         *cb_mu, distance, 
                         hole,
                     true)?);
@@ -501,13 +502,28 @@ pub fn choose_filling_outcome(
             // If true the hole has gone to an occupied trap and annihilated it
             let vb_trap = rng.random_bool(*vb_trap_to_hole);
 
+            let (cb_hole, vb_trap) = if cb_hole && vb_trap && trap_places.available_count() == 0 && hole_places.available_count() == 0 {
+                if rng.random_bool(0.5){
+                    (false, true)
+                } else{
+                    (true, false)
+                }
+            } else if !cb_hole && !vb_trap && trap_places.unavailable_count() == 0 && hole_places.unavailable_count() == 0{
+               if rng.random_bool(0.5){
+                    (false, true)
+                } else{
+                    (true, false)
+                } 
+            } else{
+                (cb_hole, vb_trap)
+            };
+
             match (cb_hole, vb_trap){
             (true, true) => { // electron to hole, hole to trap
                 let hole = {
                     let empty_holes = trap_places.available();
                     if empty_holes.is_empty() {
-                        return Ok(Event::None);
-                        // return Err("Filling selected but no traps for hole to annihilate remain".to_string());
+                        return Err("Filling selected but no traps for hole to annihilate remain".to_string());
                     }
                     empty_holes[rng.random_range(0..empty_holes.len())]
                 };
@@ -519,9 +535,7 @@ pub fn choose_filling_outcome(
                 let trap = {
                     let trap_dest = hole_places.available();
                     if trap_dest.is_empty() {
-                        trap_places.make_available(hole);
-                        return Ok(Event::None);
-                        // return Err("Filling selected but no holes for electron to recombine with remain".to_string());
+                        return Err("Filling selected but no holes for electron to recombine with remain".to_string());
                     }
                     trap_dest[rng.random_range(0..trap_dest.len())]
                 };
@@ -532,70 +546,116 @@ pub fn choose_filling_outcome(
                 return Ok(Event::FillingLoss { trap, hole });
             },
             (true, false) => { // electron to hole, hole to hole
-                let hole = {
-                    let empty_holes = hole_places.unavailable();
-                    if empty_holes.is_empty() {
-                        return Ok(Event::None);
-                        // return Err("Filling selected when no available holes remain".to_string());
-                    }
-                    empty_holes[rng.random_range(0..empty_holes.len())]
-                };
+                if hole_places.unavailable_count() == 0{
+                    let trap = {
+                        let trap_dest = hole_places.available();
+                        if trap_dest.is_empty() {
+                            return Err("Filling recombination selected when no available holes remaining".to_string());
+                        }
+                        trap_dest[rng.random_range(0..trap_dest.len())]
+                    };
 
-                if !hole_places.make_available(hole) {
-                    return Err(format!("Filling destination {hole:?} was occupied"));
-                }
-                let trap = {
-                    let trap_dest = hole_places.available();
-                    if trap_dest.is_empty() {
-                        hole_places.make_unavailable(hole);
-                        return Ok(Event::None);
-                        // return Err("Filling recombination selected when no available holes remaining".to_string());
+                    if !hole_places.make_unavailable(trap) {
+                        return Err(format!("Filling recombination destination {trap:?} was already occupied"));
                     }
-                    trap_dest[rng.random_range(0..trap_dest.len())]
-                };
+                    let hole = {
+                        let empty_holes = hole_places.unavailable();
+                        if empty_holes.is_empty() {
+                            return Err("Filling selected when no available holes remain".to_string());
+                        }
+                        empty_holes[rng.random_range(0..empty_holes.len())]
+                    };
 
-                if !hole_places.make_unavailable(trap) {
-                    return Err(format!("Filling recombination destination {trap:?} was already occupied"));
+                    if !hole_places.make_available(hole) {
+                        return Err(format!("Filling destination {hole:?} was occupied"));
+                    }
+                    return Ok(Event::FillingHoleOnly { hole_lost: trap, hole_gain: hole });
+
+                } else {
+                    let hole = {
+                        let empty_holes = hole_places.unavailable();
+                        if empty_holes.is_empty() {
+                            return Err("Filling selected when no available holes remain".to_string());
+                        }
+                        empty_holes[rng.random_range(0..empty_holes.len())]
+                    };
+
+                    if !hole_places.make_available(hole) {
+                        return Err(format!("Filling destination {hole:?} was occupied"));
+                    }
+                    let trap = {
+                        let trap_dest = hole_places.available();
+                        if trap_dest.is_empty() {
+                            return Err("Filling recombination selected when no available holes remaining".to_string());
+                        }
+                        trap_dest[rng.random_range(0..trap_dest.len())]
+                    };
+
+                    if !hole_places.make_unavailable(trap) {
+                        return Err(format!("Filling recombination destination {trap:?} was already occupied"));
+                    }
+                    return Ok(Event::FillingHoleOnly { hole_lost: trap, hole_gain: hole });
                 }
-                return Ok(Event::FillingHoleOnly { hole_lost: trap, hole_gain: hole });
             },
             (false, true) => { // electron to trap, hole to trap
-                let trap = {
-                    let trap_dest = trap_places.unavailable();
-                    if trap_dest.is_empty() {
-                        return Ok(Event::None);
-                        // return Err("Filling selected when no empty traps remain".to_string());
+                if trap_places.unavailable_count() == 0 {
+                    let hole = {
+                        let empty_holes = trap_places.available();
+                        if empty_holes.is_empty() {
+                            return Err("Filling trap annihilation selected when no traps are occupied".to_string());
+                        }
+                        empty_holes[rng.random_range(0..empty_holes.len())]
+                    };
+
+                    if !trap_places.make_unavailable(hole) {
+                        return Err(format!("Filling trap annihilation destination {hole:?} was empty"));
                     }
-                    trap_dest[rng.random_range(0..trap_dest.len())]
-                };
+                    let trap = {
+                        let trap_dest = trap_places.unavailable();
+                        if trap_dest.is_empty() {
+                            return Err("Filling selected when no empty traps remain".to_string());
+                        }
+                        trap_dest[rng.random_range(0..trap_dest.len())]
+                    };
 
-                if !trap_places.make_available(trap) {
-                    return Err(format!("Filling destination {trap:?} was occupied"));
-                }
-
-                let hole = {
-                    let empty_holes = trap_places.available();
-                    if empty_holes.is_empty() {
-                        trap_places.make_unavailable(trap);
-                        return Ok(Event::None);
-
-                        // return Err("Filling trap annihilation selected when no traps are occupied".to_string());
+                    if !trap_places.make_available(trap) {
+                        return Err(format!("Filling destination {trap:?} was occupied"));
                     }
-                    empty_holes[rng.random_range(0..empty_holes.len())]
-                };
+                    return Ok(Event::FillingTrapOnly { trap_lost: hole, trap_gain: trap });
 
-                if !trap_places.make_unavailable(hole) {
-                    return Err(format!("Filling trap annihilation destination {hole:?} was empty"));
+                }else{
+                    let trap = {
+                        let trap_dest = trap_places.unavailable();
+                        if trap_dest.is_empty() {
+                            return Err("Filling selected when no available traps remaining".to_string());
+                        }
+                        trap_dest[rng.random_range(0..trap_dest.len())]
+                    };
+
+                    if !trap_places.make_available(trap) {
+                        return Err(format!("Filling destination {trap:?} was occupied"));
+                    }
+
+                    let hole = {
+                        let empty_holes = trap_places.available();
+                        if empty_holes.is_empty() {
+                            return Err("Filling trap annihilation selected when no traps are occupied".to_string());
+                        }
+                        empty_holes[rng.random_range(0..empty_holes.len())]
+                    };
+
+                    if !trap_places.make_unavailable(hole) {
+                        return Err(format!("Filling trap annihilation destination {hole:?} was empty"));
+                    }
+                    
+                    return Ok(Event::FillingTrapOnly { trap_lost: hole, trap_gain: trap });
                 }
-                
-                return Ok(Event::FillingTrapOnly { trap_lost: hole, trap_gain: trap });
             },
             (false, false) =>  { // electron to trap, hole to hole
                 let hole = {
                     let empty_holes = hole_places.unavailable();
                     if empty_holes.is_empty() {
-                        return Ok(Event::None);
-                        // return Err("Filling selected when no available holes remain".to_string());
+                        return Err("Filling selected when no available holes remain".to_string());
                     }
                     empty_holes[rng.random_range(0..empty_holes.len())]
                 };
@@ -606,9 +666,7 @@ pub fn choose_filling_outcome(
                 let trap = {
                     let trap_dest = trap_places.unavailable();
                     if trap_dest.is_empty() {
-                        hole_places.make_unavailable(hole);
-                        return Ok(Event::None);
-                        // return Err("Filling selected when no empty traps remain".to_string());
+                        return Err("Filling selected when no empty traps remain".to_string());
                     }
                     trap_dest[rng.random_range(0..trap_dest.len())]
                 };
@@ -742,12 +800,7 @@ pub fn run_standard(
             rng,
             &mut next_event,
         )?;
-    //     match next_event.event{
-    //          Event::LocalisedRetrapping{source, destination, state} => {
-    //              print!("Source: {}| destination: {}", source.index(), destination.index());
-    //          },
-    //          _ => {}
-    //     };
+    
         let signed_event_dt = direction * next_event.time;
         time_temperature.advance(signed_event_dt);
         let applied_event = apply_event(

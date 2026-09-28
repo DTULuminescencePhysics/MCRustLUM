@@ -114,6 +114,11 @@ pub struct FillingTransitionInputs<D0 = Float, DDot = Float, N = Float, NTot = F
 }
 impl FillingTransitionInputs{
 
+    /// Construct scalar filling inputs and convert the dose rate to per-second units.
+    ///
+    /// `n` is the current occupied-trap count and `total_n` is the total trap
+    /// count. An error is returned when `unit` has no supported conversion to
+    /// seconds.
     pub fn get_inputs(d0:Float, rate: Float, n:usize, total_n:usize, unit:TimeUnit) -> Result<Self,String>{
         let seconds_per_dose_rate_unit =
             crate::constants::time::unit_multiplier(unit)
@@ -126,6 +131,7 @@ impl FillingTransitionInputs{
             total_population: total_n as Float
         })
     }
+    /// Replace the current occupied-trap population while retaining all other inputs.
     pub fn update_occ(& mut self, n:usize) {
         self.occupied_population = n as Float;
 

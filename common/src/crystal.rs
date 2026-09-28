@@ -192,8 +192,6 @@ impl Cube {
             boundary = Boundary::new(  boundary.x *scale, boundary.y * scale, boundary.z * scale, periodic, )?; 
             trap_total = boundary.density_to_number(density)?;
         }
-
-
         let hole_total = h_no
             .checked_mul(trap_total)
             .ok_or_else(|| "hole count overflowed usize".to_string())?;

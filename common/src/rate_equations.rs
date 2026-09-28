@@ -449,29 +449,28 @@ where
     Some(to_hole.element_div(&total)?.map_to_precision())
 
 }
-/// Calculate the current distance-dependent retrapping factor.
+/// Calculate the distance-dependent retrapping probability.
 ///
-/// The implementation evaluates `out = prefactor * exp((r / mu)^2)`. The name is
-/// retained for compatibility, although the function returns the model
-/// reciprocal factor to be used to select a transition tau = -ln(u) * out.
-pub fn retrapping_probability_by_r <Pf, Mu, R, Frac, Sq, Exp, V> (
+/// The implementation evaluates
+/// `prefactor * exp(-(r^2 / (2 * mu^2)))`.
+pub fn retrapping_probability_by_r<Pf, Mu, R, Frac, Sq, Exponent, Exp, V>(
     prefactor: &Pf,
     mu: &Mu,
-    r: &R 
-) ->  Option<<V as PrecisionInput<TimePrecision>>::Output>
-where 
+    r: &R,
+) -> Option<<V as PrecisionInput<TimePrecision>>::Output>
+where
     R: ElementWise<Mu, Output = Frac>,
-    Frac: ElementWiseUnary<Output = Sq >,
-    Sq: ElementWiseUnary< Output = Exp >,
-    Pf: ElementWise<Exp, Output = V >,
-   
+    Frac: ElementWiseUnary<Output = Sq>,
+    Sq: ElementWise<Float, Output = Exponent>,
+    Exponent: ElementWiseUnary<Output = Exp>,
+    Pf: ElementWise<Exp, Output = V>,
     V: PrecisionInput<TimePrecision>,
-
 {
-    let frac = r.element_div(mu)?; 
+    let frac = r.element_div(mu)?;
     let sq = frac.element_powf(2);
-    let e = sq.element_exp();
-    
+    let exponent = sq.element_mul(&-0.5)?;
+    let e = exponent.element_exp();
+
     Some(prefactor.element_mul(&e)?.map_to_precision())
 }
 
@@ -1079,9 +1078,25 @@ mod tests {
 
         let actual = retrapping_probability_by_r(&prefactor, &mu, &distance)
             .expect("distance retrapping factor should calculate");
-        let expected = prefactor * ((distance / mu).powi(2)).exp();
+        let expected = prefactor * (-(distance.powi(2) / (2.0 * mu.powi(2)))).exp();
 
         assert_close(actual, expected);
+    }
+
+    #[test]
+    fn distance_retrapping_factor_supports_vector_distances() {
+        let prefactor: Float = 2.0;
+        let mu: Float = 2.0;
+        let distance: Vec<Float> = vec![0.0, 2.0, 4.0];
+
+        let actual = retrapping_probability_by_r(&prefactor, &mu, &distance)
+            .expect("vector distances should calculate");
+        let expected: Vec<Float> = distance
+            .iter()
+            .map(|r| prefactor * (-(r.powi(2) / (2.0 * mu.powi(2)))).exp())
+            .collect();
+
+        assert_vec_close(&actual, &expected);
     }
 
     #[test]

@@ -11,8 +11,11 @@
 //! Competing pathways are handled by retaining the candidate with the shortest
 //! sampled lifetime.
 
+use std::f64::consts::{PI, SQRT_2};
+
 use crate::place_ids::{PlaceId};
 use crate::numeric::{TimeFloat,Float};
+use rand_distr::Exp;
 use serde::{Deserialize, Serialize};
 use crate::rate_equation_inputs::{
     DelocalisedTransitionInputs, FillingTransitionInputs, LocalisedTransitionInputs,
@@ -31,6 +34,7 @@ use rand::{Rng, RngExt,};
 /// Physical rates must be non-negative. [`TimedCandidate::find_shortest`]
 /// recognises this value and omits the candidate from the competition.
 pub const DISABLED_RATE: TimeFloat = -1.0;
+pub const root: TimeFloat = SQRT_2*PI;
 
 /// Localised state occupied immediately before a charge-transfer event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -319,19 +323,16 @@ pub fn filling_candidate(
     filling_inputs: &FillingTransitionInputs<Float,Float,Float,Float>,
 ) -> Result<Candidate, String> {
 
-    // if filling_inputs.occupied_population == filling_inputs.total_population{
-    //    return Ok(
-    //     Candidate{ event: Event::FillingSelect, rate: DISABLED_RATE}
-    // )
-    // };
+    if filling_inputs.occupied_population == filling_inputs.total_population{
+       return Ok(
+        Candidate{ event: Event::FillingSelect, rate: DISABLED_RATE}
+    )
+    };
 
-    // let rate: Option<TimeFloat> = transitions.calculate(filling_inputs);
-    
-    let rate: TimeFloat = filling_inputs.characteristic_dose/filling_inputs.dose_rate;
-    
-    // let rate = rate
-    //                 .ok_or_else(|| "could not calculate filling rate".to_string())?;
-    
+    let rate: Option<TimeFloat> = transitions.calculate(filling_inputs);
+        
+    let rate = rate
+                    .ok_or_else(|| "could not calculate filling rate".to_string())?;
     
     Ok(
         Candidate{ event: Event::FillingSelect, rate: rate}
@@ -349,7 +350,6 @@ pub struct ReciprocalCandidate{
     pub rate: TimeFloat
 
 }
-
 /// Sample the destination time for conduction-band recombination.
 ///
 /// The distance model supplies a reciprocal rate proportional to
@@ -364,11 +364,10 @@ pub fn gaussian_kernel(
     
     let reciprocal_rate: TimeFloat = retrapping_probability_by_r(&prefactor, &mu, &distance)
             .ok_or_else(|| format!("could not calculate destination weight: {}", source.index()))?;
-    
     let rate: TimeFloat = if reciprocal_rate.is_infinite() {
-        0.0
+       10000000000.0
     } else if reciprocal_rate.is_finite() && reciprocal_rate > 0.0 {
-        reciprocal_rate.recip()
+        reciprocal_rate
     } else {
         DISABLED_RATE
     };
@@ -395,7 +394,7 @@ pub fn find_shortest_from_summed_reciprocal_rates(candidates: Vec<ReciprocalCand
      
         let u_event: TimeFloat = rng.sample(rand::distr::Open01);
         let mut target = (u_event * total_rate) as TimeFloat;
-            
+         
         for candidate in candidates {
             if candidate.rate <= 0.0 {
                 continue;
@@ -470,6 +469,7 @@ impl TimedCandidate {
             return Ok(());
         }
         let tc = TimedCandidate::rate_to_lifetime(candidate,rng)?;
+        
         if tc.time.total_cmp(&self.time).is_lt(){
             *self = tc;
             return Ok(());

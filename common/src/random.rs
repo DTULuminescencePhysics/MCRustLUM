@@ -50,6 +50,10 @@ pub fn get_std_rng_for_rep(rep: usize) -> StdRng  {
 
 }
 
+/// Draw a unit-rate exponentially distributed random value from `rng`.
+///
+/// The returned sample is suitable for inverse-rate lifetime calculations and
+/// is always finite and non-negative for a valid random-number generator.
 pub fn generatre_exponential_random(rng: &mut impl Rng) -> f64 {
     Exp1.sample(rng)
-} 
+}

@@ -69,7 +69,7 @@ pub enum InputError {
         /// Underlying filesystem error.
         source: std::io::Error,
     },
-    /// File contents were not valid TOML for [`SimulationInputs`].
+    /// File contents were not valid TOML for [`crate::inputs::SimulationInputs`].
     Parse {
         /// Path containing the invalid TOML.
         path: PathBuf,
@@ -309,4 +309,3 @@ impl Error for PlotError {
         }
     }
 }
-

@@ -78,6 +78,11 @@ pub fn new_uniform_trap_layout(
     ))
 }
 
+/// Build the delocalised and filling retrapping layout for one experiment.
+///
+/// Boolean pathway selections come directly from the simulation inputs, while
+/// experiment-dependent ratios and Gaussian length scales follow the same
+/// singleton-broadcasting rules as the trap parameters.
 pub fn new_retrapping_layout(
     inputs: &SimulationInputs,
     exp: &usize,

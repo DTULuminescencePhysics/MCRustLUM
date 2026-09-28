@@ -482,8 +482,8 @@ impl FromStr for FillingRateEquation {
 
 /// All equation selections needed to evaluate a transition configuration.
 ///
-/// `localised_recomb` is configured directly, while `localised_retrap` is
-/// derived from the ground/excited flags in [`RetrappingSelection`].
+/// `localised_recomb` and `localised_retrap` independently select the active
+/// ground and excited states for their respective pathways.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transitions {
     /// Delocalised state selection and kinetic model.

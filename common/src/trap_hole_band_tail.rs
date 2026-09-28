@@ -877,6 +877,10 @@ impl TrapParameterLayout {
 
 }
 
+/// Runtime parameters controlling destination selection after delocalisation or filling.
+///
+/// Variants encode whether conduction-band release, filling, retrapping, and
+/// Gaussian distance weighting are active for the current simulation.
 #[derive(Debug, Clone, Copy)]
 pub enum ReTrapParameterLayout{
     /// No delocalised or retrapping transitions
@@ -1018,8 +1022,14 @@ impl ReTrapParameterLayout{
         delocal_retrap: bool, fill_retrap: bool, 
         gaussian: bool, cb_hole_to_trap: Float,
         vb_trap_to_hole: Float, cb_mu: Float, vb_mu: Float) -> Self{
-            let cb_hole_to_trap = retrapping_weight(cb_hole_to_trap);
-            let vb_trap_to_hole = retrapping_weight(vb_trap_to_hole);
+            
+            let (cb_hole_to_trap,vb_trap_to_hole) = if gaussian{
+                (cb_hole_to_trap,vb_trap_to_hole)
+            }else{
+                (retrapping_weight(cb_hole_to_trap), retrapping_weight(vb_trap_to_hole))
+            };
+            
+    
 
         match (delocal, filling){
             (true,true) => {
@@ -1027,6 +1037,7 @@ impl ReTrapParameterLayout{
                     if gaussian {
                         return Self::GaussianReTrappingCBFill { cb_hole_to_trap, cb_mu, vb_trap_to_hole, vb_mu };
                     } else {
+
                         return Self::NoneGaussianReTrappingCBFill { cb_hole_to_trap, vb_trap_to_hole }
                     }
                 } else if delocal_retrap{

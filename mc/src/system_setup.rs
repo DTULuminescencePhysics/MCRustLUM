@@ -232,6 +232,83 @@ impl MonteCarloSimulation {
             },
         )  
     }
+
+    /// Run every configured experiment and repetition and return final ratios.
+    ///
+    /// The outer vector is indexed by experiment. Each inner vector contains
+    /// one final fill ratio per repetition; repetition order is unspecified.
+    pub fn run_to_final_ratio_only(&self) -> Result<Vec<Vec<Float>>, String> {
+        (0..self.experiments)
+            .into_par_iter()
+            .map(|experiment_index| {
+                let trap_available = (experiment_value(
+                    &self.inputs.initial_conditions.trap_available,
+                    experiment_index,
+                    "initial_conditions.trap_available",
+                )? * self.cube.trap_total as Float) as usize;
+
+                let hole_available = (experiment_value(
+                    &self.inputs.initial_conditions.hole_available,
+                    experiment_index,
+                    "initial_conditions.hole_available",
+                )? * self.cube.hole_total as Float) as usize;
+
+                (0..self.repetions)
+                    .into_par_iter()
+                    .map(|repetition_index| {
+                        let mut time_temperature = self.time_temperature.clone();
+                        time_temperature.reset();
+
+                        // Unique across all experiment/repetition pairs.
+                        let random_repetition =
+                            experiment_index * self.repetions + repetition_index;
+
+                        let mut experiment = MCExperiment::initialise(
+                            &self.cube,
+                            &self.inputs,
+                            &trap_available,
+                            &hole_available,
+                            time_temperature,
+                            &experiment_index,
+                            &random_repetition,
+                        )
+                        .map_err(|error| {
+                            format!(
+                                "could not initialise experiment {} of {}, repetition {} of {}: {error}",
+                                experiment_index + 1,
+                                self.experiments,
+                                repetition_index + 1,
+                                self.repetions,
+                            )
+                        })?;
+                        let mut filling_inputs = FillingTransitionInputs::get_inputs(
+                            self.inputs.filling.d0[experiment_index],
+                            self.inputs.filling.d_dot[experiment_index],
+                            trap_available,
+                            self.cube.trap_total,
+                            self.inputs.filling.dd_unit,
+                        )?;
+
+                        experiment
+                            .run_no_output_file(
+                                &self.cube,
+                                &self.transitions,
+                                &mut filling_inputs,
+                            )
+                            .map_err(|error| {
+                                format!(
+                                    "experiment {} of {}, repetition {} of {} failed: {error}",
+                                    experiment_index + 1,
+                                    self.experiments,
+                                    repetition_index + 1,
+                                    self.repetions,
+                                )
+                            })
+                    })
+                    .collect::<Result<Vec<Float>, String>>()
+            })
+            .collect::<Result<Vec<Vec<Float>>, String>>()
+    }
 }
 
 #[cfg(test)]
@@ -382,5 +459,38 @@ mod tests {
             }
         }
         fs::remove_dir(output_directory).unwrap();
+    }
+
+    #[test]
+    fn final_ratios_are_grouped_by_experiment() {
+        let mut inputs = small_inputs();
+        inputs.cube.x = 1.0;
+        inputs.cube.y = 1.0;
+        inputs.cube.z = 1.0;
+        inputs.cube.density = 1.0;
+        inputs.cube.hole_count = 1;
+        inputs.cube.bandtail_count = 0;
+        inputs.time_temperature.times = vec![0.0, 1.0];
+        inputs.time_temperature.temperatures = vec![20.0, 20.0];
+        inputs.initial_conditions.trap_available = vec![0.0, 1.0];
+        inputs.initial_conditions.hole_available = vec![0.0, 1.0];
+        inputs.localised.gs_tun = false;
+        inputs.localised.es_tun = false;
+        inputs.retrapping.localised_gs = false;
+        inputs.retrapping.localised_es = false;
+        inputs.delocalised.gs_cb = false;
+        inputs.delocalised.es_cb = false;
+        inputs.retrapping.delocalised = false;
+        inputs.filling.fill = false;
+        inputs.filling.d0 = vec![400.0, 400.0];
+        inputs.filling.d_dot = vec![1.0, 1.0];
+        inputs.retrapping.filling = false;
+
+        let simulation = MonteCarloSimulation::new(inputs, 3, 2, 1).unwrap();
+        let ratios = simulation.run_to_final_ratio_only().unwrap();
+
+        assert_eq!(ratios.len(), 2);
+        assert_eq!(ratios[0], vec![0.0; 3]);
+        assert_eq!(ratios[1], vec![1.0; 3]);
     }
 }

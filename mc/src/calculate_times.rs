@@ -835,6 +835,62 @@ pub fn run_standard(
     Ok(())
 }
 
+/// Run one standard kinetic Monte Carlo trajectory to the profile endpoint.
+///
+/// Competing exponential lifetimes are resampled after every physical event
+/// and temperature-profile boundary. Only the final fill ratio is outputted
+pub fn run_final_ratio_only(
+    places: &ElectronPlaces,
+    trap_places: &mut PlaceAvailability,
+    hole_places: &mut PlaceAvailability,
+    trap_parameters: &TrapParameterLayout,
+    retrapping_parameters: &ReTrapParameterLayout,
+    filling_inputs: &mut FillingTransitionInputs,
+    time_temperature: &mut TimeTemperature,
+    cube: &Cube,
+    transitions: &Transitions,
+    rng: &mut impl Rng,
+) -> Result<Float, String> {
+    
+    while time_temperature.current_max_dt() != 0.0 {
+        let temperature = time_temperature.current_temperature();
+        // current_max_dt is signed because geological profiles run backwards.
+        let signed_profile_dt = time_temperature.current_max_dt();
+        let max_dt = signed_profile_dt.abs();
+        let direction = signed_profile_dt.signum();
+
+        let mut next_event = TimedCandidate { event: Event::None, time: max_dt,};
+        // Contains localised, delocalised, and one aggregate filling event.
+        build_candidates(
+            places,
+            trap_places,
+            hole_places,
+            trap_parameters,
+            temperature,
+            cube,
+            filling_inputs,
+            transitions,
+            rng,
+            &mut next_event,
+        )?;
+    
+        let signed_event_dt = direction * next_event.time;
+        time_temperature.advance(signed_event_dt);
+        let applied_event = apply_event(
+                    next_event.event,
+                    places,
+                    trap_places,
+                    hole_places,
+                    retrapping_parameters,
+                    cube,
+                    rng,
+                )?;
+                
+    }
+    Ok(trap_places.fill_ratio())
+    
+}
+
 
 
 #[cfg(test)]

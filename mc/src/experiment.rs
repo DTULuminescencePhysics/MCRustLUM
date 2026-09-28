@@ -9,7 +9,7 @@
 //! Trap-family parameters may vary between experiment indices while remaining
 //! uniform across all traps within one current experiment.
 
-use crate::calculate_times::run_standard;
+use crate::calculate_times::{run_standard, run_final_ratio_only};
 use common::charge_transfer::RecordedEvent;
 use common::crystal::Cube;
 use common::numeric::Float;
@@ -241,6 +241,49 @@ impl MCExperiment {
             }
         }
     }
+
+    /// Execute this repetition but only the final ratio is stored.
+    ///
+    /// Band-tail kinetics currently return an explicit error
+    /// without creating output.
+    pub fn run_no_output_file(
+        &mut self,
+        cube: &Cube,
+        transitions: &Transitions,
+        filling_inputs: &mut FillingTransitionInputs,
+    ) -> Result<Float, String> {
+        match self {
+            Self::Standard {
+                places,
+                trap_places,
+                hole_places,
+                trap_parameters,
+                time_temperature,
+                retrapping_parameters,
+                rng
+            } => {
+                
+                run_final_ratio_only(
+                    places,
+                    trap_places,
+                    hole_places,
+                    trap_parameters,
+                    retrapping_parameters,
+                    filling_inputs,
+                    time_temperature,
+                    cube,
+                    transitions,
+                    rng,
+                )
+            }
+            Self::WithBandtail { .. } => {
+                Err("bandtail kinetic Monte Carlo runs are not implemented yet".to_string())
+            }
+        }
+    }
+
+
+
 }
 
 #[cfg(test)]

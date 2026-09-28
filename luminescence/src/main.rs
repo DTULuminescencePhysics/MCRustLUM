@@ -11,7 +11,6 @@ use std::error::Error;
 use std::ffi::OsString;
 use std::time::Instant;
 
-
 /// Prepare the requested run directory and execute the default simulation workflow.
 fn main() -> Result<(), Box<dyn Error>> {
     let folder_name = folder_name_from_arguments()?;
@@ -32,9 +31,9 @@ fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
     eprintln!("read inputs:       {:?}", start.elapsed());
 
     let start = Instant::now();
-    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 10, 1,595)?;
+    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 10, 1, 595)?;
     eprintln!("system setup:      {:?}", start.elapsed());
-    
+
     let start = Instant::now();
     monte_carlo.run()?;
     eprintln!("Monte Carlo:       {:?}", start.elapsed());
@@ -50,7 +49,12 @@ fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let event_bin = Some(1.0);
-    io::plotting::plot_default_results("average_fill.csv", "average_event.csv", ".", event_bin)?;
+    io::plotting::plot_default_results(
+        "average_fill_0.csv",
+        "average_event_0.csv",
+        ".",
+        event_bin,
+    )?;
     eprintln!("plotting:          {:?}", start.elapsed());
     eprintln!("total:             {:?}", total_start.elapsed());
 

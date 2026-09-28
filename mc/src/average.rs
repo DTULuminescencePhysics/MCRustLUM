@@ -17,16 +17,17 @@ use io::outputs::{
     write_continuous_values_csv,
 };
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::vec::IntoIter;
 
 /// Default directory containing per-repetition compressed trajectories.
 const TEMPORARY_DIRECTORY: &str = "tmp";
-/// Default destination for ensemble fill statistics.
-const AVERAGE_FILL_FILE: &str = "average_fill.csv";
-/// Default destination for ensemble event frequencies.
-const AVERAGE_EVENT_FILE: &str = "average_event.csv";
+/// Prefix used for per-experiment ensemble fill statistics.
+const AVERAGE_FILL_PREFIX: &str = "average_fill";
+/// Prefix used for per-experiment ensemble event frequencies.
+const AVERAGE_EVENT_PREFIX: &str = "average_event";
 /// Width of event-count bins in seconds.
 const EVENT_BIN_WIDTH: TimeFloat = 0.1;
 
@@ -492,11 +493,11 @@ impl EventBin {
                 self.retrapping_count += 1;
             }
 
-            Event::FillingStandard { .. } 
-            | Event::FillingLoss{ .. }
-            | Event::FillingHoleOnly { .. } 
+            Event::FillingStandard { .. }
+            | Event::FillingLoss { .. }
+            | Event::FillingHoleOnly { .. }
             | Event::FillingTrapOnly { .. } => self.filling_count += 1,
-            
+
             Event::None => {}
             _ => {}
         }
@@ -578,15 +579,15 @@ fn validate_record(path: &Path, record: &RecordedEvent) -> Result<(), String> {
     Ok(())
 }
 
-/// Discover and sort all per-repetition result files in a temporary directory.
-fn temporary_result_paths(directory: &Path) -> Result<Vec<PathBuf>, String> {
+/// Discover result files and group them by experiment index.
+fn temporary_result_paths(directory: &Path) -> Result<BTreeMap<usize, Vec<PathBuf>>, String> {
     let entries = fs::read_dir(directory).map_err(|error| {
         format!(
             "failed to read temporary result directory {}: {error}",
             directory.display()
         )
     })?;
-    let mut paths = Vec::new();
+    let mut paths_by_experiment = BTreeMap::<usize, Vec<(usize, PathBuf)>>::new();
 
     for entry in entries {
         let entry = entry.map_err(|error| {
@@ -599,59 +600,71 @@ fn temporary_result_paths(directory: &Path) -> Result<Vec<PathBuf>, String> {
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        if path.is_file() && name.starts_with("experiment_results_") && name.ends_with(".bin.gz") {
-            paths.push(path);
+        if !path.is_file() {
+            continue;
         }
+        let Some(indices) = name
+            .strip_prefix("experiment_results_")
+            .and_then(|name| name.strip_suffix(".bin.gz"))
+        else {
+            continue;
+        };
+        let (experiment_index, repetition_index) = indices.split_once('_').ok_or_else(|| {
+            format!(
+                "temporary result file {} does not contain experiment and repetition indices",
+                path.display()
+            )
+        })?;
+        let experiment_index = experiment_index.parse::<usize>().map_err(|error| {
+            format!(
+                "temporary result file {} has an invalid experiment index: {error}",
+                path.display()
+            )
+        })?;
+        let repetition_index = repetition_index.parse::<usize>().map_err(|error| {
+            format!(
+                "temporary result file {} has an invalid repetition index: {error}",
+                path.display()
+            )
+        })?;
+        paths_by_experiment
+            .entry(experiment_index)
+            .or_default()
+            .push((repetition_index, path));
     }
 
-    paths.sort();
-    if paths.is_empty() {
+    if paths_by_experiment.is_empty() {
         return Err(format!(
             "no Monte Carlo temporary result files were found in {}",
             directory.display()
         ));
     }
-    Ok(paths)
+
+    Ok(paths_by_experiment
+        .into_iter()
+        .map(|(experiment_index, mut paths)| {
+            paths.sort_by_key(|(repetition_index, _)| *repetition_index);
+            (
+                experiment_index,
+                paths.into_iter().map(|(_, path)| path).collect(),
+            )
+        })
+        .collect())
 }
 
-/// Average the continuous fill trajectories in `tmp/` and write
-/// `average_fill.csv` in the current experiment directory.
-pub fn average_fill() -> Result<(), String> {
-    average_fill_in(TEMPORARY_DIRECTORY, AVERAGE_FILL_FILE)
+/// Construct a per-experiment CSV path in the requested output directory.
+fn average_output_path(directory: &Path, prefix: &str, experiment_index: usize) -> PathBuf {
+    directory.join(format!("{prefix}_{experiment_index}.csv"))
 }
 
-/// Average temporary trajectories from `temporary_directory` into
-/// `output_file`.
-///
-/// Output times are the union of all repetition timestamps. A repetition with
-/// no event at a particular union time contributes its most recently observed
-/// fill, reflecting piecewise-constant occupancy between events.
-pub fn average_fill_in(
-    temporary_directory: impl AsRef<Path>,
-    output_file: impl AsRef<Path>,
-) -> Result<(), String> {
-    let paths = temporary_result_paths(temporary_directory.as_ref())?;
+/// Average one experiment's continuous fill trajectories into one CSV file.
+fn average_fill_paths(paths: Vec<PathBuf>, output_file: &Path) -> Result<(), String> {
     let rows = AverageFillRows::new(paths)?;
     write_continuous_values_csv(output_file, rows).map_err(|error| error.to_string())
 }
 
-/// Average event counts from `tmp/` into fixed-width bins and write
-/// `average_event.csv` in the current experiment directory.
-pub fn average_events() -> Result<(), String> {
-    average_events_in(TEMPORARY_DIRECTORY, AVERAGE_EVENT_FILE)
-}
-
-/// Average temporary event trajectories from `temporary_directory` into
-/// `output_file`.
-///
-/// Events are placed in `EVENT_BIN_WIDTH`-second bins. Counts are divided by
-/// the number of input trajectories. The plotting layer divides these averaged
-/// bin counts by the applicable bin width to produce observed frequencies.
-pub fn average_events_in(
-    temporary_directory: impl AsRef<Path>,
-    output_file: impl AsRef<Path>,
-) -> Result<(), String> {
-    let paths = temporary_result_paths(temporary_directory.as_ref())?;
+/// Average one experiment's event trajectories into one CSV file.
+fn average_event_paths(paths: Vec<PathBuf>, output_file: &Path) -> Result<(), String> {
     let repetition_count = paths.len();
     let mut bins = Vec::<EventBin>::new();
 
@@ -697,6 +710,60 @@ pub fn average_events_in(
         .chain(bins.into_iter().map(|bin| bin.averaged(repetition_count)))
         .map(Ok::<_, std::convert::Infallible>);
     write_average_events_csv(output_file, rows).map_err(|error| error.to_string())
+}
+
+/// Average the continuous fill trajectories in `tmp/` and write one
+/// `average_fill_<experiment>.csv` file per experiment.
+pub fn average_fill() -> Result<(), String> {
+    average_fill_in(TEMPORARY_DIRECTORY, ".")
+}
+
+/// Average temporary trajectories from `temporary_directory` into one CSV per
+/// experiment in `output_directory`.
+///
+/// Output times are the union of all repetition timestamps. A repetition with
+/// no event at a particular union time contributes its most recently observed
+/// fill, reflecting piecewise-constant occupancy between events.
+pub fn average_fill_in(
+    temporary_directory: impl AsRef<Path>,
+    output_directory: impl AsRef<Path>,
+) -> Result<(), String> {
+    for (experiment_index, paths) in temporary_result_paths(temporary_directory.as_ref())? {
+        let output_file = average_output_path(
+            output_directory.as_ref(),
+            AVERAGE_FILL_PREFIX,
+            experiment_index,
+        );
+        average_fill_paths(paths, &output_file)?;
+    }
+    Ok(())
+}
+
+/// Average event counts from `tmp/` into fixed-width bins and write one
+/// `average_event_<experiment>.csv` file per experiment.
+pub fn average_events() -> Result<(), String> {
+    average_events_in(TEMPORARY_DIRECTORY, ".")
+}
+
+/// Average temporary event trajectories from `temporary_directory` into one
+/// CSV per experiment in `output_directory`.
+///
+/// Events are placed in `EVENT_BIN_WIDTH`-second bins. Counts are divided by
+/// the number of input trajectories. The plotting layer divides these averaged
+/// bin counts by the applicable bin width to produce observed frequencies.
+pub fn average_events_in(
+    temporary_directory: impl AsRef<Path>,
+    output_directory: impl AsRef<Path>,
+) -> Result<(), String> {
+    for (experiment_index, paths) in temporary_result_paths(temporary_directory.as_ref())? {
+        let output_file = average_output_path(
+            output_directory.as_ref(),
+            AVERAGE_EVENT_PREFIX,
+            experiment_index,
+        );
+        average_event_paths(paths, &output_file)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -757,7 +824,7 @@ mod tests {
     fn unions_times_and_carries_each_fill_forward_before_averaging() {
         let directory = temporary_directory();
         let temporary_directory = directory.join("tmp");
-        let output_file = directory.join("average_fill.csv");
+        let output_file = directory.join("average_fill_0.csv");
         fs::create_dir(&temporary_directory).unwrap();
 
         write_records(
@@ -778,7 +845,7 @@ mod tests {
             ],
         );
 
-        average_fill_in(&temporary_directory, &output_file).unwrap();
+        average_fill_in(&temporary_directory, &directory).unwrap();
         let contents = fs::read_to_string(&output_file).unwrap();
         fs::remove_dir_all(directory).unwrap();
 
@@ -815,7 +882,7 @@ mod tests {
     fn preserves_reverse_simulation_order() {
         let directory = temporary_directory();
         let temporary_directory = directory.join("tmp");
-        let output_file = directory.join("average_fill.csv");
+        let output_file = directory.join("average_fill_0.csv");
         fs::create_dir(&temporary_directory).unwrap();
 
         write_records(
@@ -836,7 +903,7 @@ mod tests {
             ],
         );
 
-        average_fill_in(&temporary_directory, &output_file).unwrap();
+        average_fill_in(&temporary_directory, &directory).unwrap();
         let times = fs::read_to_string(&output_file)
             .unwrap()
             .lines()
@@ -858,7 +925,7 @@ mod tests {
     fn bins_events_and_averages_counts_over_repetitions() {
         let directory = temporary_directory();
         let temporary_directory = directory.join("tmp");
-        let output_file = directory.join("average_event.csv");
+        let output_file = directory.join("average_event_0.csv");
         fs::create_dir(&temporary_directory).unwrap();
         let place = PlaceId::new(0).unwrap();
 
@@ -924,7 +991,7 @@ mod tests {
             ],
         );
 
-        average_events_in(&temporary_directory, &output_file).unwrap();
+        average_events_in(&temporary_directory, &directory).unwrap();
         let contents = fs::read_to_string(&output_file).unwrap();
         fs::remove_dir_all(directory).unwrap();
         let rows = contents
@@ -943,5 +1010,79 @@ mod tests {
         assert_eq!(rows[1][10], "0.5");
         assert_eq!(rows[1][11], "2.5");
         assert_eq!(rows[1][13], "0.5");
+    }
+
+    #[test]
+    fn separates_fill_and_event_outputs_by_experiment() {
+        let directory = temporary_directory();
+        let temporary_directory = directory.join("tmp");
+        fs::create_dir(&temporary_directory).unwrap();
+        let place = PlaceId::new(0).unwrap();
+
+        for repetition_index in 0..2 {
+            write_records(
+                &temporary_directory
+                    .join(format!("experiment_results_0_{repetition_index}.bin.gz")),
+                &[
+                    event_record(0.0, Event::None),
+                    RecordedEvent {
+                        time: 0.05,
+                        temperature: 300.0,
+                        fill: 0.2,
+                        event: Event::FillingStandard {
+                            trap: place,
+                            hole: place,
+                        },
+                    },
+                ],
+            );
+            write_records(
+                &temporary_directory
+                    .join(format!("experiment_results_1_{repetition_index}.bin.gz")),
+                &[
+                    event_record(0.0, Event::None),
+                    RecordedEvent {
+                        time: 0.05,
+                        temperature: 300.0,
+                        fill: 0.8,
+                        event: Event::None,
+                    },
+                ],
+            );
+        }
+
+        average_fill_in(&temporary_directory, &directory).unwrap();
+        average_events_in(&temporary_directory, &directory).unwrap();
+
+        let last_fill = |experiment_index| {
+            fs::read_to_string(directory.join(format!("average_fill_{experiment_index}.csv")))
+                .unwrap()
+                .lines()
+                .last()
+                .unwrap()
+                .split(',')
+                .nth(2)
+                .unwrap()
+                .parse::<Float>()
+                .unwrap()
+        };
+        let filling_count = |experiment_index| {
+            fs::read_to_string(directory.join(format!("average_event_{experiment_index}.csv")))
+                .unwrap()
+                .lines()
+                .last()
+                .unwrap()
+                .split(',')
+                .nth(13)
+                .unwrap()
+                .parse::<Float>()
+                .unwrap()
+        };
+
+        assert_eq!(last_fill(0), 0.2);
+        assert_eq!(last_fill(1), 0.8);
+        assert_eq!(filling_count(0), 1.0);
+        assert_eq!(filling_count(1), 0.0);
+        fs::remove_dir_all(directory).unwrap();
     }
 }

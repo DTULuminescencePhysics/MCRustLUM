@@ -19,6 +19,7 @@
 //! individual values or complete containers between them.
 
 use ndarray::{Array, Array1, ArrayBase, ArrayD, Data, Dimension, Zip};
+use rand::distr::uniform::SampleUniform;
 use rand::{Rng, RngExt};
 use std::ops::{Add, Div, Mul, Sub};
 
@@ -34,13 +35,29 @@ pub type TimeFloat = f64;
 /// This trait allows coordinates and model inputs to be supplied as common
 /// integer or floating-point types. Conversion is explicit so calculations
 /// can consistently target either [`Float`] or [`TimeFloat`].
-pub trait Numeric: Copy + Clone + PartialOrd + std::fmt::Debug {
+pub trait Numeric: Copy + Clone + PartialEq + PartialOrd + SampleUniform + std::fmt::Debug {
     /// Convert this value to the normal simulation precision.
     fn to_float(self) -> Float;
     /// Convert this value to the precision used for time and rates.
     fn to_time_float(self) -> TimeFloat;
     /// Return the additive identity for this numeric type.
     fn zero() -> Self;
+    /// Return whether this value is finite.
+    fn is_finite(self) -> bool {
+        self.to_float().is_finite()
+    }
+    /// Return the smaller of two values.
+    fn min(self, other: Self) -> Self {
+        if self <= other { self } else { other }
+    }
+    /// Return the larger of two values.
+    fn max(self, other: Self) -> Self {
+        if self >= other { self } else { other }
+    }
+    /// Generate a value in the inclusive range `low..=high`.
+    fn random_range(low: Self, high: Self, rng: &mut impl Rng) -> Self {
+        rng.random_range(low..=high)
+    }
     /// Generate a value in the inclusive range `0..=max`.
     fn random_in(max: Self, rng: &mut impl Rng) -> Float;
 }

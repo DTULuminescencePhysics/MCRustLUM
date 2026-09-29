@@ -120,6 +120,30 @@ fn create_experiment_directory(
             source,
         });
     }
+    let chron_source_input = starting_directory.join("chron_input.toml");
+    let input_metadata =
+        fs::metadata(&source_input).map_err(operation_error("read chronology input file", &chron_source_input))?;
+    if !input_metadata.is_file() {
+        return Err(FilesystemError::Operation {
+            action: "read input file",
+            path: chron_source_input,
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "chron_input.toml is not a regular file",
+            ),
+        });
+    }
+    let destination_input = experiment_directory.join("chron_input.toml");
+    if let Err(source) = fs::copy(&chron_source_input, &destination_input) {
+        let _ = fs::remove_dir(&temporary_directory);
+        let _ = fs::remove_dir(&experiment_directory);
+        return Err(FilesystemError::Operation {
+            action: "copy chronology input file to",
+            path: destination_input,
+            source,
+        });
+    }
+
 
     Ok(experiment_directory)
 }

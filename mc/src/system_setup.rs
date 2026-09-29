@@ -32,8 +32,8 @@ pub struct MonteCarloSimulation {
     pub transitions: Transitions,
     /// Number of independent stochastic repetitions performed per experiment.
     ///
-    /// The field name preserves the crate's existing `repetions` spelling.
-    pub repetions: usize,
+    /// The field name preserves the crate's existing `repetitions` spelling.
+    pub repetitions: usize,
     /// Number of independent experiments to run.
     pub experiments: usize,
 }
@@ -49,17 +49,17 @@ impl MonteCarloSimulation {
     ///     1,
     ///     100,
     /// )?;
-    /// assert_eq!(simulation.repetions, 10);
+    /// assert_eq!(simulation.repetitions, 10);
     /// # Ok(())
     /// # }
     /// ```
     pub fn new(
         inputs: SimulationInputs,
-        repetions: usize,
+        repetitions: usize,
         experiments: usize,
-        minimum_t:usize,
+        minimum_traps:usize,
     ) -> Result<Self, String> {
-        let cube = MonteCarloSimulation::generate_cube(&inputs.cube, minimum_t)?;
+        let cube = MonteCarloSimulation::generate_cube(&inputs.cube, minimum_traps)?;
         let time_temperature =
             MonteCarloSimulation::generate_time_temperature(&inputs.time_temperature)?;
         let transitions = MonteCarloSimulation::generate_transitions(&inputs)?;
@@ -69,7 +69,7 @@ impl MonteCarloSimulation {
             cube,
             time_temperature,
             transitions,
-            repetions,
+            repetitions,
             experiments,
         })
     }
@@ -78,9 +78,9 @@ impl MonteCarloSimulation {
     ///
     /// The trap count is derived from the configured density and volume. Hole
     /// and bandtail counts are interpreted as ratios per trap. If this would
-    /// create fewer than `minimum_t` traps, the volume is enlarged isotropically
+    /// create fewer than `minimum_traps` traps, the volume is enlarged isotropically
     /// while preserving the requested density.
-    pub fn generate_cube(inputs: &CubeSpecification,  minimum_t:usize,) -> Result<Cube, String> {
+    pub fn generate_cube(inputs: &CubeSpecification,  minimum_traps:usize,) -> Result<Cube, String> {
         Cube::new_from_density(
             inputs.x,
             inputs.y,
@@ -89,7 +89,7 @@ impl MonteCarloSimulation {
             inputs.hole_count,
             inputs.bandtail_count,
             inputs.periodic,
-            minimum_t,
+            minimum_traps,
         )
     }
     /// Validate and generate the piecewise-linear time/temperature profile.
@@ -157,7 +157,7 @@ impl MonteCarloSimulation {
                 )? * self.cube.hole_total as Float
             ) as usize;
 
-            Ok((0..self.repetions)
+            Ok((0..self.repetitions)
                 .map(|repetition_index| {
                     (
                         experiment_index,
@@ -185,7 +185,7 @@ impl MonteCarloSimulation {
 
             // Unique across all experiment/repetition pairs.
             let random_repetition =
-                experiment_index * self.repetions + repetition_index;
+                experiment_index * self.repetitions + repetition_index;
 
             let mut experiment = MCExperiment::initialise(
                     &self.cube,
@@ -202,7 +202,7 @@ impl MonteCarloSimulation {
                         experiment_index + 1,
                         self.experiments,
                         repetition_index + 1,
-                        self.repetions,
+                        self.repetitions,
                     )
                 })?;
             let mut filling_inputs = FillingTransitionInputs::get_inputs(
@@ -226,7 +226,7 @@ impl MonteCarloSimulation {
                         experiment_index + 1,
                         self.experiments,
                         repetition_index + 1,
-                        self.repetions,
+                        self.repetitions,
                     )
                 })
             },
@@ -237,7 +237,7 @@ impl MonteCarloSimulation {
     ///
     /// The outer vector is indexed by experiment. Each inner vector contains
     /// one final fill ratio per repetition; repetition order is unspecified.
-    pub fn run_to_final_ratio_only(&self) -> Result<Vec<Vec<Float>>, String> {
+    pub fn run_to_final_ratio_only(&self, tt_profile: TimeTemperature) -> Result<Vec<Vec<Float>>, String> {
         (0..self.experiments)
             .into_par_iter()
             .map(|experiment_index| {
@@ -253,15 +253,16 @@ impl MonteCarloSimulation {
                     "initial_conditions.hole_available",
                 )? * self.cube.hole_total as Float) as usize;
 
-                (0..self.repetions)
+                (0..self.repetitions)
                     .into_par_iter()
                     .map(|repetition_index| {
-                        let mut time_temperature = self.time_temperature.clone();
+                        
+                        let mut time_temperature = tt_profile.clone();
                         time_temperature.reset();
 
                         // Unique across all experiment/repetition pairs.
                         let random_repetition =
-                            experiment_index * self.repetions + repetition_index;
+                            experiment_index * self.repetitions + repetition_index;
 
                         let mut experiment = MCExperiment::initialise(
                             &self.cube,
@@ -278,7 +279,7 @@ impl MonteCarloSimulation {
                                 experiment_index + 1,
                                 self.experiments,
                                 repetition_index + 1,
-                                self.repetions,
+                                self.repetitions,
                             )
                         })?;
                         let mut filling_inputs = FillingTransitionInputs::get_inputs(
@@ -301,7 +302,7 @@ impl MonteCarloSimulation {
                                     experiment_index + 1,
                                     self.experiments,
                                     repetition_index + 1,
-                                    self.repetions,
+                                    self.repetitions,
                                 )
                             })
                     })
@@ -355,7 +356,7 @@ mod tests {
         let simulation = MonteCarloSimulation::new(small_inputs(), 12, 3,3)
             .expect("valid grouped inputs should build a simulation");
 
-        assert_eq!(simulation.repetions, 12);
+        assert_eq!(simulation.repetitions, 12);
         assert_eq!(simulation.experiments, 3);
         assert_eq!(simulation.cube.trap_total, 3);
         assert_eq!(simulation.cube.hole_total, 6);

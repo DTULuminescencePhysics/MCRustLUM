@@ -135,7 +135,7 @@ pub mod time{
     /// Seconds in one million Julian years.
     const MA_ANNUM: u64 = 31_556_952_000_000;
 
-    #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+    #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
     /// Unit used for time values supplied to the simulation.
     ///
@@ -189,6 +189,16 @@ pub mod time{
             formatter.write_str(name)
         }
     }
+    impl TimeUnit{
+        /// Checks if the time unit is Ka or Ma and so ordering is reversed
+        pub fn is_ka_or_ma(&self) -> bool {
+            match self {
+                TimeUnit::KAnnum  => true,
+                TimeUnit::MaAnnum  => true,
+                _ => false,
+            }
+        }
+    }
     
     #[derive(Debug, Clone, Copy)]
     /// Integer seconds represented without overflowing the smaller time units.
@@ -222,14 +232,7 @@ pub mod time{
         }
        
     }
-    /// Return whether `unit` represents a geological age.
-    pub fn is_ka_or_ma(unit: TimeUnit) -> bool {
-        match unit {
-            TimeUnit::KAnnum  => true,
-            TimeUnit::MaAnnum  => true,
-            _ => false,
-        }
-    }
+
     /// Convert a scalar or supported container to seconds at time precision.
     ///
     /// The same function accepts scalar and vector values:
@@ -254,7 +257,7 @@ pub mod time{
 /// Temperature-unit conversion at the program's configured precision.
 pub mod temperature {
     use std::{fmt, str::FromStr};        use crate::numeric::{ElementWise, Float, PrecisionInput, ProgramPrecision,};
-    #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+    #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
     /// Unit used for temperature values supplied to the simulation.
     pub enum TemperatureUnit {
@@ -336,7 +339,7 @@ pub mod temperature {
 #[cfg(test)]
 mod tests {
     use super::temperature::{TemperatureUnit, convert_to_celsius, convert_to_kelvin};
-    use super::time::{TimeMultiplier, TimeUnit, convert_to_seconds, is_ka_or_ma, unit_multiplier};
+    use super::time::{TimeMultiplier, TimeUnit, convert_to_seconds, unit_multiplier};
     use crate::numeric::Float;
 
     #[test]
@@ -405,9 +408,9 @@ mod tests {
             unit_multiplier(TimeUnit::KAnnum),
             Some(TimeMultiplier::U64(31_556_952_000)),
         ));
-        assert!(!is_ka_or_ma(TimeUnit::Year));
-        assert!(is_ka_or_ma(TimeUnit::KAnnum));
-        assert!(is_ka_or_ma(TimeUnit::MaAnnum));
+        assert!(!(TimeUnit::Year.is_ka_or_ma()));
+        assert!((TimeUnit::KAnnum.is_ka_or_ma()));
+        assert!((TimeUnit::MaAnnum.is_ka_or_ma()));
 
         assert_eq!(
             convert_to_seconds(TimeUnit::Day, vec![0_i32, 1, 2]),

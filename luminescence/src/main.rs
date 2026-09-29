@@ -16,7 +16,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let folder_name = folder_name_from_arguments()?;
     io::filesystem::prepare_experiment_directory(folder_name.as_deref())?;
     common::random::set_seed(0);
-    monte_carlo_run()
+    // monte_carlo_run()
+    thermo_chronology_run()
 }
 
 /// Load the copied input, run all repetitions, and consolidate their outputs.
@@ -60,6 +61,14 @@ fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+fn thermo_chronology_run()-> Result<(), Box<dyn Error>> {
+    let mc_inputs = io::inputs::read_inputs("input.toml")?;
+    let chron_inputs = io::chrono_inputs::read_chrono_inputs("chron_input.toml")?;
+    Ok(())
+}
+
+
+
 
 /// Parse the optional single experiment-directory name from command-line arguments.
 fn folder_name_from_arguments() -> Result<Option<OsString>, Box<dyn Error>> {

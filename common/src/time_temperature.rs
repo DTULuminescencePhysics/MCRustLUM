@@ -389,7 +389,7 @@ impl TimeTemperature {
             .ok_or_else(|| format!("unknown time unit: {}", unit))?;
 
        
-        let time_advance = if time::is_ka_or_ma(unit) {
+        let time_advance = if unit.is_ka_or_ma() {
             Self::fix_duplicate_times(&mut times, -1.0);
             let end = *times
                 .first()

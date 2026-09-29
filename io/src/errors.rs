@@ -69,7 +69,8 @@ pub enum InputError {
         /// Underlying filesystem error.
         source: std::io::Error,
     },
-    /// File contents were not valid TOML for [`crate::inputs::SimulationInputs`].
+    /// File contents were not valid TOML for [`crate::inputs::SimulationInputs`]
+    /// or for [`crate::chrono_inputs::ChronologyInputs`].
     Parse {
         /// Path containing the invalid TOML.
         path: PathBuf,
@@ -135,6 +136,15 @@ pub enum OutputError {
         /// Bincode deserialization error.
         source: Box<bincode::ErrorKind>,
     },
+    Invalid {
+        /// File attempting to be written to.
+        path: PathBuf,
+        /// Bincode serialization or output error.
+        source: Box<bincode::ErrorKind>,
+        /// Human-readable filesystem operation being attempted.
+        action: &'static str,
+    }
+
 }
 
 impl fmt::Display for OutputError {
@@ -157,13 +167,18 @@ impl fmt::Display for OutputError {
             ),
             Self::Read { path, source } => {
                 write!(formatter, "failed to read {}: {source}", path.display())
-            }
+            },
             Self::Decode { path, source } => {
                 write!(
                     formatter,
                     "failed to decode batch from {}: {source}",
                     path.display()
                 )
+            },
+            Self::Invalid { path, source, action } => {
+                write!(formatter, 
+                        "Error message: {action}. So failed to write batch to {}: {source}",path.display(), 
+                     )
             }
         }
     }
@@ -172,10 +187,16 @@ impl fmt::Display for OutputError {
 impl Error for OutputError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Open { source, .. } | Self::Finish { source, .. } | Self::Read { source, .. } => {
+            Self::Open { source, .. } 
+            | Self::Finish { source, .. } 
+            | Self::Read { source, .. } 
+            =>
+            {
                 Some(source)
             }
-            Self::Write { source, .. } | Self::Decode { source, .. } => Some(source.as_ref()),
+            Self::Write { source, .. } 
+            | Self::Decode { source, .. } 
+            | Self::Invalid {source, ..}=> Some(source.as_ref()),
         }
     }
 }

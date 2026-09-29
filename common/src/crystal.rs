@@ -172,7 +172,7 @@ impl Cube {
     /// Create a cube whose site counts are derived from trap density.
     ///
     /// `h_no` and `b_no` are counts per trap, not absolute counts.
-    /// If the requested volume contains fewer than `minimum_t` traps, every
+    /// If the requested volume contains fewer than `minimum_traps` traps, every
     /// dimension is scaled equally to preserve shape and density while making
     /// the simulated ensemble large enough for Monte Carlo sampling.
     pub fn new_from_density<X: Numeric, Y: Numeric, Z: Numeric>(
@@ -183,12 +183,12 @@ impl Cube {
         h_no: usize,
         b_no: usize,
         periodic: bool,
-        minimum_t: usize
+        minimum_traps: usize
     ) -> Result<Self, String> {
         let mut boundary = Boundary::new(x, y, z, periodic)?;
         let mut trap_total = boundary.density_to_number(density)?;
-        if trap_total < minimum_t {
-            let scale = (minimum_t as Float / trap_total as Float).cbrt();
+        if trap_total < minimum_traps {
+            let scale = (minimum_traps as Float / trap_total as Float).cbrt();
             boundary = Boundary::new(  boundary.x *scale, boundary.y * scale, boundary.z * scale, periodic, )?; 
             trap_total = boundary.density_to_number(density)?;
         }

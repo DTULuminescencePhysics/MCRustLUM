@@ -1,12 +1,12 @@
 [package]
-name = "luminescence"
+name = "chronology"
 version = "0.1.0"
 edition = "2024"
 license.workspace = true
 
-
 [dependencies]
 common = { path = "../common" }
+io = { path = "../io" }
 mc = { path = "../mc" }
-io = { path = "../io"}
-chronology = { path = "../chronology"}
+rand = "0.10.0"
+serde = { version = "1", features = ["derive"] }

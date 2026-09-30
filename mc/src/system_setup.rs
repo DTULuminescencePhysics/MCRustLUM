@@ -237,7 +237,7 @@ impl MonteCarloSimulation {
     ///
     /// The outer vector is indexed by experiment. Each inner vector contains
     /// one final fill ratio per repetition; repetition order is unspecified.
-    pub fn run_to_final_ratio_only(&self, tt_profile: TimeTemperature) -> Result<Vec<Vec<Float>>, String> {
+    pub fn run_to_final_ratio_only(&self, tt_profile: TimeTemperature, trial_num:usize) -> Result<Vec<Vec<Float>>, String> {
         (0..self.experiments)
             .into_par_iter()
             .map(|experiment_index| {
@@ -261,7 +261,8 @@ impl MonteCarloSimulation {
                         time_temperature.reset();
 
                         // Unique across all experiment/repetition pairs.
-                        let random_repetition =
+                        let random_repetition = 
+                            (trial_num*(self.experiments*self.repetitions))+
                             experiment_index * self.repetitions + repetition_index;
 
                         let mut experiment = MCExperiment::initialise(
@@ -315,6 +316,8 @@ impl MonteCarloSimulation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common::constants::time::TimeUnit;
+    use common::constants::temperature::TemperatureUnit;
     use common::charge_transfer::{Event, RecordedEvent};
     use common::rate_equation_selection::{
         DelocalisedRateEquation, DelocalisedRateEquationType, FillingRateEquation,
@@ -488,7 +491,10 @@ mod tests {
         inputs.retrapping.filling = false;
 
         let simulation = MonteCarloSimulation::new(inputs, 3, 2, 1).unwrap();
-        let ratios = simulation.run_to_final_ratio_only().unwrap();
+        let tt_profile = TimeTemperature::new(
+            vec![0.0, 1.0], 
+            vec![20.0, 20.0], TimeUnit::Second, TemperatureUnit::Kelvin).unwrap();
+        let ratios = simulation.run_to_final_ratio_only(tt_profile,1).unwrap();
 
         assert_eq!(ratios.len(), 2);
         assert_eq!(ratios[0], vec![0.0; 3]);

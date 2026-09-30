@@ -9,12 +9,12 @@
 //! value per experiment; the Monte Carlo setup validates that indexing when a
 //! run is constructed.
 
-use common::constants::time::TimeUnit;
-use common::constants::temperature::TemperatureUnit;
-use common::numeric::{Float, TimeFloat};
-use std::path::Path;
 use crate::errors::InputError;
+use common::constants::temperature::TemperatureUnit;
+use common::constants::time::TimeUnit;
+use common::numeric::{Float, TimeFloat};
 use std::fs::read_to_string;
+use std::path::Path;
 
 /// Geometry, site density, and boundary settings used to construct a cube.
 ///
@@ -116,9 +116,9 @@ pub struct TrapEnergies {
     /// yet sample an energy distribution from it.
     pub e_cb_sigma: Vec<Float>,
     /// Attempt frequency for thermal excitation from ground to excited state, in s⁻¹.
-    pub s_frequency_e: Vec<Float>, 
+    pub s_frequency_e: Vec<Float>,
     /// Relaxation frequency from excited to ground state, in s⁻¹.
-    pub s_frequency_g: Vec<Float>, 
+    pub s_frequency_g: Vec<Float>,
 }
 
 impl Default for TrapEnergies {
@@ -141,7 +141,6 @@ pub struct InitialConditions {
     pub trap_available: Vec<Float>,
     /// Initial active-hole fraction, expressed from `0.0` through `1.0`.
     pub hole_available: Vec<Float>,
-    
 }
 
 impl Default for InitialConditions {
@@ -241,33 +240,32 @@ impl Default for FillingInputs {
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 #[serde(default)]
 pub struct ReTrapping {
-
     /// Enable retrapping for electrons in the conduction band
-    pub delocalised: bool, 
+    pub delocalised: bool,
     /// Enable ground-state localised retrapping.
     pub localised_gs: bool,
     /// Enable excited-state localised retrapping.
     pub localised_es: bool,
     /// Enable retrapping for electrons freed by the filling process
-    pub filling:bool, 
+    pub filling: bool,
     /// Use the gaussian kernel for retrapping
-    pub gaussian:bool,
-    /// Once an electron is promoted to the conduction band what is the 
+    pub gaussian: bool,
+    /// Once an electron is promoted to the conduction band what is the
     /// preference of choosing a hole over a trap
-    /// 0.0 means a trap is always chosen, 1.0 means an equal likelihood 
+    /// 0.0 means a trap is always chosen, 1.0 means an equal likelihood
     pub cb_hole_to_trap: Vec<Float>,
-    /// When a hole is produced in the valence band what is the 
+    /// When a hole is produced in the valence band what is the
     /// preference of choosing to annihilate a trapped electron over localising the hole
-    /// 0.0 means a hole is always chosen, 1.0 means an equal likelihood 
+    /// 0.0 means a hole is always chosen, 1.0 means an equal likelihood
     pub vb_trap_to_hole: Vec<Float>,
     /// Characteristic length in the distance-dependent conduction-band capture model.
     /// Values use the same length unit as the generated site coordinates.
-    /// If gaussian retrapping is turned on mu_cb controls the distance the electron can travel in 
+    /// If gaussian retrapping is turned on mu_cb controls the distance the electron can travel in
     /// the conduction band  
-    pub cb_mu: Vec<Float>, 
-    /// If gaussian retrapping is turned on mu_vb controls the distance the hole can travel in 
+    pub cb_mu: Vec<Float>,
+    /// If gaussian retrapping is turned on mu_vb controls the distance the hole can travel in
     /// the valence band  
-    pub vb_mu: Vec<Float>, 
+    pub vb_mu: Vec<Float>,
 }
 
 impl Default for ReTrapping {
@@ -285,7 +283,6 @@ impl Default for ReTrapping {
         }
     }
 }
-
 
 /// All input groups required to configure a simulation.
 ///
@@ -349,8 +346,7 @@ impl Default for SimulationInputs {
 /// ```
 pub fn read_inputs(path: impl AsRef<Path>) -> Result<SimulationInputs, InputError> {
     let path = path.as_ref();
-    let contents = read_to_string(path)
-    .map_err(|source| InputError::Read {
+    let contents = read_to_string(path).map_err(|source| InputError::Read {
         path: path.to_path_buf(),
         source,
     })?;
@@ -372,16 +368,12 @@ pub fn default_inputs() -> SimulationInputs {
     SimulationInputs::default()
 }
 
-
-
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::error::Error;
     use std::fs;
     use std::path::PathBuf;
-    use std::error::Error;
 
     #[test]
     fn input_defaults_match_standard_configuration() {
@@ -477,10 +469,9 @@ mod tests {
                 vb_mu: vec![0.1],
             }
         );
-
     }
 
-     use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temporary_input_path(label: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -525,7 +516,10 @@ mod tests {
         let error = read_inputs(&path).unwrap_err();
 
         match &error {
-            InputError::Read { path: error_path, source } => {
+            InputError::Read {
+                path: error_path,
+                source,
+            } => {
                 assert_eq!(error_path, &path);
                 assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
             }
@@ -545,13 +539,12 @@ mod tests {
         fs::remove_file(&path).expect("temporary input should be removable");
 
         match &error {
-            InputError::Parse { path: error_path, .. } => assert_eq!(error_path, &path),
+            InputError::Parse {
+                path: error_path, ..
+            } => assert_eq!(error_path, &path),
             InputError::Read { .. } => panic!("malformed TOML should produce a parse error"),
         }
         assert!(error.to_string().contains("failed to parse"));
         assert!(error.source().is_some());
     }
 }
-        
-
-    

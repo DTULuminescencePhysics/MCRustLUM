@@ -9,13 +9,13 @@
 //! create filling, temperature, and event-frequency plots, while
 //! [`crate::plotting::plot_default_results`] creates a useful standard set in one call.
 
-use crate::outputs::{AverageEventRow, ContinuousValueRow};
 use crate::errors::PlotError;
-use common::numeric::{Float, TimeFloat};
-use common::constants::time::TimeUnit;
+use crate::outputs::{AverageEventRow, ContinuousValueRow};
 use common::constants::temperature::TemperatureUnit;
-use plotters::coord::Shift;
+use common::constants::time::TimeUnit;
+use common::numeric::{Float, TimeFloat};
 use plotters::coord::types::RangedCoordf64;
+use plotters::coord::Shift;
 use plotters::prelude::*;
 use std::fs;
 use std::ops::Range;
@@ -67,14 +67,16 @@ fn rebin_event_rows(
     new_bin_width: TimeFloat,
 ) -> Result<Vec<AverageEventRow>, PlotError> {
     if !new_bin_width.is_finite() || new_bin_width <= 0.0 {
-        return Err(PlotError::Setup { 
-                                source: "new_bin_width".into(), 
-                                message: format!("Invalid type: the new event-bin width must be finite and positive") });
+        return Err(PlotError::Setup {
+            source: "new_bin_width".into(),
+            message: format!("Invalid type: the new event-bin width must be finite and positive"),
+        });
     }
     if rows.len() < 2 {
-        return Err(PlotError::Setup { 
-                                source: "rows.len() < 2".into(), 
-                                message: format!("Invalid type: at least two event rows are required for rebinning") });
+        return Err(PlotError::Setup {
+            source: "rows.len() < 2".into(),
+            message: format!("Invalid type: at least two event rows are required for rebinning"),
+        });
     }
     let source_width = rows
         .windows(2)
@@ -85,7 +87,6 @@ fn rebin_event_rows(
         return Err(PlotError::Setup { 
                         source: "new_bin_width + tolerance < source_width".into(), 
                         message: format!("the new event-bin width ({new_bin_width}) is smaller than the source width ({source_width})") });
-        
     }
 
     let origin = rows[0].time;
@@ -146,7 +147,6 @@ fn event_row_from_values(time: TimeFloat, values: [Float; 13]) -> AverageEventRo
     }
 }
 
-
 /// Central filling statistic drawn as a line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FillAverage {
@@ -155,14 +155,13 @@ pub enum FillAverage {
     /// Median filling fraction.
     Median,
 }
-impl FillAverage{
+impl FillAverage {
     /// Return the legend label for this central filling statistic.
-    pub fn get_label(&self) -> &str{
+    pub fn get_label(&self) -> &str {
         match self {
             FillAverage::Mean => "Mean filling",
             FillAverage::Median => "Median filling",
         }
-    
     }
 }
 /// Optional uncertainty region for a filling plot.
@@ -180,7 +179,7 @@ impl FillBand {
     ///
     /// This method must not be called for [`FillBand::None`], which has no
     /// visible legend entry.
-    pub fn get_label(&self) -> &str{
+    pub fn get_label(&self) -> &str {
         match self {
             FillBand::StandardDeviation => "Mean ± standard deviation",
             FillBand::InterquartileRange => "25th–75th percentile",
@@ -196,17 +195,16 @@ pub struct FillStatistic {
     band: FillBand,
 }
 
-impl FillStatistic{
-
+impl FillStatistic {
     /// Select a central statistic and optional uncertainty band.
     ///
     /// `mean` chooses the arithmetic mean when true and the median otherwise.
     /// The `fill` values `"sd"` and `"iqr"` select a standard-deviation or
     /// interquartile band; every other value disables the band.
-    pub fn new(mean:bool, fill:&str) -> Self{
-        let average = if mean{
+    pub fn new(mean: bool, fill: &str) -> Self {
+        let average = if mean {
             FillAverage::Mean
-        }else {
+        } else {
             FillAverage::Median
         };
 
@@ -216,14 +214,18 @@ impl FillStatistic{
             FillBand::InterquartileRange
         } else {
             FillBand::None
-        }; 
+        };
         Self { average, band }
     }
     /// Validate that the rows contain the fields required by the selected band.
     ///
     /// `path` is included in any [`PlotError::InvalidData`] returned for an
     /// incompatible legacy CSV.
-    pub fn check_data(&self, fill_rows: &Vec<ContinuousValueRow>, path: PathBuf) -> Result<(),PlotError> {
+    pub fn check_data(
+        &self,
+        fill_rows: &Vec<ContinuousValueRow>,
+        path: PathBuf,
+    ) -> Result<(), PlotError> {
         if self.band == FillBand::InterquartileRange
             && fill_rows.iter().any(|row| {
                 !row.fill_quantile_0_25.is_finite() || !row.fill_quantile_0_75.is_finite()
@@ -239,41 +241,38 @@ impl FillStatistic{
     }
 
     /// Return a row accessor for the selected mean or median filling value.
-    pub fn get_fill_average(&self,) -> 
-        Result< impl Fn(&ContinuousValueRow) -> f64,  PlotError> 
-    {
-        Ok(move |row: &ContinuousValueRow| match self.average  {
+    pub fn get_fill_average(&self) -> Result<impl Fn(&ContinuousValueRow) -> f64, PlotError> {
+        Ok(move |row: &ContinuousValueRow| match self.average {
             FillAverage::Mean => row.fill,
             FillAverage::Median => row.fill_median,
         })
- 
     }
     /// Return a row accessor for the lower and upper uncertainty bounds.
     ///
     /// When no band is selected, both returned values equal the selected
     /// central statistic.
-    pub fn get_fill_band(&self,) -> Result< impl Fn(&ContinuousValueRow) 
-    -> (f64,f64), PlotError> {
+    pub fn get_fill_band(&self) -> Result<impl Fn(&ContinuousValueRow) -> (f64, f64), PlotError> {
         Ok(move |row: &ContinuousValueRow| match self.band {
             FillBand::None => {
-                let bcentral =  match self.average {
-                                FillAverage::Mean => row.fill,
-                                FillAverage::Median => row.fill_median,
-                            };   
-                (bcentral, bcentral) 
+                let bcentral = match self.average {
+                    FillAverage::Mean => row.fill,
+                    FillAverage::Median => row.fill_median,
+                };
+                (bcentral, bcentral)
             }
-            
+
             FillBand::StandardDeviation => (
                 row.fill - row.fill_standard_deviation,
                 row.fill + row.fill_standard_deviation,
             ),
             FillBand::InterquartileRange => (row.fill_quantile_0_25, row.fill_quantile_0_75),
         })
-        
     }
     /// Calculate a padded vertical range containing the selected line and band.
-    pub fn get_y_range(&self,fill_rows: &Vec<ContinuousValueRow>,) 
-    -> Result< Range< f64 >, PlotError> {
+    pub fn get_y_range(
+        &self,
+        fill_rows: &Vec<ContinuousValueRow>,
+    ) -> Result<Range<f64>, PlotError> {
         let average = self.get_fill_average()?;
         let band = self.get_fill_band()?;
 
@@ -284,26 +283,23 @@ impl FillStatistic{
         }
 
         Ok(padded_range(y_values))
-       
-    } 
-
+    }
 }
 
 /// Horizontal coordinate used for a filling plot.
-#[derive(Debug, Clone, Copy, PartialEq,)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Axis {
     /// Plot elapsed/profile time in seconds.
-    Time {unit: TimeUnit},
+    Time { unit: TimeUnit },
     /// Plot against temperature.
-    Temperature {unit: TemperatureUnit},
+    Temperature { unit: TemperatureUnit },
     /// Plot trap filling ratio
-    Fill{statistics: FillStatistic },
+    Fill { statistics: FillStatistic },
     /// Plot events/luminescence glow curve
     Event,
 }
 
-impl Axis{
-
+impl Axis {
     /// Parse an axis selection and its unit from plotting configuration strings.
     ///
     /// Supported names are `"Time"`, `"Temperature"`, `"Fill"`, and
@@ -312,41 +308,47 @@ impl Axis{
     pub fn new(name: &str, unit: &str, mean: bool, fill: &str) -> Result<Self, PlotError> {
         match name {
             "Time" => {
-                let unit = TimeUnit::from_str(unit)
-                    .map_err(|e| PlotError::Setup{ source: "TimeUnit".into(),
-                                                           message: e})?;
+                let unit = TimeUnit::from_str(unit).map_err(|e| PlotError::Setup {
+                    source: "TimeUnit".into(),
+                    message: e,
+                })?;
                 Ok(Self::Time { unit })
-            },  
+            }
             "Temperature" => {
-                let unit = TemperatureUnit::from_str(unit)
-                .map_err(|e| PlotError::Setup{ source: "TemperatureUnit".into(),
-                                                           message: e})?;
+                let unit = TemperatureUnit::from_str(unit).map_err(|e| PlotError::Setup {
+                    source: "TemperatureUnit".into(),
+                    message: e,
+                })?;
                 Ok(Self::Temperature { unit })
-            },
-            "Fill" => Ok(Self::Fill { statistics: FillStatistic::new(mean,fill)}),
+            }
+            "Fill" => Ok(Self::Fill {
+                statistics: FillStatistic::new(mean, fill),
+            }),
             "Event" => Ok(Self::Event),
-            _ => Err(PlotError::Setup { 
-                                source: "YAxis".into(), 
-                                message: format!("Invalid type {name}") })
-
+            _ => Err(PlotError::Setup {
+                source: "YAxis".into(),
+                message: format!("Invalid type {name}"),
+            }),
         }
-    } 
+    }
 
     /// Return the complete human-readable axis label, including units.
     pub fn get_label(&self) -> String {
         match self {
-            Axis::Time{ unit} => {
-                format!("Time ({unit})") 
+            Axis::Time { unit } => {
+                format!("Time ({unit})")
             }
-            Axis::Temperature { unit} => {
+            Axis::Temperature { unit } => {
                 format!("Temperature ({unit})")
             }
-            Axis::Event => { format!("Events / bin width / repetition (s⁻¹)")},
-            Axis::Fill{..} => { format!("n/N filling")},
-
+            Axis::Event => {
+                format!("Events / bin width / repetition (s⁻¹)")
+            }
+            Axis::Fill { .. } => {
+                format!("n/N filling")
+            }
         }
     }
-
 }
 
 /// Raster dimensions shared by plot-producing methods.
@@ -357,30 +359,29 @@ pub struct PlotOptions {
     /// Image height in pixels.
     pub height: u32,
 
-    pub font:  &'static str,
+    pub font: &'static str,
 
     pub caption_font_size: u32,
 
-    pub margin: u32
+    pub margin: u32,
 }
 
 impl PlotOptions {
-
     /// Reject zero-width or zero-height bitmap dimensions.
     pub fn validate_dimensions(&self) -> Result<(), PlotError> {
         if self.width == 0 || self.height == 0 {
-            return Err(PlotError::Setup { 
-                                source: "PlotOptions".into(), 
-                                message:"plot width and height must both be greater than zero".into() });
+            return Err(PlotError::Setup {
+                source: "PlotOptions".into(),
+                message: "plot width and height must both be greater than zero".into(),
+            });
         }
         Ok(())
     }
 
     /// Return the font family and point size used for plot captions.
-    pub fn get_caption_options(&self) -> (&'static str, u32){
+    pub fn get_caption_options(&self) -> (&'static str, u32) {
         (self.font, self.caption_font_size)
     }
-
 }
 
 impl Default for PlotOptions {
@@ -390,13 +391,12 @@ impl Default for PlotOptions {
             height: 800,
             font: "sans-serif".into(),
             caption_font_size: 32,
-            margin: 20
+            margin: 20,
         }
     }
 }
 
-pub struct PlotWindow{
-
+pub struct PlotWindow {
     pub output: PathBuf,
 
     pub x_axis: Axis,
@@ -404,71 +404,54 @@ pub struct PlotWindow{
     pub y_axis: Axis,
 
     pub options: PlotOptions,
-
 }
 
-impl PlotWindow{
-
+impl PlotWindow {
     /// Construct a plot destination with parsed axes and default rendering options.
-    pub fn new(output: PathBuf, x_axis: &str, x_unit: &str, y_axis: &str, y_unit: &str, mean:bool, fill:&str) -> Result<Self, PlotError> {
+    pub fn new(
+        output: PathBuf,
+        x_axis: &str,
+        x_unit: &str,
+        y_axis: &str,
+        y_unit: &str,
+        mean: bool,
+        fill: &str,
+    ) -> Result<Self, PlotError> {
+        let x_axis = Axis::new(x_axis, x_unit, mean, fill)?;
 
-        let x_axis = Axis::new(x_axis,x_unit, mean, fill)?;
+        let y_axis = Axis::new(y_axis, y_unit, mean, fill)?;
 
-        let y_axis = Axis::new(y_axis, y_unit, mean, fill)?; 
-
-        let options = PlotOptions::default(); 
+        let options = PlotOptions::default();
         options.validate_dimensions()?;
-        Ok( Self {
-                output,
-                x_axis,
-                y_axis,
-                options
-            })
-    } 
+        Ok(Self {
+            output,
+            x_axis,
+            y_axis,
+            options,
+        })
+    }
 
     /// Return the short series label for the horizontal axis selection.
-    pub fn x_label(&self) -> &str 
-    {
+    pub fn x_label(&self) -> &str {
         match self.x_axis {
-            Axis::Time { .. } => {
-                "Time"
+            Axis::Time { .. } => "Time",
+            Axis::Temperature { .. } => "Temperature",
+            Axis::Fill { statistics } => match statistics.average {
+                FillAverage::Mean => "Mean filling",
+                FillAverage::Median => "Median filling",
             },
-            Axis::Temperature { .. } => {
-                "Temperature"
-            },
-            Axis::Fill { statistics } => {
-                 match statistics.average {
-                    FillAverage::Mean => { 
-                        "Mean filling"
-                    },
-                    FillAverage::Median => { 
-                        "Median filling"
-                    },
-                }
-            }
             _ => "",
         }
     }
     /// Return the short series label for the vertical axis selection.
-    pub fn y_label(&self) -> &str 
-    {
+    pub fn y_label(&self) -> &str {
         match self.y_axis {
-            Axis::Time { .. } => {
-                "Time"
+            Axis::Time { .. } => "Time",
+            Axis::Temperature { .. } => "Temperature",
+            Axis::Fill { statistics } => match statistics.average {
+                FillAverage::Mean => "Mean filling",
+                FillAverage::Median => "Median filling",
             },
-            Axis::Temperature { .. } => {
-                "Temperature"
-            },
-            Axis::Fill { statistics } => {
-                 match statistics.average {
-                    FillAverage::Mean => { 
-                        "Mean filling"
-                    },
-                    FillAverage::Median => { 
-                        "Median filling"
-                    },
-                }
-            }
             _ => "",
         }
     }
@@ -477,160 +460,137 @@ impl PlotWindow{
     ///
     /// Fill and event axes are rejected because they are not supported as
     /// horizontal coordinates for continuous-data plots.
-    pub fn get_x_filter(&self) -> Result< impl Fn(&ContinuousValueRow) -> f64,  PlotError>  {
+    pub fn get_x_filter(&self) -> Result<impl Fn(&ContinuousValueRow) -> f64, PlotError> {
         let x = match self.x_axis {
-            Axis::Time { .. } => {
-                Box::new(|row: &ContinuousValueRow| row.time)
-                as Box<dyn Fn(&ContinuousValueRow) -> f64>
-            }
-            Axis::Temperature { .. } => {
-                Box::new(|row: &ContinuousValueRow| row.temperature)
-            }
-        _ => {
-            return Err(PlotError::Draw {
-                path: self.output.clone(),
-                message: "Attempted to access Fill or Events as an X-axis".into(),
-            });
+            Axis::Time { .. } => Box::new(|row: &ContinuousValueRow| row.time)
+                as Box<dyn Fn(&ContinuousValueRow) -> f64>,
+            Axis::Temperature { .. } => Box::new(|row: &ContinuousValueRow| row.temperature),
+            _ => {
+                return Err(PlotError::Draw {
+                    path: self.output.clone(),
+                    message: "Attempted to access Fill or Events as an X-axis".into(),
+                });
             }
         };
         Ok(x)
     }
 
     /// Calculate a padded horizontal range from the configured row accessor.
-    pub fn get_continuous_x_range(&self,fill_rows: &Vec<ContinuousValueRow>,)
-        -> Result< Range< f64 >, PlotError> 
-    {
-        let x=self.get_x_filter()?;
+    pub fn get_continuous_x_range(
+        &self,
+        fill_rows: &Vec<ContinuousValueRow>,
+    ) -> Result<Range<f64>, PlotError> {
+        let x = self.get_x_filter()?;
 
         Ok(padded_range(fill_rows.iter().map(x)))
-
     }
 
     /// Return a row accessor for the selected continuous vertical value.
     ///
     /// Event axes are rejected because event plots use their own binned drawing
     /// path.
-    pub fn get_y_filter(&self) -> Result< impl Fn(&ContinuousValueRow) -> f64,  PlotError>  {
-        
+    pub fn get_y_filter(&self) -> Result<impl Fn(&ContinuousValueRow) -> f64, PlotError> {
         let y = match self.y_axis {
-            Axis::Time { .. } => {
-                Box::new(|row: &ContinuousValueRow| row.time)
-                as Box<dyn Fn(&ContinuousValueRow) -> f64>
-            
+            Axis::Time { .. } => Box::new(|row: &ContinuousValueRow| row.time)
+                as Box<dyn Fn(&ContinuousValueRow) -> f64>,
+            Axis::Temperature { .. } => Box::new(|row: &ContinuousValueRow| row.temperature),
+            Axis::Fill { statistics } => match statistics.average {
+                FillAverage::Mean => Box::new(|row: &ContinuousValueRow| row.fill),
+                FillAverage::Median => Box::new(|row: &ContinuousValueRow| row.fill_median)
+                    as Box<dyn Fn(&ContinuousValueRow) -> f64>,
             },
-            Axis::Temperature { .. } => {
-                Box::new(|row: &ContinuousValueRow| row.temperature)
-            },
-            Axis::Fill { statistics } => {
-                match statistics.average {
-                    FillAverage::Mean => { 
-                        Box::new( |row: &ContinuousValueRow| row.fill)
-                    },
-                    FillAverage::Median => { 
-                        Box::new( |row: &ContinuousValueRow| row.fill_median)
-                        as Box<dyn Fn(&ContinuousValueRow) -> f64> 
-                    },
-                }
-            },
-            _ => return Err(PlotError::Draw {
-                path: self.output.clone(),
-                message: "Attempted to access Events as an Y-axis".into(),
-            })
-
+            _ => {
+                return Err(PlotError::Draw {
+                    path: self.output.clone(),
+                    message: "Attempted to access Events as an Y-axis".into(),
+                })
+            }
         };
         Ok(y)
-
     }
 
-
     /// Calculate a padded vertical range for the configured continuous axis.
-    pub fn get_continuous_y_range(&self,fill_rows: &Vec<ContinuousValueRow>,)
-        -> Result< Range< f64 >, PlotError> 
-    {
+    pub fn get_continuous_y_range(
+        &self,
+        fill_rows: &Vec<ContinuousValueRow>,
+    ) -> Result<Range<f64>, PlotError> {
         let y = self.get_y_filter()?;
         match self.y_axis {
             Axis::Time { .. } => {
-                
                 return Ok(padded_range(fill_rows.iter().map(y)));
             }
             Axis::Temperature { .. } => {
                 let y = |row: &ContinuousValueRow| row.temperature;
                 return Ok(padded_range(fill_rows.iter().map(y)));
-            },
+            }
             Axis::Fill { statistics } => {
                 let range = statistics.get_y_range(fill_rows)?;
                 return Ok(range);
             }
-            _ => return Err(PlotError::Draw {
-                path: self.output.clone(),
-                message: "Not yet written".into(),
-            }),
-
+            _ => {
+                return Err(PlotError::Draw {
+                    path: self.output.clone(),
+                    message: "Not yet written".into(),
+                })
+            }
         }
-        
     }
 
     /// Create and configure the bitmap drawing area and Cartesian chart.
     ///
     /// The returned drawing area must remain alive while the chart is used and
     /// should be presented after all series and legends have been drawn.
-    pub fn plot_setup(&self, caption: &str, x_range: Range<Float>, y_range: Range<Float>) -> Result<
+    pub fn plot_setup(
+        &self,
+        caption: &str,
+        x_range: Range<Float>,
+        y_range: Range<Float>,
+    ) -> Result<
         (
             DrawingArea<BitMapBackend<'_>, Shift>,
-            ChartContext<
-                '_,
-                BitMapBackend<'_>,
-                Cartesian2d<RangedCoordf64, RangedCoordf64>,
-            > 
-        ), PlotError>{
-        
-        let root = BitMapBackend::new(
-            &self.output, 
-            ( self.options.width, self.options.height))
+            ChartContext<'_, BitMapBackend<'_>, Cartesian2d<RangedCoordf64, RangedCoordf64>>,
+        ),
+        PlotError,
+    > {
+        let root = BitMapBackend::new(&self.output, (self.options.width, self.options.height))
             .into_drawing_area();
 
-        root.fill(&WHITE)
-            .map_err(
-                    |error| PlotError::Draw {
-                            path: self.output.clone(),
-                            message: format!("{error:?}"),
-                        }
-            )?;
+        root.fill(&WHITE).map_err(|error| PlotError::Draw {
+            path: self.output.clone(),
+            message: format!("{error:?}"),
+        })?;
 
         let mut chart = ChartBuilder::on(&root)
-                    .caption(caption, self.options.get_caption_options())
-                    .margin(self.options.margin)
-                    .x_label_area_size(55)
-                    .y_label_area_size(85)
-                    .build_cartesian_2d(x_range, y_range)
-                    .map_err(
-                              | error | PlotError::Draw {
-                                    path: self.output.clone(),
-                                    message: format!("{error:?}"),
-                                }
-                    )?;
+            .caption(caption, self.options.get_caption_options())
+            .margin(self.options.margin)
+            .x_label_area_size(55)
+            .y_label_area_size(85)
+            .build_cartesian_2d(x_range, y_range)
+            .map_err(|error| PlotError::Draw {
+                path: self.output.clone(),
+                message: format!("{error:?}"),
+            })?;
         chart
-                .configure_mesh()
-                .x_desc(self.x_axis.get_label())
-                .y_desc(self.y_axis.get_label())
-                .draw()
-                 .map_err(
-                        |error| PlotError::Draw {
-                                path: self.output.clone(),
-                                message: format!("{error:?}"),
-                            }
-                        )?;
+            .configure_mesh()
+            .x_desc(self.x_axis.get_label())
+            .y_desc(self.y_axis.get_label())
+            .draw()
+            .map_err(|error| PlotError::Draw {
+                path: self.output.clone(),
+                message: format!("{error:?}"),
+            })?;
         Ok((root, chart))
     }
 
     /// Draw the configured series legend onto an existing chart.
-    pub fn plot_legend<'a >(&self,
+    pub fn plot_legend<'a>(
+        &self,
         chart: &mut ChartContext<
-                'a,
-                BitMapBackend<'a>,
-                Cartesian2d<RangedCoordf64, RangedCoordf64>,>,) -> Result<(), PlotError> 
-    {
-        
+            'a,
+            BitMapBackend<'a>,
+            Cartesian2d<RangedCoordf64, RangedCoordf64>,
+        >,
+    ) -> Result<(), PlotError> {
         chart
             .configure_series_labels()
             .background_style(WHITE.mix(0.85))
@@ -638,8 +598,8 @@ impl PlotWindow{
             .draw()
             .map_err(|error| PlotError::Draw {
                 path: self.output.clone(),
-                message: format!("{error:?}")}
-            )
+                message: format!("{error:?}"),
+            })
     }
 
     /// Plot temperature in kelvin against time in seconds.
@@ -649,81 +609,63 @@ impl PlotWindow{
         caption: &str,
         legend: bool,
     ) -> Result<(), PlotError> {
-
         if let Axis::Fill { statistics } = &self.y_axis {
             statistics.check_data(fill_rows, self.output.clone())?;
         }
         let x_range = self.get_continuous_x_range(fill_rows)?;
-        let y_range = self.get_continuous_y_range(fill_rows)?; 
-       
+        let y_range = self.get_continuous_y_range(fill_rows)?;
+
         let (root, mut chart) = self.plot_setup(caption, x_range, y_range)?;
         let x = self.get_x_filter()?;
         let y = self.get_y_filter()?;
-        chart.draw_series(LineSeries::new(
+        chart
+            .draw_series(LineSeries::new(
                 fill_rows.iter().map(|row| (x(row), y(row))),
                 RED.stroke_width(3),
-            )).map_err(|error| 
-                                    PlotError::Draw {
-                                            path: self.output.clone(),
-                                            message: format!("{error:?}"),
-                                            }
-                                        )?
+            ))
+            .map_err(|error| PlotError::Draw {
+                path: self.output.clone(),
+                message: format!("{error:?}"),
+            })?
             .label(self.y_label())
-                        .legend(|(x, y)| 
-                            PathElement::new(
-                                [(x, y), (x + 20, y)], 
-                                RED.stroke_width(3))
-                            );
-        
+            .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], RED.stroke_width(3)));
+
         if let Axis::Fill { statistics } = &self.y_axis {
             if statistics.band != FillBand::None {
                 let bounds = statistics.get_fill_band()?;
-                
+
                 let mut polygon = fill_rows
                     .iter()
                     .map(|row| (x(row), bounds(row).1))
                     .collect::<Vec<_>>();
-                
-                polygon.extend(fill_rows
-                        .iter()
-                        .rev()
-                        .map(|row| (x(row), bounds(row).0)),
-                );
-                
+
+                polygon.extend(fill_rows.iter().rev().map(|row| (x(row), bounds(row).0)));
+
                 let band_label = statistics.band.get_label();
-                
-                chart.draw_series(
-                                std::iter::once(Polygon::new(
-                                            polygon,
-                                             BLUE.mix(0.18).filled(),
-                                                )
-                                            )
-                                )
-                                .map_err(|error| 
-                                    PlotError::Draw {
-                                            path: self.output.clone(),
-                                            message: format!("{error:?}"),
-                                            }
-                                        )?
-                                .label(band_label)
-                                .legend(|(x, y)| {
-                                        Rectangle::new(
-                                            [(x, y - 5), (x + 20, y + 5)], 
-                                            BLUE.mix(0.18).filled()
-                                        )
-                                    }
-                                );
+
+                chart
+                    .draw_series(std::iter::once(Polygon::new(
+                        polygon,
+                        BLUE.mix(0.18).filled(),
+                    )))
+                    .map_err(|error| PlotError::Draw {
+                        path: self.output.clone(),
+                        message: format!("{error:?}"),
+                    })?
+                    .label(band_label)
+                    .legend(|(x, y)| {
+                        Rectangle::new([(x, y - 5), (x + 20, y + 5)], BLUE.mix(0.18).filled())
+                    });
             }
         }
         if legend {
             self.plot_legend(&mut chart)?;
         }
 
-        root.present()
-                .map_err(|error| PlotError::Draw {
-                    path: self.output.clone(),
-                    message: format!("{error:?}")}
-                )?;
+        root.present().map_err(|error| PlotError::Draw {
+            path: self.output.clone(),
+            message: format!("{error:?}"),
+        })?;
         Ok(())
     }
 
@@ -739,10 +681,8 @@ impl PlotWindow{
         event_rows: &Vec<AverageEventRow>,
         series: &[EventSeries],
         new_bin_width: Option<TimeFloat>,
-        caption: &str,) 
-        -> Result<(), PlotError> 
-    {
-       
+        caption: &str,
+    ) -> Result<(), PlotError> {
         if series.is_empty() {
             return Err(PlotError::InvalidData {
                 path: self.output.clone(),
@@ -751,7 +691,7 @@ impl PlotWindow{
         }
         let rebinned;
         let rows = if let Some(width) = new_bin_width {
-            rebinned = rebin_event_rows( event_rows, width)?;
+            rebinned = rebin_event_rows(event_rows, width)?;
             rebinned.as_slice()
         } else {
             event_rows.as_slice()
@@ -774,43 +714,43 @@ impl PlotWindow{
             .fold(0.0_f64, Float::max);
         let y_range = 0.0..if maximum > 0.0 { maximum * 1.08 } else { 1.0 };
         let (root, mut chart) = self.plot_setup(caption, x_range, y_range)?;
-        
-       
+
         for (index, column) in series.iter().copied().enumerate() {
             let color = Palette99::pick(index).to_rgba();
-           
+
             // Draw adjacent pairs independently. Plotters' bitmap backend
             // can generate incorrect polygon joins for a large, dense
             // polyline, which appeared as negative spikes even though all
             // input frequencies were non-negative.
-            chart.draw_series(bins.windows(2).map(|pair| {
-                PathElement::new(
-                    [
-                        (pair[0].centre, event_frequency(&pair[0], column)),
-                        (pair[1].centre, event_frequency(&pair[1], column)),
-                    ],
-                    color.stroke_width(1),
+            chart
+                .draw_series(bins.windows(2).map(|pair| {
+                    PathElement::new(
+                        [
+                            (pair[0].centre, event_frequency(&pair[0], column)),
+                            (pair[1].centre, event_frequency(&pair[1], column)),
+                        ],
+                        color.stroke_width(1),
                     )
-                })).map_err(|error| PlotError::Draw {
+                }))
+                .map_err(|error| PlotError::Draw {
                     path: self.output.clone(),
                     message: format!("{error:?}"),
-                    })?
+                })?
                 .label(column.label())
-                .legend(move |(x, y)| PathElement::new([(x, y), (x + 20, y)], color.stroke_width(3)));
+                .legend(move |(x, y)| {
+                    PathElement::new([(x, y), (x + 20, y)], color.stroke_width(3))
+                });
         }
         self.plot_legend(&mut chart)?;
-        
+
         root.present().map_err(|error| PlotError::Draw {
-                    path: self.output.clone(),
-                    message: format!("{error:?}"),
-                    })?;
-    
+            path: self.output.clone(),
+            message: format!("{error:?}"),
+        })?;
+
         Ok(())
     }
-
-
 }
-
 
 /// Event-count column that can be included in an event-frequency plot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -900,8 +840,6 @@ impl EventSeries {
     }
 }
 
-
-
 /// Paths written by [`plot_default_results`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedPlots {
@@ -964,9 +902,7 @@ impl SimulationResults {
     pub fn event_rows(&self) -> &[AverageEventRow] {
         &self.event_rows
     }
-
 }
-
 
 /// Load both result CSVs and create six standard PNG plots.
 ///
@@ -992,7 +928,7 @@ pub fn plot_default_results(
         "Fill",
         "None",
         true,
-        "sd"
+        "sd",
     )?;
     to_plot.continuous_data_plot(&results.fill_rows, "Mean fill vs Time", true)?;
     let to_plot = PlotWindow::new(
@@ -1002,18 +938,18 @@ pub fn plot_default_results(
         "Fill",
         "None",
         true,
-        "sd"
+        "sd",
     )?;
     to_plot.continuous_data_plot(&results.fill_rows, "Mean fill vs Temperature", true)?;
 
-   let to_plot = PlotWindow::new(
+    let to_plot = PlotWindow::new(
         output_directory.join("median_fill_vs_time.png"),
         "Time",
         "second",
         "Fill",
         "None",
         false,
-        "sd"
+        "sd",
     )?;
     to_plot.continuous_data_plot(&results.fill_rows, "Median fill vs Time", true)?;
 
@@ -1024,7 +960,7 @@ pub fn plot_default_results(
         "Fill",
         "None",
         false,
-        "sd"
+        "sd",
     )?;
     to_plot.continuous_data_plot(&results.fill_rows, "Meanian fill vs Temperature", true)?;
 
@@ -1036,7 +972,7 @@ pub fn plot_default_results(
         temperature_vs_time: output_directory.join("temperature_vs_time.png"),
         events_vs_time: output_directory.join("events_vs_time.png"),
     };
-    
+
     let to_plot = PlotWindow::new(
         output_directory.join("temperature_vs_time.png"),
         "Time",
@@ -1044,7 +980,7 @@ pub fn plot_default_results(
         "Temperature",
         "Kelvin",
         false,
-        "sd"
+        "sd",
     )?;
     to_plot.continuous_data_plot(&results.fill_rows, "Time vs Temperature", false)?;
     let to_plot = PlotWindow::new(
@@ -1054,7 +990,7 @@ pub fn plot_default_results(
         "Time",
         "second",
         false,
-        "sd"
+        "sd",
     )?;
     to_plot.continuous_data_plot(&results.fill_rows, "Temperature vs Time ", false)?;
     let to_plot = PlotWindow::new(
@@ -1066,12 +1002,17 @@ pub fn plot_default_results(
         false,
         "sd",
     )?;
-    to_plot.plot_events_vs_time(&results.event_rows, &[
+    to_plot.plot_events_vs_time(
+        &results.event_rows,
+        &[
             EventSeries::Recombination,
             EventSeries::Retrapping,
             EventSeries::Filling,
-        ],event_bin_width, "Events vs Time")?; 
-    
+        ],
+        event_bin_width,
+        "Events vs Time",
+    )?;
+
     Ok(paths)
 }
 
@@ -1096,9 +1037,10 @@ fn read_csv<T: for<'de> serde::Deserialize<'de>>(path: &Path) -> Result<Vec<T>, 
 /// Validate all mandatory fill fields without rejecting absent legacy quartiles.
 fn validate_fill_rows(rows: &[ContinuousValueRow]) -> Result<(), PlotError> {
     if rows.is_empty() {
-        return Err(PlotError::Setup { 
-                        source: "Fill row is empty".into(), 
-                        message: format!("the file contains no fill rows")});
+        return Err(PlotError::Setup {
+            source: "Fill row is empty".into(),
+            message: format!("the file contains no fill rows"),
+        });
     }
     for (index, row) in rows.iter().enumerate() {
         let mandatory = [
@@ -1111,25 +1053,25 @@ fn validate_fill_rows(rows: &[ContinuousValueRow]) -> Result<(), PlotError> {
             row.fill_quantile_0_9,
         ];
         if mandatory.iter().any(|value| !value.is_finite()) {
-            return Err(PlotError::Setup { 
-                        source: "None finite values".into(), 
-                        message: format!("row {} contains a non-finite value", index + 2)});
-            
+            return Err(PlotError::Setup {
+                source: "None finite values".into(),
+                message: format!("row {} contains a non-finite value", index + 2),
+            });
         }
         if row.fill_standard_deviation < 0.0 {
-            return Err(PlotError::Setup { 
-            source: "Fill Standard Deviation".into(), 
-            message: format!("row {} has a negative standard deviation", index + 2) });
-           
+            return Err(PlotError::Setup {
+                source: "Fill Standard Deviation".into(),
+                message: format!("row {} has a negative standard deviation", index + 2),
+            });
         }
         let quartiles = (row.fill_quantile_0_25, row.fill_quantile_0_75);
         if quartiles.0.is_finite() != quartiles.1.is_finite()
             || (quartiles.0.is_finite() && quartiles.0 > quartiles.1)
         {
-            return Err(PlotError::Setup { 
-            source: "quartiles not finite".into(), 
-            message: format!("row {} has invalid quartile limits", index + 2) });
-            
+            return Err(PlotError::Setup {
+                source: "quartiles not finite".into(),
+                message: format!("row {} has invalid quartile limits", index + 2),
+            });
         }
     }
     Ok(())
@@ -1138,36 +1080,37 @@ fn validate_fill_rows(rows: &[ContinuousValueRow]) -> Result<(), PlotError> {
 /// Validate monotonic event-bin endpoints and finite, non-negative frequencies.
 fn validate_event_rows(rows: &[AverageEventRow]) -> Result<(), PlotError> {
     if rows.is_empty() {
-        return Err(PlotError::Setup { 
-                        source: "Events row is empty".into(), 
-                        message: format!("the file contains no fill rows")});
+        return Err(PlotError::Setup {
+            source: "Events row is empty".into(),
+            message: format!("the file contains no fill rows"),
+        });
     }
     for (index, row) in rows.iter().enumerate() {
         if !row.time.is_finite() {
-            return Err(PlotError::Setup { 
-            source: "Event time is not finite".into(), 
-            message: format!("row {} contains a non-finite time", index + 2) });
+            return Err(PlotError::Setup {
+                source: "Event time is not finite".into(),
+                message: format!("row {} contains a non-finite time", index + 2),
+            });
         }
         if index > 0 && row.time <= rows[index - 1].time {
-            return Err(PlotError::Setup { 
-            source: "Event bins".into(), 
-            message: format!("event-bin times must be strictly increasing") });
+            return Err(PlotError::Setup {
+                source: "Event bins".into(),
+                message: format!("event-bin times must be strictly increasing"),
+            });
         }
         if EventSeries::ALL
             .iter()
             .map(|column| column.value(row))
             .any(|value| !value.is_finite() || value < 0.0)
-        {   
-            return Err(PlotError::Setup { 
-            source: "Event bins".into(), 
-            message: format!("row {} contains an invalid event count", index + 2) });
-            
+        {
+            return Err(PlotError::Setup {
+                source: "Event bins".into(),
+                message: format!("row {} contains an invalid event count", index + 2),
+            });
         }
     }
     Ok(())
 }
-
-
 
 // #[cfg(test)]
 // mod tests {

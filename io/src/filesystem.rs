@@ -4,11 +4,10 @@
 
 //! Creation of the directory layout used by a simulation run.
 
+use crate::errors::FilesystemError;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use crate::errors::FilesystemError;
-
 
 /// Create an error adapter that adds operation and path context to an I/O error.
 fn operation_error(
@@ -121,8 +120,10 @@ fn create_experiment_directory(
         });
     }
     let chron_source_input = starting_directory.join("chron_input.toml");
-    let input_metadata =
-        fs::metadata(&source_input).map_err(operation_error("read chronology input file", &chron_source_input))?;
+    let input_metadata = fs::metadata(&source_input).map_err(operation_error(
+        "read chronology input file",
+        &chron_source_input,
+    ))?;
     if !input_metadata.is_file() {
         return Err(FilesystemError::Operation {
             action: "read input file",
@@ -143,7 +144,6 @@ fn create_experiment_directory(
             source,
         });
     }
-
 
     Ok(experiment_directory)
 }
@@ -173,10 +173,6 @@ pub fn prepare_experiment_directory(
     Ok(experiment_directory)
 }
 
-
-
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,6 +190,11 @@ mod tests {
         ));
         fs::create_dir(&directory).unwrap();
         fs::write(directory.join("input.toml"), "[cube]\nx = 1.0\n").unwrap();
+        fs::write(
+            directory.join("chron_input.toml"),
+            "[chronology]\nprofiles = 1\n",
+        )
+        .unwrap();
         directory
     }
 
@@ -213,6 +214,10 @@ mod tests {
         assert_eq!(
             fs::read_to_string(experiment_directory.join("input.toml")).unwrap(),
             "[cube]\nx = 1.0\n"
+        );
+        assert_eq!(
+            fs::read_to_string(experiment_directory.join("chron_input.toml")).unwrap(),
+            "[chronology]\nprofiles = 1\n"
         );
         fs::remove_dir_all(starting_directory).unwrap();
     }
@@ -259,6 +264,6 @@ mod tests {
 
         assert!(matches!(error, FilesystemError::Operation { .. }));
         assert!(!starting_directory.join("run").exists());
-        fs::remove_dir(starting_directory).unwrap();
+        fs::remove_dir_all(starting_directory).unwrap();
     }
 }

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Error catching for the filesystem and input and outputs 
+//! Error catching for the filesystem and input and outputs
 
 use std::error::Error;
 use std::fmt;
@@ -57,7 +57,6 @@ impl Error for FilesystemError {
         }
     }
 }
-
 
 /// An error produced while reading or parsing a simulation input file.
 #[derive(Debug)]
@@ -143,8 +142,7 @@ pub enum OutputError {
         source: Box<bincode::ErrorKind>,
         /// Human-readable filesystem operation being attempted.
         action: &'static str,
-    }
-
+    },
 }
 
 impl fmt::Display for OutputError {
@@ -167,18 +165,24 @@ impl fmt::Display for OutputError {
             ),
             Self::Read { path, source } => {
                 write!(formatter, "failed to read {}: {source}", path.display())
-            },
+            }
             Self::Decode { path, source } => {
                 write!(
                     formatter,
                     "failed to decode batch from {}: {source}",
                     path.display()
                 )
-            },
-            Self::Invalid { path, source, action } => {
-                write!(formatter, 
-                        "Error message: {action}. So failed to write batch to {}: {source}",path.display(), 
-                     )
+            }
+            Self::Invalid {
+                path,
+                source,
+                action,
+            } => {
+                write!(
+                    formatter,
+                    "Error message: {action}. So failed to write batch to {}: {source}",
+                    path.display(),
+                )
             }
         }
     }
@@ -187,16 +191,12 @@ impl fmt::Display for OutputError {
 impl Error for OutputError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Open { source, .. } 
-            | Self::Finish { source, .. } 
-            | Self::Read { source, .. } 
-            =>
-            {
+            Self::Open { source, .. } | Self::Finish { source, .. } | Self::Read { source, .. } => {
                 Some(source)
             }
-            Self::Write { source, .. } 
-            | Self::Decode { source, .. } 
-            | Self::Invalid {source, ..}=> Some(source.as_ref()),
+            Self::Write { source, .. }
+            | Self::Decode { source, .. }
+            | Self::Invalid { source, .. } => Some(source.as_ref()),
         }
     }
 }
@@ -295,7 +295,10 @@ impl fmt::Display for PlotError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Setup { source, message } => {
-                write!(formatter, "failed to setup {source} with message: {message} ",)
+                write!(
+                    formatter,
+                    "failed to setup {source} with message: {message} ",
+                )
             }
 
             Self::Csv { path, source } => {

@@ -12,59 +12,27 @@ use std::ffi::OsString;
 use std::time::Instant;
 
 /// Prepare the requested run directory and execute the default simulation workflow.
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), Box<dyn Error>> {    
     let folder_name = folder_name_from_arguments()?;
     io::filesystem::prepare_experiment_directory(folder_name.as_deref())?;
     common::random::set_seed(0);
-    // monte_carlo_run()
-    thermo_chronology_run()
-}
 
-/// Load the copied input, run all repetitions, and consolidate their outputs.
-///
-/// The current executable requests ten repetitions, one parameter experiment,
-/// and a minimum spatial ensemble of 25 traps.
-fn monte_carlo_run() -> Result<(), Box<dyn Error>> {
     let total_start = Instant::now();
-    let start = Instant::now();
-
-    let inputs = io::inputs::read_inputs("input.toml")?;
-    eprintln!("read inputs:       {:?}", start.elapsed());
 
     let start = Instant::now();
-    let monte_carlo = mc::system_setup::MonteCarloSimulation::new(inputs, 10, 1, 595)?;
-    eprintln!("system setup:      {:?}", start.elapsed());
-
+    mc::monte_carlo_run(10, 1, 595)?;
+    mc::monte_carlo_result()?;
+    eprintln!("Monte Carlo Complete:             {:?}", start.elapsed());
+    
     let start = Instant::now();
-    monte_carlo.run()?;
-    eprintln!("Monte Carlo:       {:?}", start.elapsed());
-
-    let start = Instant::now();
-    mc::average::average_fill()?;
-    eprintln!("average fill:      {:?}", start.elapsed());
-
-    let start = Instant::now();
-    mc::average::average_events()?;
-    eprintln!("average events:    {:?}", start.elapsed());
-
-    let start = Instant::now();
-
-    let event_bin = Some(1.0);
-    io::plotting::plot_default_results(
-        "average_fill_0.csv",
-        "average_event_0.csv",
-        ".",
-        event_bin,
-    )?;
-    eprintln!("plotting:          {:?}", start.elapsed());
+    chronology::thermo_chronology_run(10,1,595,100,false)?;
+    eprintln!("Thermochronology Complete:             {:?}", start.elapsed());
+    
+    
     eprintln!("total:             {:?}", total_start.elapsed());
 
     Ok(())
-}
-fn thermo_chronology_run()-> Result<(), Box<dyn Error>> {
-    let mc_inputs = io::inputs::read_inputs("input.toml")?;
-    let chron_inputs = io::chrono_inputs::read_chrono_inputs("chron_input.toml")?;
-    Ok(())
+
 }
 
 

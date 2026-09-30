@@ -10,7 +10,6 @@
 //! [`inputs::SimulationInputs`] type, so downstream simulation code does not need to
 //! know where the values came from.
 
-
 pub mod errors;
 
 /// Typed groups corresponding to the sections of an input TOML file.
@@ -25,9 +24,9 @@ pub mod outputs;
 /// Loading consolidated CSV results and producing plots from them.
 pub mod plotting;
 
-
 pub mod chrono_inputs;
 
 pub mod chrono_outputs;
 
-
+/// Plot weighted time-temperature paths produced by chronology analysis.
+pub mod chrono_plotting;

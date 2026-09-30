@@ -13,9 +13,10 @@
 //! The header and every appended batch are separate gzip members. A
 //! [`MultiGzDecoder`] exposes them as one continuous bincode stream when read.
 
-use crate::errors::OutputError;
+use crate::errors::{CsvOutputError, OutputError};
 use common::constants::temperature::TemperatureUnit;
 use common::constants::time::TimeUnit;
+use common::numeric::{Float, TimeFloat};
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::marker::PhantomData;
@@ -185,7 +186,7 @@ impl<T: DeserializeOwned> Iterator for ChronologyBatchReader<T> {
 }
 
 /// Open a chronology file, read its unit header, and stream its batches.
-pub fn read_all_batches<T: DeserializeOwned>(
+pub fn read_all_chrono_batches<T: DeserializeOwned>(
     path: impl AsRef<Path>,
 ) -> Result<ChronologyBatchReader<T>, OutputError> {
     let path = path.as_ref();
@@ -216,6 +217,123 @@ pub fn read_all_batches<T: DeserializeOwned>(
         reader,
         finished: false,
         record: PhantomData,
+    })
+}
+
+pub struct ProfileGrid {
+    pub accepted_profiles: u64,
+
+    pub time_bounds: (TimeFloat, TimeFloat),
+    pub temperature_bounds: (Float, Float),
+
+    pub time_unit: TimeUnit,
+    pub temperature_unit: TemperatureUnit,
+
+    pub time_cells: usize,
+    pub temperature_cells: usize,
+
+    /// Row-major: `weights[temp_index * time_cells + time_index]`.
+    ///
+    /// Both indices are stored internally in ascending physical order.
+    pub weights: Vec<u64>,
+}
+
+pub fn write_profile_grid_csv(
+    path: impl AsRef<Path>,
+    grid: &ProfileGrid,
+) -> Result<(), CsvOutputError> {
+    let path = path.as_ref();
+    let expected_cells = grid
+        .time_cells
+        .checked_mul(grid.temperature_cells)
+        .filter(|&cells| cells > 0)
+        .ok_or_else(|| CsvOutputError::SourceData {
+            path: path.to_path_buf(),
+            message: "grid dimensions must be non-zero and must not overflow".to_string(),
+        })?;
+    if grid.weights.len() != expected_cells {
+        return Err(CsvOutputError::SourceData {
+            path: path.to_path_buf(),
+            message: format!(
+                "grid has {} weights but its dimensions require {expected_cells}",
+                grid.weights.len()
+            ),
+        });
+    }
+
+    let file = File::create(path).map_err(|source| CsvOutputError::Create {
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    let mut writer = BufWriter::new(file);
+
+    // First line: accepted-profile count.
+    writeln!(writer, "{}", grid.accepted_profiles).map_err(|source| CsvOutputError::Write {
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    let reverse_time = grid.time_unit.is_ka_or_ma();
+
+    let (time_start, time_end) = if reverse_time {
+        (grid.time_bounds.1, grid.time_bounds.0)
+    } else {
+        (grid.time_bounds.0, grid.time_bounds.1)
+    };
+
+    // Second line: start time, end time, unit.
+    writeln!(writer, "{time_start},{time_end},{:?}", grid.time_unit).map_err(|source| {
+        CsvOutputError::Write {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+
+    // Third line: minimum temperature, maximum temperature, unit.
+    writeln!(
+        writer,
+        "{},{},{:?}",
+        grid.temperature_bounds.0, grid.temperature_bounds.1, grid.temperature_unit
+    )
+    .map_err(|source| CsvOutputError::Write {
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    // Highest-temperature row first, as with a conventional y-axis.
+    for temperature_index in (0..grid.temperature_cells).rev() {
+        for output_column in 0..grid.time_cells {
+            if output_column != 0 {
+                write!(writer, ",").map_err(|source| CsvOutputError::Write {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
+            }
+
+            // Geological time runs t -> 0, so reverse its columns.
+            let time_index = if reverse_time {
+                grid.time_cells - 1 - output_column
+            } else {
+                output_column
+            };
+
+            let index = temperature_index * grid.time_cells + time_index;
+            write!(writer, "{}", grid.weights[index]).map_err(|source| CsvOutputError::Write {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        }
+
+        writeln!(writer).map_err(|source| CsvOutputError::Write {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+
+    writer.flush().map_err(|source| CsvOutputError::Write {
+        path: path.to_path_buf(),
+        source,
     })
 }
 
@@ -267,12 +385,54 @@ mod tests {
         append_chronology_profile_to_experiment_file(&path, &first).unwrap();
         append_chronology_profile_to_experiment_file(&path, &second).unwrap();
 
-        let reader = read_all_batches::<TestProfile>(&path).unwrap();
+        let reader = read_all_chrono_batches::<TestProfile>(&path).unwrap();
         assert_eq!(reader.time_unit, TimeUnit::KAnnum);
         assert_eq!(reader.temp_unit, TemperatureUnit::Celsius);
         let batches = reader.collect::<Result<Vec<_>, _>>().unwrap();
         fs::remove_file(path).unwrap();
 
         assert_eq!(batches, vec![first, second]);
+    }
+
+    #[test]
+    fn writes_grid_in_display_axis_order() {
+        let path = temporary_output_path();
+        let grid = ProfileGrid {
+            accepted_profiles: 7,
+            time_bounds: (0.0, 10.0),
+            temperature_bounds: (20.0, 40.0),
+            time_unit: TimeUnit::KAnnum,
+            temperature_unit: TemperatureUnit::Celsius,
+            time_cells: 2,
+            temperature_cells: 2,
+            // Ascending temperature rows and ascending time columns.
+            weights: vec![1, 2, 3, 4],
+        };
+
+        write_profile_grid_csv(&path, &grid).unwrap();
+        let output = fs::read_to_string(&path).unwrap();
+        fs::remove_file(path).unwrap();
+
+        assert_eq!(output, "7\n10,0,KAnnum\n20,40,Celsius\n4,3\n2,1\n");
+    }
+
+    #[test]
+    fn rejects_inconsistent_grid_dimensions() {
+        let path = temporary_output_path();
+        let grid = ProfileGrid {
+            accepted_profiles: 0,
+            time_bounds: (0.0, 1.0),
+            temperature_bounds: (0.0, 1.0),
+            time_unit: TimeUnit::Second,
+            temperature_unit: TemperatureUnit::Kelvin,
+            time_cells: 2,
+            temperature_cells: 2,
+            weights: vec![0; 3],
+        };
+
+        let error = write_profile_grid_csv(&path, &grid).unwrap_err();
+
+        assert!(matches!(error, CsvOutputError::SourceData { .. }));
+        assert!(!path.exists());
     }
 }

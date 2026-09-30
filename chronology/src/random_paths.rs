@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use common::numeric::{Float, Numeric, TimeFloat};
+use common::numeric::Float;
 use crate::profiles::{TimeTempProfile,ProfileType};
 use common::constants::temperature::TemperatureUnit;
 use common::constants::time::TimeUnit;
@@ -30,14 +30,14 @@ impl  RandomWalkSimulation {
     pub fn new(fill_ratio: Vec<Float>, 
         fill_ratio_error: Vec<Float>, 
         profile_inputs: RandomWalkInputs,
-        inputs: SimulationInputs,
+        inputs: &SimulationInputs,
         repetitions: usize,
         experiments: usize,
         minimum_traps:usize,
     ) -> Result<Self, String> {
 
         let profile_type = ProfileType::new_random_walk(&profile_inputs)?;
-        let monte_carlo = MonteCarloSimulation::new(inputs, repetitions, experiments, minimum_traps)?;
+        let monte_carlo = MonteCarloSimulation::new(inputs.clone(), repetitions, experiments, minimum_traps)?;
         
         Ok(
             Self {
@@ -65,9 +65,9 @@ impl  RandomWalkSimulation {
         
         let mut accepted_profile: Vec<TimeTempProfile> = Vec::with_capacity(1000);
         
-        for _ in 0.. trial_num {
+        for num in 0.. trial_num {
             let tt_prof = self.profile_type.create_new_profile(rng)?;
-            let result = self.monte_carlo.run_to_final_ratio_only(tt_prof.generate_profile(self.time_unit,self.temp_unit)?)?;
+            let result = self.monte_carlo.run_to_final_ratio_only(tt_prof.generate_profile(self.time_unit,self.temp_unit)?, num)?;
             if self.check_profile(result, rng){
                 accepted_profile.push(tt_prof);
             }

@@ -9,8 +9,8 @@
 //! [`crate::outputs::read_all_batches`] decodes
 //! those members as a stream, keeping only the current batch in memory.
 
+use crate::errors::{CsvOutputError, OutputError};
 use common::numeric::{Float, TimeFloat};
-use crate::errors::{OutputError, CsvOutputError};
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -18,12 +18,11 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use bincode::Options;
-use flate2::Compression;
 use flate2::bufread::MultiGzDecoder;
 use flate2::write::GzEncoder;
-use serde::Serialize;
+use flate2::Compression;
 use serde::de::DeserializeOwned;
-
+use serde::Serialize;
 
 /// Return the stable bincode configuration shared by the writer and reader.
 fn bincode_options() -> impl Options {
@@ -256,8 +255,6 @@ pub struct AverageEventRow {
     /// All irradiation-driven filling events per repetition in this bin.
     pub filling_count: Float,
 }
-
-
 
 /// Write consolidated time, temperature, and fill rows to a CSV file.
 ///

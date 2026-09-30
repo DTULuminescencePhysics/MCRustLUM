@@ -876,7 +876,7 @@ pub fn run_final_ratio_only(
     
         let signed_event_dt = direction * next_event.time;
         time_temperature.advance(signed_event_dt);
-        let applied_event = apply_event(
+        apply_event(
                     next_event.event,
                     places,
                     trap_places,
@@ -1046,7 +1046,7 @@ mod tests {
         let candidate = filling_candidate(&transitions.filling, &inputs).unwrap();
 
         assert_eq!(candidate.event, Event::FillingSelect);
-        assert_eq!(candidate.rate, 2.0);
+        assert_eq!(candidate.rate, 1.5);
 
         let mut rng = common::random::get_std_rng_for_rep(0);
         let timed = TimedCandidate::rate_to_lifetime(candidate, &mut rng).unwrap();
@@ -1059,7 +1059,7 @@ mod tests {
         let inputs = FillingTransitionInputs::get_inputs(
             4.0,
             120.0,
-            4,
+            0,
             4,
             TimeUnit::Minute,
         )

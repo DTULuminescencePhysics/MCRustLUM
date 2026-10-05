@@ -25,14 +25,14 @@ use std::time::Instant;
 use std::error::Error;
 
 use crate::system_setup::MonteCarloSimulation;
-use common::constants::time::TimeUnit;
-use common::constants::temperature::TemperatureUnit;
+use common::numeric::TimeFloat;
+
 use io::inputs::{read_inputs, SimulationInputs};
 use io::plotting;
 
 /// Main call function to run the required Monte Carlo experiments
 
-pub fn monte_carlo_run(repetitions: usize, experiments: usize, minimum_traps: usize) -> Result<(), Box<dyn Error>> {
+pub fn monte_carlo_run(repetitions: usize, experiments: usize, minimum_traps: usize, event_bin_width: Option<TimeFloat>) -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let inputs = read_inputs("input.toml")?;
@@ -40,7 +40,7 @@ pub fn monte_carlo_run(repetitions: usize, experiments: usize, minimum_traps: us
 
     monte_carlo_experiment(&inputs, repetitions, experiments, minimum_traps)?;
 
-    monte_carlo_result(inputs.time_temperature.time_unit,inputs.time_temperature.temp_unit)?;
+    monte_carlo_result(&inputs, experiments, event_bin_width)?;
     Ok(())
 
 }
@@ -61,31 +61,43 @@ fn monte_carlo_experiment(inputs: &SimulationInputs, repetitions: usize, experim
 }
 
 /// Function that creates the default set of results for the Monte Carlo experiments
-fn monte_carlo_result(time_unit:TimeUnit, temp_unit: TemperatureUnit) -> Result<(), Box<dyn Error>>{
+fn monte_carlo_result(inputs: &SimulationInputs, experiments: usize, event_bin_width: Option<TimeFloat>) -> Result<(), Box<dyn Error>>{
+    
     let start = Instant::now();
+    let output_directory = ".";
+    
+    plotting::plot_time_temperature(
+        output_directory,
+        &inputs.time_temperature)?;
+
+
     crate::average::average_fill()?;
     eprintln!("average fill:      {:?}", start.elapsed());
-
-    plotting::plot_default_continuous_results(
-        "average_fill_0.csv",
-        ".",
-        time_unit,
-        temp_unit,
-    )?;
-
+    
     let start = Instant::now();
     crate::average::average_events()?;
     eprintln!("average events:    {:?}", start.elapsed());
 
     let start = Instant::now();
 
-    plotting::plot_default_event_results(
-        "average_event_0.csv",
-        ".",
-        None,
-        time_unit,
-    )?;
-
+    for exp in 0..experiments{
+        let fill_csv = format!("average_fill_{}.csv", exp);
+        let event_csv = format!("average_event_{}.csv", exp); 
+        
+        plotting::plot_default_continuous_results(
+            fill_csv,
+            output_directory,
+            inputs.time_temperature.time_unit,
+            inputs.time_temperature.temp_unit,)?;
+        
+        plotting::plot_default_event_results(
+            event_csv,
+            output_directory,
+            event_bin_width,
+            inputs.time_temperature.time_unit,
+        )?;
+    }   
+    
     eprintln!("plotting:          {:?}", start.elapsed());
 
     Ok(())

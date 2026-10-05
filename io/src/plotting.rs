@@ -11,8 +11,9 @@
 
 use crate::errors::PlotError;
 use crate::outputs::{AverageEventRow, ContinuousValueRow};
-use common::constants::temperature::{self, TemperatureUnit};
-use common::constants::time::{self, TimeUnit};
+use crate::inputs::TimeTempSpecification;
+use common::constants::temperature::{self,TemperatureUnit};
+use common::constants::time::{self,TimeUnit};
 use common::numeric::{Float, TimeFloat};
 use plotters::coord::types::RangedCoordf64;
 use plotters::coord::Shift;
@@ -646,6 +647,85 @@ impl PlotWindow {
             })
     }
 
+    /// Connect time/temperature coordinates with straight line segments.
+    ///
+    /// Input values are expressed in `time_unit` and `temp_unit` and converted
+    /// to the display units configured on this window. The window must have
+    /// one time axis and one temperature axis, in either order. Points are
+    /// connected in input order, preserving heating/cooling cycles and
+    /// descending geological ages. At least two finite coordinate pairs are
+    /// required. Geological time axes run from older ages toward zero.
+    pub fn plot_time_temperature(
+        &self,
+        times: &[TimeFloat],
+        temperatures: &[Float],
+        time_unit: TimeUnit,
+        temp_unit: TemperatureUnit,
+    ) -> Result<(), PlotError> {
+        self.options.validate_dimensions()?;
+        let (display_time_unit, display_temp_unit, time_on_x) =
+            match (self.x_axis, self.y_axis) {
+                (Axis::Time { unit: time }, Axis::Temperature { unit: temp }) => {
+                    (time, temp, true)
+                }
+                (Axis::Temperature { unit: temp }, Axis::Time { unit: time }) => {
+                    (time, temp, false)
+                }
+                _ => {
+                    return Err(PlotError::Setup {
+                        source: "plot_time_temperature axes".into(),
+                        message: "one time axis and one temperature axis are required".into(),
+                    });
+                }
+            };
+        if times.len() != temperatures.len() || times.len() < 2 {
+            return Err(PlotError::Setup {
+                source: "plot_time_temperature coordinates".into(),
+                message: "times and temperatures must have equal lengths and at least two points"
+                    .into(),
+            });
+        }
+
+        let mut points = Vec::with_capacity(times.len());
+        for (time, temperature) in times.into_iter().zip(temperatures) {
+            let seconds = time::convert_to_seconds(time_unit, *time)
+                .expect("every TimeUnit has a seconds conversion");
+            let kelvin = temperature::convert_to_kelvin(temp_unit, *temperature)
+                .expect("every TemperatureUnit has a kelvin conversion");
+            let time = time_for_plot(display_time_unit, seconds);
+            let temperature = temperature_for_plot(display_temp_unit, kelvin);
+            if !time.is_finite() || !temperature.is_finite() {
+                return Err(PlotError::Setup {
+                    source: "plot_time_temperature coordinates".into(),
+                    message: "time and temperature coordinates must be finite".into(),
+                });
+            }
+            points.push(if time_on_x {
+                (time, temperature)
+            } else {
+                (temperature, time)
+            });
+        }
+
+        let x_range = orient_range(self.x_axis, padded_range(points.iter().map(|p| p.0)));
+        let y_range = orient_range(self.y_axis, padded_range(points.iter().map(|p| p.1)));
+        let caption = format!("{} vs {}", self.y_label(), self.x_label());
+        let (root, mut chart) = self.plot_setup(&caption, x_range, y_range)?;
+        // Separate segments avoid bitmap polyline join artifacts.
+        chart
+            .draw_series(points.windows(2).map(|pair| {
+                PathElement::new([pair[0], pair[1]], BLUE.stroke_width(2))
+            }))
+            .map_err(|error| PlotError::Draw {
+                path: self.output.clone(),
+                message: format!("{error:?}"),
+            })?;
+        root.present().map_err(|error| PlotError::Draw {
+            path: self.output.clone(),
+            message: format!("{error:?}"),
+        })
+    }
+
     /// Plot continuous results using the units configured on each axis.
     pub fn continuous_data_plot(
         &self,
@@ -1039,26 +1119,45 @@ pub fn plot_default_continuous_results(
     )?;
     to_plot.continuous_data_plot(results.fill_rows()?, "Meanian fill vs Temperature", true)?;
 
+    Ok(())
+}
+
+pub fn plot_time_temperature(
+    output_directory: impl AsRef<Path>,
+    inputs: &TimeTempSpecification,
+) -> Result<(), PlotError> {
+
+    let output_directory = output_directory.as_ref();
+    fs::create_dir_all(output_directory).map_err(|source| PlotError::CreateDirectory {
+        path: output_directory.to_path_buf(),
+        source,
+    })?;
+    
+
     let to_plot = PlotWindow::new(
         output_directory.join("temperature_vs_time.png"),
         "Time",
-        &time_unit,
+        &inputs.time_unit.to_string(),
         "Temperature",
-        &temperature_unit,
+        &inputs.temp_unit.to_string(),
         false,
         "sd",
     )?;
-    to_plot.continuous_data_plot(results.fill_rows()?, "Time vs Temperature", false)?;
-    let to_plot = PlotWindow::new(
+
+
+    to_plot.plot_time_temperature(&inputs.times, &inputs.temperatures, inputs.time_unit, inputs.temp_unit)?;
+
+     let to_plot = PlotWindow::new(
         output_directory.join("time_vs_temperature.png"),
         "Temperature",
-        &temperature_unit,
+        &inputs.temp_unit.to_string(),
         "Time",
-        &time_unit,
+        &inputs.time_unit.to_string(),
         false,
         "sd",
     )?;
-    to_plot.continuous_data_plot(results.fill_rows()?, "Temperature vs Time ", false)?;
+    to_plot.plot_time_temperature(&inputs.times, &inputs.temperatures, inputs.time_unit, inputs.temp_unit)?;
+
 
     Ok(())
 }
@@ -1207,6 +1306,63 @@ mod unit_conversion_tests {
     use super::*;
 
     #[test]
+    fn plots_coordinate_profiles_in_both_axis_orders() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        for time_on_x in [true, false] {
+            let path = std::env::temp_dir().join(format!(
+                "mcrustlum_profile_{}_{unique}_{time_on_x}.png",
+                std::process::id()
+            ));
+            let time_axis = Axis::Time { unit: TimeUnit::KAnnum };
+            let temp_axis = Axis::Temperature { unit: TemperatureUnit::Celsius };
+            let window = PlotWindow {
+                output: path.clone(),
+                x_axis: if time_on_x { time_axis } else { temp_axis },
+                y_axis: if time_on_x { temp_axis } else { time_axis },
+                options: PlotOptions::default(),
+            };
+            window.plot_time_temperature(
+                &vec![2000.0, 1000.0, 0.0],
+                &vec![273.15, 373.15, 273.15],
+                TimeUnit::Year,
+                TemperatureUnit::Kelvin,
+            ).unwrap();
+            let bytes = fs::read(&path).unwrap();
+            assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+            fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn coordinate_profiles_reject_invalid_inputs_before_drawing() {
+        let window = PlotWindow {
+            output: PathBuf::from("unused.png"),
+            x_axis: Axis::Time { unit: TimeUnit::Second },
+            y_axis: Axis::Temperature { unit: TemperatureUnit::Celsius },
+            options: PlotOptions::default(),
+        };
+        for (times, temperatures) in [
+            (vec![], vec![]),
+            (vec![0.0], vec![20.0]),
+            (vec![0.0, 1.0], vec![20.0]),
+            (vec![0.0, Float::NAN], vec![20.0, 30.0]),
+            (vec![0.0, 1.0], vec![20.0, Float::INFINITY]),
+        ] {
+            assert!(matches!(window.plot_time_temperature(
+                &times, &temperatures, TimeUnit::Second, TemperatureUnit::Celsius,
+            ), Err(PlotError::Setup { .. })));
+        }
+        let invalid_axes = PlotWindow { y_axis: window.x_axis, ..window };
+        assert!(matches!(invalid_axes.plot_time_temperature(
+            &vec![0.0, 1.0], &vec![20.0, 30.0],
+            TimeUnit::Second, TemperatureUnit::Celsius,
+        ), Err(PlotError::Setup { .. })));
+    }
+
+    #[test]
     fn converts_canonical_values_to_requested_plot_units() {
         let one_ma_in_seconds = time::convert_to_seconds(TimeUnit::MaAnnum, 1.0).unwrap();
 
@@ -1236,141 +1392,4 @@ mod unit_conversion_tests {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use std::fs;
-//     use std::sync::atomic::{AtomicU64, Ordering};
-//     use std::time::{SystemTime, UNIX_EPOCH};
 
-//     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
-
-//     fn temporary_directory() -> PathBuf {
-//         let unique = SystemTime::now()
-//             .duration_since(UNIX_EPOCH)
-//             .unwrap()
-//             .as_nanos();
-//         let sequence = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
-//         let path = std::env::temp_dir().join(format!(
-//             "mcrustlum_plotting_{}_{}_{}",
-//             std::process::id(),
-//             unique,
-//             sequence
-//         ));
-//         fs::create_dir(&path).unwrap();
-//         path
-//     }
-
-//     fn test_results() -> (PathBuf, SimulationResults) {
-//         let directory = temporary_directory();
-//         let fill = directory.join("average_fill.csv");
-//         let events = directory.join("average_event.csv");
-//         fs::write(
-//             &fill,
-//             concat!(
-//                 "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9,fill_quantile_0_25,fill_quantile_0_75\n",
-//                 "0,300,0.2,0.02,0.19,0.15,0.25,0.17,0.22\n",
-//                 "0.1,310,0.4,0.03,0.39,0.34,0.46,0.36,0.42\n",
-//                 "0.2,320,0.6,0.04,0.59,0.52,0.68,0.55,0.63\n",
-//                 "0.3,330,0.8,0.05,0.79,0.70,0.88,0.74,0.84\n",
-//             ),
-//         )
-//         .unwrap();
-//         fs::write(
-//             &events,
-//             concat!(
-//                 "time,localised_recombination_ground,localised_recombination_excited,delocalised_recombination_ground,delocalised_recombination_excited,localised_retrapping_ground,localised_retrapping_excited,delocalised_retrapping_ground,delocalised_retrapping_excited,ground,excited,recombination,retrapping,filling_count\n",
-//                 "0,0,0,0,0,0,0,0,0,0,0,0,0,0\n",
-//                 "0.1,1,0,0,0,0,0,0,0,1,0,1,0,2\n",
-//                 "0.2,3,0,0,0,0,0,0,0,3,0,3,0,4\n",
-//                 "0.3,5,0,0,0,0,0,0,0,5,0,5,0,6\n",
-//             ),
-//         )
-//         .unwrap();
-//         let results = SimulationResults::from_csv(&fill, &events).unwrap();
-//         (directory, results)
-//     }
-
-//     #[test]
-//     fn reads_both_result_files() {
-//         let (directory, results) = test_results();
-//         assert_eq!(results.fill_rows().len(), 4);
-//         assert_eq!(results.event_rows().len(), 4);
-//         fs::remove_dir_all(directory).unwrap();
-//     }
-
-//     #[test]
-//     fn wider_bins_conserve_counts_and_keep_a_partial_tail() {
-//         let (directory, results) = test_results();
-//         let rows = results.rebin_events(0.2).unwrap();
-//         assert_eq!(rows.len(), 3);
-//         assert!((rows[1].recombination_count - 4.0).abs() < 1e-12);
-//         assert!((rows[1].filling_count - 6.0).abs() < 1e-12);
-//         assert!((rows[2].recombination_count - 5.0).abs() < 1e-12);
-//         assert!((rows[2].time - 0.3).abs() < 1e-12);
-//         let bins = event_plot_bins(&rows);
-//         assert!((bins[0].centre - 0.1).abs() < 1e-12);
-//         assert!((bins[0].width - 0.2).abs() < 1e-12);
-//         assert!((bins[1].centre - 0.25).abs() < 1e-12);
-//         assert!((bins[1].width - 0.1).abs() < 1e-12);
-//         assert!((event_frequency(&bins[0], EventSeries::Recombination) - 20.0).abs() < 1e-12);
-//         assert!((event_frequency(&bins[1], EventSeries::Recombination) - 50.0).abs() < 1e-12);
-//         fs::remove_dir_all(directory).unwrap();
-//     }
-
-//     #[test]
-//     fn rebinning_splits_counts_at_unaligned_boundaries() {
-//         let (directory, results) = test_results();
-//         let rows = results.rebin_events(0.15).unwrap();
-//         assert_eq!(rows.len(), 3);
-//         assert!((rows[1].recombination_count - 2.5).abs() < 1e-12);
-//         assert!((rows[2].recombination_count - 6.5).abs() < 1e-12);
-//         assert!((rows[1].recombination_count + rows[2].recombination_count - 9.0).abs() < 1e-12);
-//         fs::remove_dir_all(directory).unwrap();
-//     }
-
-//     #[test]
-//     fn event_bins_are_plotted_at_their_centres() {
-//         let (directory, results) = test_results();
-//         let bins = event_plot_bins(results.event_rows());
-//         assert_eq!(bins.len(), 3);
-//         assert!((bins[0].centre - 0.05).abs() < 1e-12);
-//         assert!((bins[1].centre - 0.15).abs() < 1e-12);
-//         assert!((bins[2].centre - 0.25).abs() < 1e-12);
-//         assert!((bins[0].width - 0.1).abs() < 1e-12);
-//         assert!((event_frequency(&bins[0], EventSeries::Recombination) - 10.0).abs() < 1e-12);
-//         fs::remove_dir_all(directory).unwrap();
-//     }
-
-//     #[test]
-//     fn narrower_or_non_positive_bins_are_rejected() {
-//         let (directory, results) = test_results();
-//         assert!(results.rebin_events(0.05).is_err());
-//         assert!(results.rebin_events(0.0).is_err());
-//         fs::remove_dir_all(directory).unwrap();
-//     }
-
-//     #[test]
-//     fn creates_the_default_png_set() {
-//         let (directory, _) = test_results();
-//         let output = directory.join("plots");
-//         let plots = plot_default_results(
-//             directory.join("average_fill.csv"),
-//             directory.join("average_event.csv"),
-//             &output,
-//             Some(0.2),
-//         )
-//         .unwrap();
-//         for path in [
-//             plots.mean_fill_vs_time,
-//             plots.mean_fill_vs_temperature,
-//             plots.median_fill_vs_time,
-//             plots.median_fill_vs_temperature,
-//             plots.temperature_vs_time,
-//             plots.events_vs_time,
-//         ] {
-//             assert!(fs::metadata(path).unwrap().len() > 0);
-//         }
-//         fs::remove_dir_all(directory).unwrap();
-//     }
-// }

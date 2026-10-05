@@ -10,7 +10,6 @@
 use std::error::Error;
 use std::ffi::OsString;
 use std::time::Instant;
-
 /// Prepare the requested run directory and execute the default simulation workflow.
 fn main() -> Result<(), Box<dyn Error>> {    
     let folder_name = folder_name_from_arguments()?;
@@ -20,7 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let total_start = Instant::now();
 
     let start = Instant::now();
-    mc::monte_carlo_run(10, 1, 400)?;
+    mc::monte_carlo_run(10, 1, 400, None)?;
     eprintln!("Monte Carlo Complete:             {:?}", start.elapsed());
     
     // let start = Instant::now();

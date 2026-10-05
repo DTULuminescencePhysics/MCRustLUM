@@ -25,18 +25,32 @@ use std::time::Instant;
 use std::error::Error;
 
 use crate::system_setup::MonteCarloSimulation;
-use io::inputs::read_inputs;
+use common::constants::time::TimeUnit;
+use common::constants::temperature::TemperatureUnit;
+use io::inputs::{read_inputs, SimulationInputs};
 use io::plotting;
 
 /// Main call function to run the required Monte Carlo experiments
+
 pub fn monte_carlo_run(repetitions: usize, experiments: usize, minimum_traps: usize) -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let inputs = read_inputs("input.toml")?;
     eprintln!("read inputs:       {:?}", start.elapsed());
 
+    monte_carlo_experiment(&inputs, repetitions, experiments, minimum_traps)?;
+
+    monte_carlo_result(inputs.time_temperature.time_unit,inputs.time_temperature.temp_unit)?;
+    Ok(())
+
+}
+
+/// Main call function to run the required Monte Carlo experiments
+fn monte_carlo_experiment(inputs: &SimulationInputs, repetitions: usize, experiments: usize, minimum_traps: usize) -> Result<(), Box<dyn Error>> {
+
+
     let start = Instant::now();
-    let monte_carlo = MonteCarloSimulation::new(inputs, repetitions, experiments, minimum_traps)?;
+    let monte_carlo = MonteCarloSimulation::new(inputs.clone(), repetitions, experiments, minimum_traps)?;
     eprintln!("system setup:      {:?}", start.elapsed());
 
     let start = Instant::now();
@@ -47,10 +61,17 @@ pub fn monte_carlo_run(repetitions: usize, experiments: usize, minimum_traps: us
 }
 
 /// Function that creates the default set of results for the Monte Carlo experiments
-pub fn monte_carlo_result() -> Result<(), Box<dyn Error>>{
+fn monte_carlo_result(time_unit:TimeUnit, temp_unit: TemperatureUnit) -> Result<(), Box<dyn Error>>{
     let start = Instant::now();
     crate::average::average_fill()?;
     eprintln!("average fill:      {:?}", start.elapsed());
+
+    plotting::plot_default_continuous_results(
+        "average_fill_0.csv",
+        ".",
+        time_unit,
+        temp_unit,
+    )?;
 
     let start = Instant::now();
     crate::average::average_events()?;
@@ -58,13 +79,13 @@ pub fn monte_carlo_result() -> Result<(), Box<dyn Error>>{
 
     let start = Instant::now();
 
-    let event_bin = Some(1.0);
-    plotting::plot_default_results(
-        "average_fill_0.csv",
+    plotting::plot_default_event_results(
         "average_event_0.csv",
         ".",
-        event_bin,
+        None,
+        time_unit,
     )?;
+
     eprintln!("plotting:          {:?}", start.elapsed());
 
     Ok(())

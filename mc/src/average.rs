@@ -28,8 +28,14 @@ const TEMPORARY_DIRECTORY: &str = "tmp";
 const AVERAGE_FILL_PREFIX: &str = "average_fill";
 /// Prefix used for per-experiment ensemble event frequencies.
 const AVERAGE_EVENT_PREFIX: &str = "average_event";
-/// Width of event-count bins in seconds.
-const EVENT_BIN_WIDTH: TimeFloat = 0.1;
+/// Smallest automatically selected event-count bin width, in seconds.
+const MINIMUM_EVENT_BIN_WIDTH: TimeFloat = 0.1;
+/// Approximate number of event bins produced when a profile is long enough to
+/// require bins wider than [`MINIMUM_EVENT_BIN_WIDTH`].
+const TARGET_EVENT_BIN_COUNT: usize = 1_000;
+/// Hard limit protecting explicit bin-width requests from excessive output or
+/// memory consumption.
+const MAXIMUM_EVENT_BIN_COUNT: usize = 1_000_000;
 
 /// Flattens the compressed batches in one result file into individual records.
 struct RecordStream {
@@ -404,11 +410,11 @@ struct EventBin {
 }
 
 impl EventBin {
-    /// Create an empty bin at `index * EVENT_BIN_WIDTH`.
-    fn new(index: usize) -> Self {
+    /// Create an empty bin at `origin + index * width`.
+    fn new(index: usize, origin: TimeFloat, width: TimeFloat) -> Self {
         Self {
-            start_time: index as TimeFloat * EVENT_BIN_WIDTH,
-            end_time: (index + 1) as TimeFloat * EVENT_BIN_WIDTH,
+            start_time: origin + index as TimeFloat * width,
+            end_time: origin + (index + 1) as TimeFloat * width,
             localised_recombination_ground_count: 0,
             localised_recombination_excited_count: 0,
             delocalised_recombination_ground_count: 0,
@@ -539,10 +545,80 @@ impl EventBin {
     }
 }
 
-/// Return the all-zero event-count row at time zero.
-fn initial_event_row() -> AverageEventRow {
+/// Validate the coordinates needed for event binning.
+fn validate_event_record(path: &Path, record: &RecordedEvent) -> Result<(), String> {
+    validate_record(path, record)?;
+    if record.time < 0.0 {
+        return Err(format!(
+            "{} contains a negative time {}, which cannot be placed in non-negative bins",
+            path.display(),
+            record.time,
+        ));
+    }
+    Ok(())
+}
+
+/// Find the complete time extent represented by a set of trajectories.
+fn event_time_bounds(paths: &[PathBuf]) -> Result<(TimeFloat, TimeFloat), String> {
+    let mut minimum = TimeFloat::INFINITY;
+    let mut maximum = TimeFloat::NEG_INFINITY;
+
+    for path in paths {
+        let batches = read_all_batches::<RecordedEvent>(path).map_err(|error| error.to_string())?;
+        for batch in batches {
+            for record in batch.map_err(|error| error.to_string())? {
+                validate_event_record(path, &record)?;
+                minimum = minimum.min(record.time);
+                maximum = maximum.max(record.time);
+            }
+        }
+    }
+
+    if !minimum.is_finite() {
+        return Err("temporary event trajectories contain no records".to_string());
+    }
+    Ok((minimum, maximum))
+}
+
+/// Select a requested width or an automatic width bounded to roughly one
+/// thousand bins. Short simulations retain the historical 0.1-second bins.
+fn event_bin_width(
+    minimum_time: TimeFloat,
+    maximum_time: TimeFloat,
+    requested_width: Option<TimeFloat>,
+) -> Result<TimeFloat, String> {
+    if let Some(width) = requested_width {
+        if !width.is_finite() || width <= 0.0 {
+            return Err(format!(
+                "event-bin width must be finite and positive, got {width}"
+            ));
+        }
+        return Ok(width);
+    }
+
+    let duration = maximum_time - minimum_time;
+    Ok(MINIMUM_EVENT_BIN_WIDTH.max(duration / TARGET_EVENT_BIN_COUNT as TimeFloat))
+}
+
+/// Calculate and validate the number of bins before attempting an allocation.
+fn event_bin_count(
+    minimum_time: TimeFloat,
+    maximum_time: TimeFloat,
+    width: TimeFloat,
+) -> Result<usize, String> {
+    let count = ((maximum_time - minimum_time) / width).ceil().max(1.0);
+    if !count.is_finite() || count > MAXIMUM_EVENT_BIN_COUNT as TimeFloat {
+        return Err(format!(
+            "event-bin width {width} seconds would create {count:.0} bins; the maximum is {MAXIMUM_EVENT_BIN_COUNT}"
+        ));
+    }
+    Ok(count as usize)
+}
+
+/// Return the all-zero event-count row at the left edge of the first bin.
+fn initial_event_row(time: TimeFloat) -> AverageEventRow {
     AverageEventRow {
-        time: 0.0,
+        time,
         localised_recombination_ground_count: 0.0,
         localised_recombination_excited_count: 0.0,
         delocalised_recombination_ground_count: 0.0,
@@ -664,49 +740,41 @@ fn average_fill_paths(paths: Vec<PathBuf>, output_file: &Path) -> Result<(), Str
 }
 
 /// Average one experiment's event trajectories into one CSV file.
-fn average_event_paths(paths: Vec<PathBuf>, output_file: &Path) -> Result<(), String> {
+fn average_event_paths(
+    paths: Vec<PathBuf>,
+    output_file: &Path,
+    requested_bin_width: Option<TimeFloat>,
+) -> Result<(), String> {
     let repetition_count = paths.len();
+    let (minimum_time, maximum_time) = event_time_bounds(&paths)?;
+    let bin_width = event_bin_width(minimum_time, maximum_time, requested_bin_width)?;
+    let bin_count = event_bin_count(minimum_time, maximum_time, bin_width)?;
     let mut bins = Vec::<EventBin>::new();
+    bins.try_reserve_exact(bin_count)
+        .map_err(|error| format!("failed to allocate {bin_count} event bins: {error}"))?;
+    for index in 0..bin_count {
+        bins.push(EventBin::new(index, minimum_time, bin_width));
+    }
 
     for path in paths {
         let batches =
             read_all_batches::<RecordedEvent>(&path).map_err(|error| error.to_string())?;
         for batch in batches {
             for record in batch.map_err(|error| error.to_string())? {
-                validate_record(&path, &record)?;
-                if record.time < 0.0 {
-                    return Err(format!(
-                        "{} contains a negative time {}, which cannot be placed in bins starting at zero",
-                        path.display(),
-                        record.time,
-                    ));
+                validate_event_record(&path, &record)?;
+                if record.event == Event::None {
+                    continue;
                 }
 
-                let endpoint = (record.time / EVENT_BIN_WIDTH).ceil();
-                if endpoint > usize::MAX as TimeFloat {
-                    return Err(format!(
-                        "{} contains a time too large to bin: {}",
-                        path.display(),
-                        record.time,
-                    ));
-                }
-                let bins_through_record = endpoint as usize;
-                while bins.len() < bins_through_record {
-                    bins.push(EventBin::new(bins.len()));
-                }
-
-                if record.event != Event::None {
-                    let bin_index = bins_through_record.saturating_sub(1);
-                    if bins.is_empty() {
-                        bins.push(EventBin::new(0));
-                    }
-                    bins[bin_index].record(record.event);
-                }
+                let relative_time = record.time - minimum_time;
+                let endpoint = (relative_time / bin_width).ceil() as usize;
+                let bin_index = endpoint.saturating_sub(1).min(bin_count - 1);
+                bins[bin_index].record(record.event);
             }
         }
     }
 
-    let rows = std::iter::once(initial_event_row())
+    let rows = std::iter::once(initial_event_row(minimum_time))
         .chain(bins.into_iter().map(|bin| bin.averaged(repetition_count)))
         .map(Ok::<_, std::convert::Infallible>);
     write_average_events_csv(output_file, rows).map_err(|error| error.to_string())
@@ -739,21 +807,49 @@ pub fn average_fill_in(
     Ok(())
 }
 
-/// Average event counts from `tmp/` into fixed-width bins and write one
+/// Average event counts from `tmp/` into duration-aware bins and write one
 /// `average_event_<experiment>.csv` file per experiment.
+///
+/// Short runs retain 0.1-second bins. Longer runs target approximately one
+/// thousand bins.
 pub fn average_events() -> Result<(), String> {
     average_events_in(TEMPORARY_DIRECTORY, ".")
+}
+
+/// Average event counts using an explicit bin width in seconds.
+pub fn average_events_with_bin_width(bin_width: TimeFloat) -> Result<(), String> {
+    average_events_in_with_bin_width(TEMPORARY_DIRECTORY, ".", bin_width)
 }
 
 /// Average temporary event trajectories from `temporary_directory` into one
 /// CSV per experiment in `output_directory`.
 ///
-/// Events are placed in `EVENT_BIN_WIDTH`-second bins. Counts are divided by
-/// the number of input trajectories. The plotting layer divides these averaged
-/// bin counts by the applicable bin width to produce observed frequencies.
+/// Counts are divided by the number of input trajectories. The plotting layer
+/// divides these averaged bin counts by the applicable bin width to produce
+/// observed frequencies. Short runs retain 0.1-second bins, while longer runs
+/// use a bounded duration-aware width.
 pub fn average_events_in(
     temporary_directory: impl AsRef<Path>,
     output_directory: impl AsRef<Path>,
+) -> Result<(), String> {
+    average_events_in_configured(temporary_directory, output_directory, None)
+}
+
+/// Average temporary event trajectories using an explicit bin width in
+/// seconds.
+pub fn average_events_in_with_bin_width(
+    temporary_directory: impl AsRef<Path>,
+    output_directory: impl AsRef<Path>,
+    bin_width: TimeFloat,
+) -> Result<(), String> {
+    average_events_in_configured(temporary_directory, output_directory, Some(bin_width))
+}
+
+/// Shared implementation for automatic and explicitly sized event bins.
+fn average_events_in_configured(
+    temporary_directory: impl AsRef<Path>,
+    output_directory: impl AsRef<Path>,
+    requested_bin_width: Option<TimeFloat>,
 ) -> Result<(), String> {
     for (experiment_index, paths) in temporary_result_paths(temporary_directory.as_ref())? {
         let output_file = average_output_path(
@@ -761,7 +857,7 @@ pub fn average_events_in(
             AVERAGE_EVENT_PREFIX,
             experiment_index,
         );
-        average_event_paths(paths, &output_file)?;
+        average_event_paths(paths, &output_file, requested_bin_width)?;
     }
     Ok(())
 }
@@ -770,6 +866,7 @@ pub fn average_events_in(
 mod tests {
     use super::*;
     use common::charge_transfer::Event;
+    use common::constants::time::{self, TimeUnit};
     use common::place_ids::PlaceId;
     use io::outputs::{
         append_monte_carlo_experiment_batch_to_file, create_monte_carlo_experiment_file,
@@ -1010,6 +1107,60 @@ mod tests {
         assert_eq!(rows[1][10], "0.5");
         assert_eq!(rows[1][11], "2.5");
         assert_eq!(rows[1][13], "0.5");
+    }
+
+    #[test]
+    fn bounds_automatic_bins_for_geological_times() {
+        let directory = temporary_directory();
+        let temporary_directory = directory.join("tmp");
+        let output_file = directory.join("average_event_0.csv");
+        fs::create_dir(&temporary_directory).unwrap();
+        let place = PlaceId::new(0).unwrap();
+        let half_ma = time::convert_to_seconds(TimeUnit::MaAnnum, 0.5).unwrap();
+
+        write_records(
+            &temporary_directory.join("experiment_results_0_0.bin.gz"),
+            &[
+                event_record(half_ma, Event::None),
+                event_record(
+                    half_ma / 2.0,
+                    Event::FillingStandard {
+                        trap: place,
+                        hole: place,
+                    },
+                ),
+                event_record(0.0, Event::None),
+            ],
+        );
+
+        average_events_in(&temporary_directory, &directory).unwrap();
+        let contents = fs::read_to_string(&output_file).unwrap();
+        fs::remove_dir_all(directory).unwrap();
+        let rows = contents.lines().skip(1).collect::<Vec<_>>();
+
+        assert_eq!(rows.len(), TARGET_EVENT_BIN_COUNT + 1);
+        let final_time = rows
+            .last()
+            .unwrap()
+            .split(',')
+            .next()
+            .unwrap()
+            .parse::<TimeFloat>()
+            .unwrap();
+        assert!((final_time - half_ma).abs() < 1.0);
+        let filling_total = rows
+            .iter()
+            .map(|row| row.split(',').nth(13).unwrap().parse::<Float>().unwrap())
+            .sum::<Float>();
+        assert_eq!(filling_total, 1.0);
+    }
+
+    #[test]
+    fn rejects_an_explicit_width_that_would_create_too_many_bins() {
+        let half_ma = time::convert_to_seconds(TimeUnit::MaAnnum, 0.5).unwrap();
+        let error = event_bin_count(0.0, half_ma, MINIMUM_EVENT_BIN_WIDTH).unwrap_err();
+
+        assert!(error.contains("the maximum is 1000000"));
     }
 
     #[test]

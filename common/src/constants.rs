@@ -269,8 +269,8 @@ pub mod temperature {
     impl fmt::Display for TemperatureUnit {
         fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             let name = match self {
-                TemperatureUnit::Celsius => "K",
-                TemperatureUnit::Kelvin => "°C",
+                TemperatureUnit::Celsius => "°C",
+                TemperatureUnit::Kelvin => "K",
             };
 
             formatter.write_str(name)
@@ -281,8 +281,8 @@ pub mod temperature {
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             match s.to_lowercase().as_str() {
-                "kelvin"   => Ok(Self::Celsius),
-                "celsius"   => Ok(Self::Kelvin),
+                "kelvin" | "k" => Ok(Self::Kelvin),
+                "celsius" | "°c" => Ok(Self::Celsius),
                 _ => Err(format!("Invalid TemperatureUnit: {s}")),
             }
         }
@@ -379,6 +379,14 @@ mod tests {
             convert_to_celsius(TemperatureUnit::Celsius, 25_i32),
             Some(25.0),
         );
+    }
+
+    #[test]
+    fn temperature_units_parse_and_display_consistently() {
+        assert_eq!("kelvin".parse(), Ok(TemperatureUnit::Kelvin));
+        assert_eq!("celsius".parse(), Ok(TemperatureUnit::Celsius));
+        assert_eq!(TemperatureUnit::Kelvin.to_string(), "K");
+        assert_eq!(TemperatureUnit::Celsius.to_string(), "°C");
     }
 
     #[test]

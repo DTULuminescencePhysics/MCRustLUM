@@ -187,6 +187,13 @@ impl Cube {
     ) -> Result<Self, String> {
         let mut boundary = Boundary::new(x, y, z, periodic)?;
         let mut trap_total = boundary.density_to_number(density)?;
+        
+        if trap_total == 0 {
+            let distance = (minimum_traps as Float /density).cbrt();
+            boundary = Boundary::new(  distance, distance, distance , periodic, )?; 
+            trap_total = boundary.density_to_number(density)?;
+        }
+        
         if trap_total < minimum_traps {
             let scale = (minimum_traps as Float / trap_total as Float).cbrt();
             boundary = Boundary::new(  boundary.x *scale, boundary.y * scale, boundary.z * scale, periodic, )?; 

@@ -20,13 +20,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let total_start = Instant::now();
 
     let start = Instant::now();
-    mc::monte_carlo_run(10, 1, 595)?;
-    mc::monte_carlo_result()?;
+    mc::monte_carlo_run(10, 1, 400)?;
     eprintln!("Monte Carlo Complete:             {:?}", start.elapsed());
     
-    let start = Instant::now();
-    chronology::thermo_chronology_run(10,1,595,100,false)?;
-    eprintln!("Thermochronology Complete:             {:?}", start.elapsed());
+    // let start = Instant::now();
+    // chronology::thermo_chronology_run(10,1,595,100,false)?;
+    // eprintln!("Thermochronology Complete:             {:?}", start.elapsed());
     
     
     eprintln!("total:             {:?}", total_start.elapsed());

@@ -12,19 +12,19 @@ uc_l = 1.0e-10
 x = 7.5e-9
 y = 7.5e-9
 z = 7.5e-9
-density = 5.22e25
+density = 3.8e21
 hole_count = 1
 bandtail_count = 0
 periodic = true
 
 [time_temperature]
-times = [0.0, 160.0]
-temperatures = [0.0, 800.0]
-time_unit = "second"
+times = [0.5, 0.0]
+temperatures = [50.0, 50.0]
+time_unit = "ma_annum"
 temp_unit = "celsius"
 
 [trap_energies]
-e_loc = [1.2]
+e_loc = [1.45]
 e_cb = [2.0]
 e_loc_sigma = [0.0]
 e_cb_sigma = [0.0]
@@ -36,32 +36,32 @@ trap_available = [0]
 hole_available = [0]
 
 [localised]
-gs_tun = false
-es_tun = false
+gs_tun = true
+es_tun = true
 vrh = false
-b_gs = [1000000000000]
-b_es = [1000000000000]
-alpha_gs = [9000000000000]
-alpha_es = [9000000000]
+b_gs = [3e15]
+b_es = [3e15]
+alpha_gs = [1.6e9]
+alpha_es = [1.6e9]
 
 [delocalised]
-gs_cb = false
-es_cb = false
-s_gs = [1000000000000]
-s_es = [1000000000000]
+gs_cb = true
+es_cb = true
+s_gs = [2.4e10]
+s_es = [2.4e10]
 
 [filling]
 fill = true
-d0 = [400.0]
-d_dot = [10.0]
-dd_unit = "second"
+d0 = [620.0]
+d_dot = [7.0]
+dd_unit = "k_annum"
 
 [retrapping]
 delocalised = false
 localised_gs = false
 localised_es = false
-filling = true
-gaussian = true
+filling = false
+gaussian = false
 cb_hole_to_trap = [1000000.0]
 vb_trap_to_hole = [5000000.0]
 cb_mu = [0.0000000001]

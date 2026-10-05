@@ -11,8 +11,8 @@
 
 use crate::errors::PlotError;
 use crate::outputs::{AverageEventRow, ContinuousValueRow};
-use common::constants::temperature::TemperatureUnit;
-use common::constants::time::TimeUnit;
+use common::constants::temperature::{self, TemperatureUnit};
+use common::constants::time::{self, TimeUnit};
 use common::numeric::{Float, TimeFloat};
 use plotters::coord::types::RangedCoordf64;
 use plotters::coord::Shift;
@@ -38,6 +38,37 @@ fn padded_range(values: impl IntoIterator<Item = Float>) -> Range<Float> {
         minimum.abs().max(1.0) * 0.05
     };
     (minimum - padding)..(maximum + padding)
+}
+
+/// Convert the internally stored seconds to a requested display unit.
+fn time_for_plot(unit: TimeUnit, seconds: TimeFloat) -> TimeFloat {
+    if unit == TimeUnit::Second {
+        seconds
+    } else {
+        let seconds_per_unit = time::convert_to_seconds(unit, 1.0)
+            .expect("every TimeUnit has a seconds conversion");
+        seconds / seconds_per_unit
+    }
+}
+
+/// Convert the internally stored kelvin to a requested display unit.
+fn temperature_for_plot(unit: TemperatureUnit, kelvin: Float) -> Float {
+    match unit {
+        TemperatureUnit::Kelvin => kelvin,
+        TemperatureUnit::Celsius => temperature::convert_to_celsius(
+            TemperatureUnit::Kelvin,
+            kelvin,
+        )
+        .expect("kelvin can always be converted to celsius"),
+    }
+}
+
+/// Reverse geological-age axes so they are displayed from the initial age to zero.
+fn orient_range(axis: Axis, range: Range<Float>) -> Range<Float> {
+    match axis {
+        Axis::Time { unit } if unit.is_ka_or_ma() => range.end..range.start,
+        _ => range,
+    }
 }
 
 /// Convert right-edge CSV rows into bins located at their temporal midpoints.
@@ -223,7 +254,7 @@ impl FillStatistic {
     /// incompatible legacy CSV.
     pub fn check_data(
         &self,
-        fill_rows: &Vec<ContinuousValueRow>,
+        fill_rows: &[ContinuousValueRow],
         path: PathBuf,
     ) -> Result<(), PlotError> {
         if self.band == FillBand::InterquartileRange
@@ -271,7 +302,7 @@ impl FillStatistic {
     /// Calculate a padded vertical range containing the selected line and band.
     pub fn get_y_range(
         &self,
-        fill_rows: &Vec<ContinuousValueRow>,
+        fill_rows: &[ContinuousValueRow],
     ) -> Result<Range<f64>, PlotError> {
         let average = self.get_fill_average()?;
         let band = self.get_fill_band()?;
@@ -462,9 +493,13 @@ impl PlotWindow {
     /// horizontal coordinates for continuous-data plots.
     pub fn get_x_filter(&self) -> Result<impl Fn(&ContinuousValueRow) -> f64, PlotError> {
         let x = match self.x_axis {
-            Axis::Time { .. } => Box::new(|row: &ContinuousValueRow| row.time)
+            Axis::Time { unit } => Box::new(move |row: &ContinuousValueRow| {
+                time_for_plot(unit, row.time)
+            })
                 as Box<dyn Fn(&ContinuousValueRow) -> f64>,
-            Axis::Temperature { .. } => Box::new(|row: &ContinuousValueRow| row.temperature),
+            Axis::Temperature { unit } => Box::new(move |row: &ContinuousValueRow| {
+                temperature_for_plot(unit, row.temperature)
+            }),
             _ => {
                 return Err(PlotError::Draw {
                     path: self.output.clone(),
@@ -478,11 +513,14 @@ impl PlotWindow {
     /// Calculate a padded horizontal range from the configured row accessor.
     pub fn get_continuous_x_range(
         &self,
-        fill_rows: &Vec<ContinuousValueRow>,
+        fill_rows: &[ContinuousValueRow],
     ) -> Result<Range<f64>, PlotError> {
         let x = self.get_x_filter()?;
 
-        Ok(padded_range(fill_rows.iter().map(x)))
+        Ok(orient_range(
+            self.x_axis,
+            padded_range(fill_rows.iter().map(x)),
+        ))
     }
 
     /// Return a row accessor for the selected continuous vertical value.
@@ -491,9 +529,13 @@ impl PlotWindow {
     /// path.
     pub fn get_y_filter(&self) -> Result<impl Fn(&ContinuousValueRow) -> f64, PlotError> {
         let y = match self.y_axis {
-            Axis::Time { .. } => Box::new(|row: &ContinuousValueRow| row.time)
+            Axis::Time { unit } => Box::new(move |row: &ContinuousValueRow| {
+                time_for_plot(unit, row.time)
+            })
                 as Box<dyn Fn(&ContinuousValueRow) -> f64>,
-            Axis::Temperature { .. } => Box::new(|row: &ContinuousValueRow| row.temperature),
+            Axis::Temperature { unit } => Box::new(move |row: &ContinuousValueRow| {
+                temperature_for_plot(unit, row.temperature)
+            }),
             Axis::Fill { statistics } => match statistics.average {
                 FillAverage::Mean => Box::new(|row: &ContinuousValueRow| row.fill),
                 FillAverage::Median => Box::new(|row: &ContinuousValueRow| row.fill_median)
@@ -512,15 +554,17 @@ impl PlotWindow {
     /// Calculate a padded vertical range for the configured continuous axis.
     pub fn get_continuous_y_range(
         &self,
-        fill_rows: &Vec<ContinuousValueRow>,
+        fill_rows: &[ContinuousValueRow],
     ) -> Result<Range<f64>, PlotError> {
         let y = self.get_y_filter()?;
         match self.y_axis {
             Axis::Time { .. } => {
-                return Ok(padded_range(fill_rows.iter().map(y)));
+                return Ok(orient_range(
+                    self.y_axis,
+                    padded_range(fill_rows.iter().map(y)),
+                ));
             }
             Axis::Temperature { .. } => {
-                let y = |row: &ContinuousValueRow| row.temperature;
                 return Ok(padded_range(fill_rows.iter().map(y)));
             }
             Axis::Fill { statistics } => {
@@ -602,10 +646,10 @@ impl PlotWindow {
             })
     }
 
-    /// Plot temperature in kelvin against time in seconds.
+    /// Plot continuous results using the units configured on each axis.
     pub fn continuous_data_plot(
         &self,
-        fill_rows: &Vec<ContinuousValueRow>,
+        fill_rows: &[ContinuousValueRow],
         caption: &str,
         legend: bool,
     ) -> Result<(), PlotError> {
@@ -678,7 +722,7 @@ impl PlotWindow {
     /// during drawing.
     pub fn plot_events_vs_time(
         &self,
-        event_rows: &Vec<AverageEventRow>,
+        event_rows: &[AverageEventRow],
         series: &[EventSeries],
         new_bin_width: Option<TimeFloat>,
         caption: &str,
@@ -693,8 +737,8 @@ impl PlotWindow {
         let rows = if let Some(width) = new_bin_width {
             rebinned = rebin_event_rows(event_rows, width)?;
             rebinned.as_slice()
-        } else {
-            event_rows.as_slice()
+        } else{
+            event_rows
         };
         let bins = event_plot_bins(rows);
         if bins.is_empty() {
@@ -703,7 +747,20 @@ impl PlotWindow {
                 message: "at least one completed event bin is required for plotting".into(),
             });
         }
-        let x_range = padded_range(bins.iter().map(|bin| bin.centre));
+        let time_unit = match self.x_axis {
+            Axis::Time { unit } => unit,
+            _ => {
+                return Err(PlotError::Setup {
+                    source: "x_axis".into(),
+                    message: "event plots require time on the horizontal axis".into(),
+                });
+            }
+        };
+        let plot_time = |seconds| time_for_plot(time_unit, seconds);
+        let x_range = orient_range(
+            self.x_axis,
+            padded_range(bins.iter().map(|bin| plot_time(bin.centre))),
+        );
         let maximum = bins
             .iter()
             .flat_map(|bin| {
@@ -726,8 +783,14 @@ impl PlotWindow {
                 .draw_series(bins.windows(2).map(|pair| {
                     PathElement::new(
                         [
-                            (pair[0].centre, event_frequency(&pair[0], column)),
-                            (pair[1].centre, event_frequency(&pair[1], column)),
+                            (
+                                plot_time(pair[0].centre),
+                                event_frequency(&pair[0], column),
+                            ),
+                            (
+                                plot_time(pair[1].centre),
+                                event_frequency(&pair[1], column),
+                            ),
                         ],
                         color.stroke_width(1),
                     )
@@ -859,9 +922,9 @@ pub struct GeneratedPlots {
 
 /// Consolidated fill and event results loaded from the two simulation CSVs.
 #[derive(Debug, Clone)]
-pub struct SimulationResults {
-    fill_rows: Vec<ContinuousValueRow>,
-    event_rows: Vec<AverageEventRow>,
+pub enum SimulationResults {
+    Contiuous {fill_rows: Vec<ContinuousValueRow>},
+    Events {event_rows: Vec<AverageEventRow>},
 }
 
 /// One completed event bin represented by its centre, width, and frequency row.
@@ -878,132 +941,158 @@ struct EventPlotBin<'a> {
 impl SimulationResults {
     /// Load and validate one fill CSV and one event CSV.
     pub fn from_csv(
-        fill_csv: impl AsRef<Path>,
-        event_csv: impl AsRef<Path>,
+        csv: impl AsRef<Path>,
+        continuous: bool,
     ) -> Result<Self, PlotError> {
-        let fill_path = fill_csv.as_ref().to_path_buf();
-        let event_path = event_csv.as_ref().to_path_buf();
-        let fill_rows = read_csv::<ContinuousValueRow>(&fill_path)?;
-        let event_rows = read_csv::<AverageEventRow>(&event_path)?;
-        validate_fill_rows(&fill_rows)?;
-        validate_event_rows(&event_rows)?;
 
-        Ok(Self {
-            fill_rows,
-            event_rows,
-        })
+        if continuous{
+            let fill_path = csv.as_ref().to_path_buf();
+            let fill_rows = read_csv::<ContinuousValueRow>(&fill_path)?;
+            validate_fill_rows(&fill_rows)?;
+            return Ok(Self::Contiuous { fill_rows });
+
+        } else{
+            let event_path = csv.as_ref().to_path_buf();
+            let event_rows = read_csv::<AverageEventRow>(&event_path)?;
+            validate_event_rows(&event_rows)?;
+            return Ok(Self::Events { event_rows } );
+        }
+
     }
     /// Borrow the loaded continuous fill rows.
-    pub fn fill_rows(&self) -> &[ContinuousValueRow] {
-        &self.fill_rows
+    pub fn fill_rows(&self) -> Result<&[ContinuousValueRow],PlotError> {
+        match self{
+            Self::Contiuous { fill_rows }=> Ok(fill_rows),
+            _ => Err(PlotError::Setup { source: "Incorrect data access:".to_string(), message: "Tried to access Events from continuosu data".to_string() })
+        }
     }
 
     /// Borrow the loaded averaged event-count rows.
-    pub fn event_rows(&self) -> &[AverageEventRow] {
-        &self.event_rows
+    pub fn event_rows(&self) -> Result<&[AverageEventRow], PlotError> {
+         match self{
+            Self::Events { event_rows }=> Ok(event_rows),
+            _ => Err(PlotError::Setup { source: "Incorrect data access:".to_string(), message: "Tried to access continuous data from events".to_string() })
+        }
     }
 }
 
-/// Load both result CSVs and create six standard PNG plots.
+/// Load continuous results and create the standard plots in the requested units.
 ///
-/// `event_bin_width` can request smoothing of the event plot. The four fill
-/// plots cover both available central statistics and both horizontal axes.
-pub fn plot_default_results(
+/// CSV values are stored in seconds and kelvin. Geological time units use an
+/// axis directed from the initial age toward zero.
+pub fn plot_default_continuous_results(
     fill_csv: impl AsRef<Path>,
-    event_csv: impl AsRef<Path>,
     output_directory: impl AsRef<Path>,
-    event_bin_width: Option<TimeFloat>,
-) -> Result<GeneratedPlots, PlotError> {
-    let results = SimulationResults::from_csv(fill_csv, event_csv)?;
+    time_unit: TimeUnit,
+    temperature_unit: TemperatureUnit,
+) -> Result<(), PlotError> {
+    let results = SimulationResults::from_csv(fill_csv, true)?;
     let output_directory = output_directory.as_ref();
     fs::create_dir_all(output_directory).map_err(|source| PlotError::CreateDirectory {
         path: output_directory.to_path_buf(),
         source,
     })?;
 
+    let time_unit = time_unit.to_string();
+    let temperature_unit = temperature_unit.to_string();
+
     let to_plot = PlotWindow::new(
         output_directory.join("mean_fill_vs_time.png"),
         "Time",
-        "second",
+        &time_unit,
         "Fill",
         "None",
         true,
         "sd",
     )?;
-    to_plot.continuous_data_plot(&results.fill_rows, "Mean fill vs Time", true)?;
+    to_plot.continuous_data_plot(results.fill_rows()?, "Mean fill vs Time", true)?;
     let to_plot = PlotWindow::new(
         output_directory.join("mean_fill_vs_temperature.png"),
         "Temperature",
-        "Kelvin",
+        &temperature_unit,
         "Fill",
         "None",
         true,
         "sd",
     )?;
-    to_plot.continuous_data_plot(&results.fill_rows, "Mean fill vs Temperature", true)?;
+    to_plot.continuous_data_plot(results.fill_rows()?, "Mean fill vs Temperature", true)?;
 
     let to_plot = PlotWindow::new(
         output_directory.join("median_fill_vs_time.png"),
         "Time",
-        "second",
+        &time_unit,
         "Fill",
         "None",
         false,
         "sd",
     )?;
-    to_plot.continuous_data_plot(&results.fill_rows, "Median fill vs Time", true)?;
+    to_plot.continuous_data_plot(results.fill_rows()?, "Median fill vs Time", true)?;
 
     let to_plot = PlotWindow::new(
         output_directory.join("median_fill_vs_temperature.png"),
         "Temperature",
-        "Kelvin",
+        &temperature_unit,
         "Fill",
         "None",
         false,
         "sd",
     )?;
-    to_plot.continuous_data_plot(&results.fill_rows, "Meanian fill vs Temperature", true)?;
-
-    let paths = GeneratedPlots {
-        mean_fill_vs_time: output_directory.join("mean_fill_vs_time.png"),
-        mean_fill_vs_temperature: output_directory.join("mean_fill_vs_temperature.png"),
-        median_fill_vs_time: output_directory.join("median_fill_vs_time.png"),
-        median_fill_vs_temperature: output_directory.join("median_fill_vs_temperature.png"),
-        temperature_vs_time: output_directory.join("temperature_vs_time.png"),
-        events_vs_time: output_directory.join("events_vs_time.png"),
-    };
+    to_plot.continuous_data_plot(results.fill_rows()?, "Meanian fill vs Temperature", true)?;
 
     let to_plot = PlotWindow::new(
         output_directory.join("temperature_vs_time.png"),
         "Time",
-        "second",
+        &time_unit,
         "Temperature",
-        "Kelvin",
+        &temperature_unit,
         false,
         "sd",
     )?;
-    to_plot.continuous_data_plot(&results.fill_rows, "Time vs Temperature", false)?;
+    to_plot.continuous_data_plot(results.fill_rows()?, "Time vs Temperature", false)?;
     let to_plot = PlotWindow::new(
         output_directory.join("time_vs_temperature.png"),
         "Temperature",
-        "Kelvin",
+        &temperature_unit,
         "Time",
-        "second",
+        &time_unit,
         false,
         "sd",
     )?;
-    to_plot.continuous_data_plot(&results.fill_rows, "Temperature vs Time ", false)?;
+    to_plot.continuous_data_plot(results.fill_rows()?, "Temperature vs Time ", false)?;
+
+    Ok(())
+}
+
+/// Load averaged event results and create the standard event-frequency plot.
+///
+/// `event_bin_width` can request smoothing in seconds. Timestamps are displayed
+/// in `time_unit`, with geological-age axes directed toward zero.
+pub fn plot_default_event_results(
+    event_csv: impl AsRef<Path>,
+    output_directory: impl AsRef<Path>,
+    event_bin_width: Option<TimeFloat>,
+    time_unit: TimeUnit,
+) -> Result<(), PlotError> {
+    let results = SimulationResults::from_csv(event_csv, false)?;
+    let output_directory = output_directory.as_ref();
+    fs::create_dir_all(output_directory).map_err(|source| PlotError::CreateDirectory {
+        path: output_directory.to_path_buf(),
+        source,
+    })?;
+
+    let time_unit = time_unit.to_string();
     let to_plot = PlotWindow::new(
         output_directory.join("events_vs_time.png"),
         "Time",
-        "second",
-        "Fill",
+        &time_unit,
+        "Event",
         "second",
         false,
         "sd",
     )?;
+
     to_plot.plot_events_vs_time(
-        &results.event_rows,
+        results.event_rows()?,
         &[
             EventSeries::Recombination,
             EventSeries::Retrapping,
@@ -1013,7 +1102,7 @@ pub fn plot_default_results(
         "Events vs Time",
     )?;
 
-    Ok(paths)
+    Ok(())
 }
 
 /// Deserialize every record in a CSV file, trimming accidental header spaces.
@@ -1033,6 +1122,7 @@ fn read_csv<T: for<'de> serde::Deserialize<'de>>(path: &Path) -> Result<Vec<T>, 
             source,
         })
 }
+
 
 /// Validate all mandatory fill fields without rejecting absent legacy quartiles.
 fn validate_fill_rows(rows: &[ContinuousValueRow]) -> Result<(), PlotError> {
@@ -1110,6 +1200,40 @@ fn validate_event_rows(rows: &[AverageEventRow]) -> Result<(), PlotError> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod unit_conversion_tests {
+    use super::*;
+
+    #[test]
+    fn converts_canonical_values_to_requested_plot_units() {
+        let one_ma_in_seconds = time::convert_to_seconds(TimeUnit::MaAnnum, 1.0).unwrap();
+
+        assert_eq!(time_for_plot(TimeUnit::Second, 60.0), 60.0);
+        assert_eq!(time_for_plot(TimeUnit::Minute, 60.0), 1.0);
+        assert_eq!(time_for_plot(TimeUnit::MaAnnum, one_ma_in_seconds), 1.0);
+        assert_eq!(temperature_for_plot(TemperatureUnit::Kelvin, 273.15), 273.15);
+        assert!(
+            temperature_for_plot(TemperatureUnit::Celsius, 273.15).abs() < 1.0e-12
+        );
+    }
+
+    #[test]
+    fn geological_time_ranges_run_from_age_to_zero() {
+        assert_eq!(
+            orient_range(Axis::Time { unit: TimeUnit::MaAnnum }, 0.0..2.0),
+            2.0..0.0,
+        );
+        assert_eq!(
+            orient_range(Axis::Time { unit: TimeUnit::KAnnum }, 0.0..2.0),
+            2.0..0.0,
+        );
+        assert_eq!(
+            orient_range(Axis::Time { unit: TimeUnit::Year }, 0.0..2.0),
+            0.0..2.0,
+        );
+    }
 }
 
 // #[cfg(test)]

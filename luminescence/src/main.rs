@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let total_start = Instant::now();
 
     let start = Instant::now();
-    mc::monte_carlo_run(10, 1, 400, None)?;
+    mc::monte_carlo_run(105, 1, 100, None)?;
     eprintln!("Monte Carlo Complete:             {:?}", start.elapsed());
     
     // let start = Instant::now();
@@ -32,8 +32,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 
 }
-
-
 
 
 /// Parse the optional single experiment-directory name from command-line arguments.

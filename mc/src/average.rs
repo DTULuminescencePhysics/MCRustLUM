@@ -13,8 +13,9 @@
 use common::charge_transfer::{ElectronicState, Event, RecordedEvent};
 use common::numeric::{Float, TimeFloat};
 use io::outputs::{
-    AverageEventRow, BatchReader, ContinuousValueRow, read_all_batches, write_average_events_csv,
-    write_continuous_values_csv,
+    AverageEventRow, BatchReader, ContinuousValueRow,RollingAverageFillRow, read_all_batches, write_average_events_csv,
+    write_continuous_values_csv, write_rolling_average_fill_csv,
+
 };
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -28,6 +29,8 @@ const TEMPORARY_DIRECTORY: &str = "tmp";
 const AVERAGE_FILL_PREFIX: &str = "average_fill";
 /// Prefix used for per-experiment ensemble event frequencies.
 const AVERAGE_EVENT_PREFIX: &str = "average_event";
+/// Prefix used for per-experiment rolling ensemble fill statistics
+const ROLLING_AVERAGE_FILL_PREFIX: &str = "rolling_average_fill";
 /// Smallest automatically selected event-count bin width, in seconds.
 const MINIMUM_EVENT_BIN_WIDTH: TimeFloat = 0.1;
 /// Approximate number of event bins produced when a profile is long enough to
@@ -134,7 +137,9 @@ struct FillStatistics {
     /// Arithmetic mean across repetitions.
     mean: Float,
     /// Population standard deviation across repetitions.
-    standard_deviation: Float,
+    pop_standard_deviation: Float,
+    /// Population standard deviation across repetitions.
+    sample_standard_deviation: Float,
     /// Linearly interpolated 50th percentile.
     median: Float,
     /// Linearly interpolated 10th percentile.
@@ -157,12 +162,12 @@ impl FillStatistics {
         let variance = values
             .iter()
             .map(|value| (value - mean).powi(2))
-            .sum::<Float>()
-            / values.len() as Float;
+            .sum::<Float>();
 
         Self {
             mean,
-            standard_deviation: variance.sqrt(),
+            pop_standard_deviation: (variance/values.len() as Float ).sqrt(),
+            sample_standard_deviation: (variance/ (values.len() as Float -1.0) ).sqrt(),
             median: quantile(&values, 0.5),
             quantile_0_1: quantile(&values, 0.1),
             quantile_0_9: quantile(&values, 0.9),
@@ -177,7 +182,8 @@ impl FillStatistics {
             time,
             temperature,
             fill: self.mean,
-            fill_standard_deviation: self.standard_deviation,
+            fill_pop_standard_deviation: self.pop_standard_deviation,
+            fill_samp_standard_deviation: self.sample_standard_deviation,
             fill_median: self.median,
             fill_quantile_0_1: self.quantile_0_1,
             fill_quantile_0_9: self.quantile_0_9,
@@ -196,6 +202,60 @@ fn quantile(sorted_values: &[Float], probability: Float) -> Float {
     sorted_values[lower_index]
         + fraction * (sorted_values[upper_index] - sorted_values[lower_index])
 }
+
+/// Select cumulative repetition counts, always including the full ensemble.
+fn repetition_checkpoints(
+    repetitions: usize,
+    divisor: usize,
+) -> Result<Vec<usize>, String> {
+    if repetitions == 0 {
+        return Err("at least one repetition is required".to_string());
+    }
+    if divisor == 0 {
+        return Err("rolling-average divisor must be greater than zero".to_string());
+    }
+
+    let mut counts: Vec<_> = (divisor..=repetitions)
+        .step_by(divisor)
+        .collect();
+
+    if counts.last().copied() != Some(repetitions) {
+        counts.push(repetitions);
+    }
+
+    Ok(counts)
+}
+
+/// Calculate cumulative means and population standard deviations.
+///
+/// Welford's algorithm accumulates each prefix in one pass, without sorting
+/// the repetitions or recalculating every prefix from scratch.
+fn cumulative_fill_statistics(
+    cursors: &[TrajectoryCursor],
+    checkpoints: &[usize],
+) -> Vec<(Float, Float, Float)> {
+    let mut statistics = Vec::with_capacity(checkpoints.len());
+    let mut checkpoint_index = 0;
+    let mut mean: Float = 0.0;
+    let mut m2: Float = 0.0;
+
+    for (index, cursor) in cursors.iter().enumerate() {
+        let count = index + 1;
+        let delta = cursor.fill - mean;
+        mean += delta / count as Float;
+        m2 += delta * (cursor.fill - mean);
+
+        if checkpoints.get(checkpoint_index).copied() == Some(count) {
+            let variance_p = (m2 / count as Float).max(0.0);
+            let variance_s = (m2 / (count as Float- 1.0)).max(0.0);
+            statistics.push((mean, variance_p.sqrt(),variance_s.sqrt()));
+            checkpoint_index += 1;
+        }
+    }
+
+    statistics
+}
+
 
 impl AverageFillRows {
     /// Open all trajectories, validate their initial states, and infer direction.
@@ -365,6 +425,34 @@ impl Iterator for AverageFillRows {
             .row(time, temperature_sum / temperature_count as Float)))
     }
 }
+
+/// Adapt the existing time merge into cumulative-statistic rows.
+struct RollingAverageFillRows {
+    merged: AverageFillRows,
+    checkpoints: Vec<usize>,
+}
+
+impl Iterator for RollingAverageFillRows {
+    type Item = Result<RollingAverageFillRow, String>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Advancing the existing iterator updates every cursor to the same
+        // union time, including carrying unchanged fills forward.
+        let row = match self.merged.next()? {
+            Ok(row) => row,
+            Err(error) => return Some(Err(error)),
+        };
+
+        Some(Ok(RollingAverageFillRow {
+            time: row.time,
+            statistics: cumulative_fill_statistics(
+                &self.merged.cursors,
+                &self.checkpoints,
+            ),
+        }))
+    }
+}
+
 
 /// Raw event counters for one fixed interval of simulation time.
 ///
@@ -738,6 +826,48 @@ fn average_fill_paths(paths: Vec<PathBuf>, output_file: &Path) -> Result<(), Str
     let rows = AverageFillRows::new(paths)?;
     write_continuous_values_csv(output_file, rows).map_err(|error| error.to_string())
 }
+
+/// Produce rolling_average_fill_<experiment>.csv from tmp/.
+pub fn rolling_average_fill(divisor: usize) -> Result<(), String> {
+    rolling_average_fill_in(TEMPORARY_DIRECTORY, ".", divisor)
+}
+
+/// Produce cumulative fill statistics separately for each experiment.
+pub fn rolling_average_fill_in(
+    temporary_directory: impl AsRef<Path>,
+    output_directory: impl AsRef<Path>,
+    divisor: usize,
+) -> Result<(), String> {
+    if divisor == 0 {
+        return Err("rolling-average divisor must be greater than zero".to_string());
+    }
+
+    for (experiment_index, paths) in
+        temporary_result_paths(temporary_directory.as_ref())?
+    {
+        let checkpoints = repetition_checkpoints(paths.len(), divisor)?;
+        let rows = RollingAverageFillRows {
+            merged: AverageFillRows::new(paths)?,
+            checkpoints: checkpoints.clone(),
+        };
+
+        let output_file = average_output_path(
+            output_directory.as_ref(),
+            ROLLING_AVERAGE_FILL_PREFIX,
+            experiment_index,
+        );
+
+        write_rolling_average_fill_csv(
+            &output_file,
+            &checkpoints,
+            rows,
+        )
+        .map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
+}
+
 
 /// Average one experiment's event trajectories into one CSV file.
 fn average_event_paths(

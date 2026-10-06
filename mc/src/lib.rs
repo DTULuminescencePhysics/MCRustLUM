@@ -28,7 +28,7 @@ use crate::system_setup::MonteCarloSimulation;
 use common::numeric::TimeFloat;
 
 use io::inputs::{read_inputs, SimulationInputs};
-use io::plotting;
+use io::plotting::{plot_time_temperature, plot_default_continuous_results,plot_rolling_average_fill_results, plot_default_event_results};
 
 /// Main call function to run the required Monte Carlo experiments
 
@@ -66,31 +66,46 @@ fn monte_carlo_result(inputs: &SimulationInputs, experiments: usize, event_bin_w
     let start = Instant::now();
     let output_directory = ".";
     
-    plotting::plot_time_temperature(
+    plot_time_temperature(
         output_directory,
         &inputs.time_temperature)?;
 
 
     crate::average::average_fill()?;
-    eprintln!("average fill:      {:?}", start.elapsed());
+    eprintln!("Average fill calculation:      {:?}", start.elapsed());
     
     let start = Instant::now();
+    let rolling_divisor = 10;
+    crate::average::rolling_average_fill(rolling_divisor)?;
+    eprintln!("Rolling average calculation:      {:?}", start.elapsed());
+    
+    let start = Instant::now();
+
     crate::average::average_events()?;
-    eprintln!("average events:    {:?}", start.elapsed());
+    eprintln!("Average events calculation:    {:?}", start.elapsed());
 
     let start = Instant::now();
 
     for exp in 0..experiments{
         let fill_csv = format!("average_fill_{}.csv", exp);
+        let av_fill_csv = format!("rolling_average_fill_{}.csv", exp);
         let event_csv = format!("average_event_{}.csv", exp); 
         
-        plotting::plot_default_continuous_results(
+        plot_default_continuous_results(
             fill_csv,
             output_directory,
             inputs.time_temperature.time_unit,
-            inputs.time_temperature.temp_unit,)?;
+            inputs.time_temperature.temp_unit,
+        )?;
+
+        plot_rolling_average_fill_results(
+            av_fill_csv,
+            output_directory,
+            inputs.time_temperature.time_unit,
+
+        )?;
         
-        plotting::plot_default_event_results(
+        plot_default_event_results(
             event_csv,
             output_directory,
             event_bin_width,
@@ -98,7 +113,7 @@ fn monte_carlo_result(inputs: &SimulationInputs, experiments: usize, event_bin_w
         )?;
     }   
     
-    eprintln!("plotting:          {:?}", start.elapsed());
+    eprintln!("Plotting:          {:?}", start.elapsed());
 
     Ok(())
 }

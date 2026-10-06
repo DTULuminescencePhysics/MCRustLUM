@@ -294,8 +294,8 @@ impl FillStatistic {
             }
 
             FillBand::StandardDeviation => (
-                row.fill - row.fill_standard_deviation,
-                row.fill + row.fill_standard_deviation,
+                row.fill - row.fill_pop_standard_deviation,
+                row.fill + row.fill_pop_standard_deviation,
             ),
             FillBand::InterquartileRange => (row.fill_quantile_0_25, row.fill_quantile_0_75),
         })
@@ -1122,6 +1122,146 @@ pub fn plot_default_continuous_results(
     Ok(())
 }
 
+/// Plot every cumulative mean in a rolling-average CSV against profile time.
+///
+/// Columns named `μ_<repetitions>` are drawn in increasing repetition-count
+/// order. Standard-deviation columns are ignored. Times are stored in seconds
+/// and converted to `time_unit`; geological-age axes run from older to younger.
+/// The PNG uses the CSV's file stem, e.g. `rolling_average_fill_0.png`.
+pub fn plot_rolling_average_fill_results(
+    fill_csv: impl AsRef<Path>,
+    output_directory: impl AsRef<Path>,
+    time_unit: TimeUnit,
+) -> Result<(), PlotError> {
+    let fill_csv = fill_csv.as_ref();
+    let (times, series) = read_rolling_fill_means(fill_csv)?;
+    let output_directory = output_directory.as_ref();
+    fs::create_dir_all(output_directory).map_err(|source| PlotError::CreateDirectory {
+        path: output_directory.to_path_buf(),
+        source,
+    })?;
+    let stem = fill_csv.file_stem().ok_or_else(|| PlotError::Setup {
+        source: fill_csv.display().to_string(),
+        message: "rolling-average CSV must have a file name".into(),
+    })?;
+    let mut output_name = stem.to_os_string();
+    output_name.push(".png");
+    let window = PlotWindow::new(
+        output_directory.join(output_name),
+        "Time",
+        &time_unit.to_string(),
+        "Fill",
+        "None",
+        true,
+        "none",
+    )?;
+    let x_range = orient_range(
+        window.x_axis,
+        padded_range(times.iter().map(|&time| time_for_plot(time_unit, time))),
+    );
+    let y_range = padded_range(series.iter().flat_map(|series| series.means.iter().copied()));
+    let (root, mut chart) = window.plot_setup("Cumulative mean fill vs Time", x_range, y_range)?;
+    for (index, series) in series.iter().enumerate() {
+        let colour = Palette99::pick(index).to_rgba();
+        chart.draw_series(LineSeries::new(
+            times.iter().zip(&series.means)
+                .map(|(&time, &mean)| (time_for_plot(time_unit, time), mean)),
+            colour.stroke_width(2),
+        ))
+        .map_err(|error| PlotError::Draw {
+            path: window.output.clone(),
+            message: format!("{error:?}"),
+        })?
+        .label(format!("{} repetitions", series.repetitions))
+        .legend(move |(x, y)| {
+            PathElement::new([(x, y), (x + 20, y)], colour.stroke_width(2))
+        });
+    }
+    window.plot_legend(&mut chart)?;
+    root.present().map_err(|error| PlotError::Draw {
+        path: window.output.clone(),
+        message: format!("{error:?}"),
+    })
+}
+
+/// One cumulative mean trajectory, identified by its repetition count.
+struct RollingFillMeanSeries {
+    repetitions: usize,
+    means: Vec<Float>,
+}
+
+/// Read dynamic mean columns without requiring any particular uncertainty columns.
+fn read_rolling_fill_means(
+    path: &Path,
+) -> Result<(Vec<TimeFloat>, Vec<RollingFillMeanSeries>), PlotError> {
+    let invalid = |message: String| PlotError::Setup {
+        source: path.display().to_string(),
+        message,
+    };
+    let csv_error = |source| PlotError::Csv {
+        path: path.to_path_buf(),
+        source,
+    };
+    let mut reader = csv::ReaderBuilder::new()
+        .trim(csv::Trim::All)
+        .from_path(path)
+        .map_err(&csv_error)?;
+    let headers = reader.headers().map_err(&csv_error)?.clone();
+    let time_columns: Vec<_> = headers.iter().enumerate()
+        .filter(|(_, header)| *header == "time")
+        .map(|(index, _)| index)
+        .collect();
+    if time_columns.len() != 1 {
+        return Err(invalid("expected exactly one time column".into()));
+    }
+    let mut columns = Vec::new();
+    for (index, header) in headers.iter().enumerate() {
+        if let Some(count) = header.strip_prefix("μ_") {
+            let repetitions = count.parse::<usize>()
+                .ok().filter(|&count| count > 0)
+                .ok_or_else(|| invalid(format!("invalid mean column {header}")))?;
+            columns.push((repetitions, index));
+        }
+    }
+    columns.sort_by_key(|&(count, _)| count);
+    if columns.is_empty() {
+        return Err(invalid("no μ_<repetitions> mean columns were found".into()));
+    }
+    if columns.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+        return Err(invalid("duplicate repetition counts in mean columns".into()));
+    }
+    let mut series: Vec<_> = columns.iter().map(|&(repetitions, _)| RollingFillMeanSeries {
+        repetitions,
+        means: Vec::new(),
+    }).collect();
+    let mut times = Vec::new();
+    for (row_index, record) in reader.records().enumerate() {
+        let record = record.map_err(&csv_error)?;
+        let parse = |column: usize| -> Result<Float, PlotError> {
+            record[column].parse::<Float>().ok()
+                .filter(|value| value.is_finite())
+                .ok_or_else(|| invalid(format!(
+                    "row {} has an invalid value in column {}",
+                    row_index + 2, &headers[column],
+                )))
+        };
+        times.push(parse(time_columns[0])?);
+        for ((_, column), series) in columns.iter().zip(&mut series) {
+            let mean = parse(*column)?;
+            if !(0.0..=1.0).contains(&mean) {
+                return Err(invalid(format!(
+                    "row {} contains a mean outside [0, 1]", row_index + 2,
+                )));
+            }
+            series.means.push(mean);
+        }
+    }
+    if times.is_empty() {
+        return Err(invalid("the file contains no rolling-average rows".into()));
+    }
+    Ok((times, series))
+}
+
 pub fn plot_time_temperature(
     output_directory: impl AsRef<Path>,
     inputs: &TimeTempSpecification,
@@ -1236,7 +1376,8 @@ fn validate_fill_rows(rows: &[ContinuousValueRow]) -> Result<(), PlotError> {
             row.time,
             row.temperature,
             row.fill,
-            row.fill_standard_deviation,
+            row.fill_pop_standard_deviation,
+            row.fill_samp_standard_deviation,
             row.fill_median,
             row.fill_quantile_0_1,
             row.fill_quantile_0_9,
@@ -1247,12 +1388,19 @@ fn validate_fill_rows(rows: &[ContinuousValueRow]) -> Result<(), PlotError> {
                 message: format!("row {} contains a non-finite value", index + 2),
             });
         }
-        if row.fill_standard_deviation < 0.0 {
+        if row.fill_pop_standard_deviation < 0.0 {
             return Err(PlotError::Setup {
-                source: "Fill Standard Deviation".into(),
-                message: format!("row {} has a negative standard deviation", index + 2),
+                source: "Fill Population Standard Deviation".into(),
+                message: format!("row {} has a negative population standard deviation", index + 2),
             });
         }
+        if row.fill_samp_standard_deviation < 0.0 {
+            return Err(PlotError::Setup {
+                source: "Fill Sample Standard Deviation".into(),
+                message: format!("row {} has a negative sample standard deviation", index + 2),
+            });
+        }
+
         let quartiles = (row.fill_quantile_0_25, row.fill_quantile_0_75);
         if quartiles.0.is_finite() != quartiles.1.is_finite()
             || (quartiles.0.is_finite() && quartiles.0 > quartiles.1)
@@ -1304,6 +1452,54 @@ fn validate_event_rows(rows: &[AverageEventRow]) -> Result<(), PlotError> {
 #[cfg(test)]
 mod unit_conversion_tests {
     use super::*;
+
+    #[test]
+    fn plots_rolling_means_with_dynamic_columns_and_reverse_time() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "mcrustlum_rolling_{}_{unique}", std::process::id(),
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let csv = directory.join("rolling_average_fill_7.csv");
+        fs::write(&csv, concat!(
+            "time,μ_20,σ_20, s_20,μ_2,σ_2, s_2\n",
+            "63072000000,0.6,0.1, 0.11,0.5,0.2, NaN\n",
+            "31536000000,0.4,0.1, 0.11,0.3,0.2, NaN\n",
+            "0,0.2,0.1, 0.11,0.1,0.2, NaN\n",
+        )).unwrap();
+        let (times, series) = read_rolling_fill_means(&csv).unwrap();
+        assert_eq!(times, vec![63072000000.0, 31536000000.0, 0.0]);
+        assert_eq!(series.iter().map(|series| series.repetitions).collect::<Vec<_>>(), vec![2, 20]);
+        assert_eq!(series[0].means, vec![0.5, 0.3, 0.1]);
+        assert_eq!(series[1].means, vec![0.6, 0.4, 0.2]);
+        plot_rolling_average_fill_results(&csv, directory.join("plots"), TimeUnit::KAnnum).unwrap();
+        let png = fs::read(directory.join("plots/rolling_average_fill_7.png")).unwrap();
+        assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn rolling_means_reject_missing_duplicate_and_invalid_data() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let csv = std::env::temp_dir().join(format!(
+            "mcrustlum_invalid_rolling_{}_{unique}.csv", std::process::id(),
+        ));
+        for contents in [
+            "time,σ_10\n0,0.1\n",
+            "time,μ_10,μ_10\n0,0.2,0.3\n",
+            "time,μ_0\n0,0.2\n",
+            "time,μ_10\n",
+            "time,μ_10\nNaN,0.2\n",
+            "time,μ_10\n0,inf\n",
+            "time,μ_10\n0,1.1\n",
+        ] {
+            fs::write(&csv, contents).unwrap();
+            assert!(matches!(read_rolling_fill_means(&csv), Err(PlotError::Setup { .. })));
+        }
+        fs::remove_file(csv).unwrap();
+    }
 
     #[test]
     fn plots_coordinate_profiles_in_both_axis_orders() {
@@ -1391,5 +1587,3 @@ mod unit_conversion_tests {
         );
     }
 }
-
-

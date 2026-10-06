@@ -181,30 +181,45 @@ pub fn read_all_batches<T: DeserializeOwned>(
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
 pub struct ContinuousValueRow {
     /// Absolute profile time in seconds.
+    #[serde(rename = "t")]
     pub time: TimeFloat,
     /// Mean temperature of contributing records, in kelvin.
+    #[serde(rename = "T")]
     pub temperature: Float,
     /// Arithmetic mean trap filling fraction.
+    #[serde(rename = "n/N μ")]
     pub fill: Float,
     /// Population standard deviation of the filling fraction.
-    pub fill_standard_deviation: Float,
+    #[serde(rename = "n/N σ")]
+    pub fill_pop_standard_deviation: Float,
+    /// Sample standard deviation of the filling fraction.
+    #[serde(rename = "n/N s")]
+    pub fill_samp_standard_deviation: Float,
     /// Median filling fraction, using linearly interpolated quantiles.
+    #[serde(rename = "n/N η")]
     pub fill_median: Float,
     /// Linearly interpolated 10th percentile of the filling fraction.
+    #[serde(rename = "Q 10%")]
     pub fill_quantile_0_1: Float,
     /// Linearly interpolated 90th percentile of the filling fraction.
+    #[serde(rename = "Q 90%")]
     pub fill_quantile_0_9: Float,
     /// Linearly interpolated lower quartile of the filling fraction.
-    #[serde(default = "missing_quantile")]
+    #[serde(rename = "Q 25%")]
     pub fill_quantile_0_25: Float,
     /// Linearly interpolated upper quartile of the filling fraction.
-    #[serde(default = "missing_quantile")]
+    #[serde(rename = "Q 75%")]
     pub fill_quantile_0_75: Float,
 }
 
-/// Mark quartiles as unavailable when reading CSV files made by older releases.
-fn missing_quantile() -> Float {
-    Float::NAN
+/// One union-time row containing cumulative repetition statistics.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RollingAverageFillRow {
+    /// Absolute profile time in seconds.
+    pub time: TimeFloat,
+    /// Mean and population standard deviation for each checkpoint,
+    /// in the same order as the writer's repetition counts.
+    pub statistics: Vec<(Float, Float, Float)>,
 }
 
 /// One row in the averaged event-count output.
@@ -277,7 +292,7 @@ where
 
     writeln!(
         writer,
-        "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9,fill_quantile_0_25,fill_quantile_0_75"
+        "t,T,n/N μ,n/N σ,n/N s, n/N η,Q 10%,Q 90%,Q 25%,Q 75%"
     )
     .map_err(|source| CsvOutputError::Write {
         path: path.to_path_buf(),
@@ -291,11 +306,12 @@ where
         })?;
         writeln!(
             writer,
-            "{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{}",
             row.time,
             row.temperature,
             row.fill,
-            row.fill_standard_deviation,
+            row.fill_pop_standard_deviation,
+            row.fill_samp_standard_deviation,
             row.fill_median,
             row.fill_quantile_0_1,
             row.fill_quantile_0_9,
@@ -312,6 +328,62 @@ where
         path: path.to_path_buf(),
         source,
     })
+}
+
+/// Write cumulative fill statistics with dynamically generated headers.
+pub fn write_rolling_average_fill_csv<I, E>(
+    path: impl AsRef<Path>,
+    repetition_counts: &[usize],
+    rows: I,
+) -> Result<(), CsvOutputError>
+where
+    I: IntoIterator<Item = Result<RollingAverageFillRow, E>>,
+    E: fmt::Display,
+{
+    let path = path.as_ref();
+    let file = File::create(path).map_err(|source| CsvOutputError::Create {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut writer = BufWriter::new(file);
+
+    let write_error = |source| CsvOutputError::Write {
+        path: path.to_path_buf(),
+        source,
+    };
+
+    write!(writer, "time").map_err(&write_error)?;
+    for count in repetition_counts {
+        write!(writer, ",μ_{count},σ_{count}, s_{count}").map_err(&write_error)?;
+    }
+    writeln!(writer).map_err(&write_error)?;
+
+    for row in rows {
+        let row = row.map_err(|error| CsvOutputError::SourceData {
+            path: path.to_path_buf(),
+            message: error.to_string(),
+        })?;
+
+        if row.statistics.len() != repetition_counts.len() {
+            return Err(CsvOutputError::SourceData {
+                path: path.to_path_buf(),
+                message: format!(
+                    "expected {} statistic pairs, got {}",
+                    repetition_counts.len(),
+                    row.statistics.len(),
+                ),
+            });
+        }
+
+        write!(writer, "{}", row.time).map_err(&write_error)?;
+        for (mean, pop_standard_deviation, samp_standard_deviation) in row.statistics {
+            write!(writer, ",{mean},{pop_standard_deviation}, {samp_standard_deviation}")
+                .map_err(&write_error)?;
+        }
+        writeln!(writer).map_err(&write_error)?;
+    }
+
+    writer.flush().map_err(write_error)
 }
 
 /// Write per-bin event counts averaged across repetitions to a CSV file.
@@ -481,7 +553,8 @@ mod tests {
                 time: 0.0,
                 temperature: 273.15,
                 fill: 0.25,
-                fill_standard_deviation: 0.05,
+                fill_pop_standard_deviation: 0.05,
+                fill_samp_standard_deviation: 0.07,
                 fill_median: 0.25,
                 fill_quantile_0_1: 0.21,
                 fill_quantile_0_9: 0.29,
@@ -492,7 +565,8 @@ mod tests {
                 time: 1.0,
                 temperature: 283.15,
                 fill: 0.5,
-                fill_standard_deviation: 0.1,
+                fill_pop_standard_deviation: 0.1,
+                fill_samp_standard_deviation: 0.12,
                 fill_median: 0.5,
                 fill_quantile_0_1: 0.42,
                 fill_quantile_0_9: 0.58,

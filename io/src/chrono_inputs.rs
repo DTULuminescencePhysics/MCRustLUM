@@ -5,6 +5,7 @@ use crate::errors::InputError;
 use common::constants::temperature::TemperatureUnit;
 use common::constants::time::TimeUnit;
 use common::numeric::{Float, TimeFloat};
+use toml::value::Time;
 use std::fs::read_to_string;
 use std::path::Path;
 
@@ -32,6 +33,8 @@ pub struct RandomWalkInputs {
     pub time_unit: TimeUnit,
     pub temp_unit: TemperatureUnit,
     pub step_max: usize,
+    pub min_time: TimeFloat,
+    pub min_temp: Float,
     pub time_start_range: Vec<TimeFloat>,
     pub time_end_range: Vec<TimeFloat>,
     pub temp_start_range: Vec<Float>,
@@ -46,6 +49,8 @@ impl Default for RandomWalkInputs {
             time_unit: TimeUnit::Second,
             temp_unit: TemperatureUnit::Celsius,
             step_max: 100,
+            min_time: 1.0,
+            min_temp: 1.0,
             time_start_range: vec![0.0, 0.0],
             time_end_range: vec![160.0, 160.0],
             temp_start_range: vec![0.0, 0.0],
@@ -96,11 +101,6 @@ impl Default for ChronologyInputs {
         }
     }
 }
-
-
-
-
-
 
 
 

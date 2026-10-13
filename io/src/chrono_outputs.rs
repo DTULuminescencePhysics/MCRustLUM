@@ -236,6 +236,10 @@ pub struct ProfileGrid {
     ///
     /// Both indices are stored internally in ascending physical order.
     pub weights: Vec<u64>,
+    /// Most-supported profile selected from the ensemble by mean cell weight.
+    /// These rows are written immediately before the occupancy grid in CSV.
+    pub best_fit_times: Vec<TimeFloat>,
+    pub best_fit_temperatures: Vec<Float>,
 }
 
 pub fn write_profile_grid_csv(
@@ -258,6 +262,14 @@ pub fn write_profile_grid_csv(
                 "grid has {} weights but its dimensions require {expected_cells}",
                 grid.weights.len()
             ),
+        });
+    }
+    if grid.best_fit_times.len() != grid.best_fit_temperatures.len()
+        || grid.best_fit_times.len() < 2
+    {
+        return Err(CsvOutputError::SourceData {
+            path: path.to_path_buf(),
+            message: "best-fit profile must contain matching time and temperature vectors with at least two points".to_string(),
         });
     }
 
@@ -297,6 +309,40 @@ pub fn write_profile_grid_csv(
         grid.temperature_bounds.0, grid.temperature_bounds.1, grid.temperature_unit
     )
     .map_err(|source| CsvOutputError::Write {
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    // Fourth and fifth rows store the best-fit path for the heatmap renderer.
+    for (index, value) in grid.best_fit_times.iter().enumerate() {
+        if index != 0 {
+            write!(writer, ",").map_err(|source| CsvOutputError::Write {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        }
+        write!(writer, "{value}").map_err(|source| CsvOutputError::Write {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+    writeln!(writer).map_err(|source| CsvOutputError::Write {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    for (index, value) in grid.best_fit_temperatures.iter().enumerate() {
+        if index != 0 {
+            write!(writer, ",").map_err(|source| CsvOutputError::Write {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        }
+        write!(writer, "{value}").map_err(|source| CsvOutputError::Write {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+    writeln!(writer).map_err(|source| CsvOutputError::Write {
         path: path.to_path_buf(),
         source,
     })?;
@@ -407,13 +453,15 @@ mod tests {
             temperature_cells: 2,
             // Ascending temperature rows and ascending time columns.
             weights: vec![1, 2, 3, 4],
+            best_fit_times: vec![0.0, 10.0],
+            best_fit_temperatures: vec![20.0, 40.0],
         };
 
         write_profile_grid_csv(&path, &grid).unwrap();
         let output = fs::read_to_string(&path).unwrap();
         fs::remove_file(path).unwrap();
 
-        assert_eq!(output, "7\n10,0,KAnnum\n20,40,Celsius\n4,3\n2,1\n");
+        assert_eq!(output, "7\n10,0,KAnnum\n20,40,Celsius\n0,10\n20,40\n4,3\n2,1\n");
     }
 
     #[test]
@@ -428,6 +476,8 @@ mod tests {
             time_cells: 2,
             temperature_cells: 2,
             weights: vec![0; 3],
+            best_fit_times: vec![0.0, 1.0],
+            best_fit_temperatures: vec![0.0, 1.0],
         };
 
         let error = write_profile_grid_csv(&path, &grid).unwrap_err();

@@ -464,14 +464,26 @@ impl TimeTemperature {
             return;
         }
 
+        if !self.step.dt_check(&dt) {
+            return;
+        }
+
+        let section_index = self.section_index;
+        let boundary_time = self.times[section_index + 1];
+        let time_to_boundary = boundary_time - self.current_time();
+        let reaches_boundary = dt.abs() >= time_to_boundary.abs();
+
         self.current_temperature +=  self.step.advance(dt, &self.section_index);
-         
-        if (self.current_time() - 
-        self.times[self.section_index + 1]).abs() <= TimeFloat::EPSILON{ 
-            self.current_temperature = self.temperatures[self.section_index + 1];
-                if self.section_index + 1 < self.times.len() - 1 {
-                    self.section_index += 1;
-                }
+
+        if reaches_boundary {
+            // Snap explicitly to the control point. Comparing an absolute
+            // time difference with machine epsilon can fail when the profile
+            // time is large, even when this step was capped at the boundary.
+            self.step.time_advance.set_current(boundary_time);
+            self.current_temperature = self.temperatures[section_index + 1];
+            if section_index + 1 < self.times.len() - 1 {
+                self.section_index += 1;
+            }
         }
 
         self.step.update_current_max_dt(&self.times,&self.section_index);

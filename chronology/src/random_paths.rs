@@ -49,7 +49,7 @@ impl  RandomWalkSimulation {
                 temp_unit: profile_inputs.temp_unit,
             }
         )
-}
+    }
 
     pub fn run_random_walks(&self, trial_num: usize, output_directory: impl AsRef<Path>, rng: &mut impl Rng) -> Result<(),String> {
         let output_directory = output_directory.as_ref();
@@ -64,18 +64,22 @@ impl  RandomWalkSimulation {
                                                         .map_err(|error| error.to_string())?;
         
         let mut accepted_profile: Vec<TimeTempProfile> = Vec::with_capacity(1000);
-        
+        let mut acct_cnt = 0;
         for num in 0.. trial_num {
             let tt_prof = self.profile_type.create_new_profile(rng)?;
-            let result = self.monte_carlo.run_to_final_ratio_only(tt_prof.generate_profile(self.time_unit,self.temp_unit)?, num)?;
-            if self.check_profile(result, rng){
+            let profile = tt_prof.generate_profile(self.time_unit,self.temp_unit)?;
+            let result = self.monte_carlo.run_to_final_ratio_only(profile, num)?;
+            
+            if self.check_profile(result, self.monte_carlo.repetitions, rng){
                 accepted_profile.push(tt_prof);
+                acct_cnt += 1;
             }
             if accepted_profile.len() == 1000 {
                 chrono_outputs::append_chronology_profile_to_experiment_file( &output_path, &accepted_profile)
                                                                             .map_err(|error| error.to_string())?;
                 accepted_profile.clear(); 
             }
+            eprintln!("Checked profile number {}/{trial_num} | {acct_cnt} accepted! ",num+1,);
         }
         if accepted_profile.len() != 0 {
             chrono_outputs::append_chronology_profile_to_experiment_file( &output_path, &accepted_profile)
@@ -86,18 +90,20 @@ impl  RandomWalkSimulation {
         Ok(())
     }
 
-    pub fn check_profile(&self, result: Vec<Vec<Float>>, rng: &mut impl Rng) -> bool{
+    pub fn check_profile(&self, result: Vec<Vec<Float>>, reps: usize,  rng: &mut impl Rng) -> bool{
         let mut total: Float = 0.0;
 
         for ((res, target), error) in result.iter()
                                                                    .zip(&self.fill_ratio)
                                                                    .zip(&self.fill_ratio_error)
-        {
-            let diff: Float = ((res.iter().sum::<Float>())/(res.len()as Float-target))/error;
+        {   
+            
+            let diff: Float = (((res.iter().sum::<Float>())/reps as Float)-target)/error;
             total += diff.powf(2.0);
         }
 
         if (-0.5*total).exp() > rng.sample(Open01){
+
             return true; 
         }else{
             return false; 

@@ -13,6 +13,7 @@ use io::inputs::{CubeSpecification, SimulationInputs, TimeTempSpecification};
 use common::rate_equation_inputs::FillingTransitionInputs;
 use std::path::Path;
 use rayon::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// State shared by the repetitions and experiments in one Monte Carlo run.
 ///
@@ -238,6 +239,9 @@ impl MonteCarloSimulation {
     /// The outer vector is indexed by experiment. Each inner vector contains
     /// one final fill ratio per repetition; repetition order is unspecified.
     pub fn run_to_final_ratio_only(&self, tt_profile: TimeTemperature, trial_num:usize) -> Result<Vec<Vec<Float>>, String> {
+        // let completed_repetitions = AtomicUsize::new(0);
+        // let total_repetitions = self.experiments * self.repetitions;
+
         (0..self.experiments)
             .into_par_iter()
             .map(|experiment_index| {
@@ -256,7 +260,7 @@ impl MonteCarloSimulation {
                 (0..self.repetitions)
                     .into_par_iter()
                     .map(|repetition_index| {
-                        
+
                         let mut time_temperature = tt_profile.clone();
                         time_temperature.reset();
 
@@ -290,8 +294,8 @@ impl MonteCarloSimulation {
                             self.cube.trap_total,
                             self.inputs.filling.dd_unit,
                         )?;
-
-                        experiment
+                        
+                        let final_ratio = experiment
                             .run_no_output_file(
                                 &self.cube,
                                 &self.transitions,
@@ -305,7 +309,12 @@ impl MonteCarloSimulation {
                                     repetition_index + 1,
                                     self.repetitions,
                                 )
-                            })
+                            })?;
+
+                        // let completed = completed_repetitions.fetch_add(1, Ordering::Relaxed) + 1;
+                        // eprintln!("Repetitions completed: {completed}/{total_repetitions}");
+
+                        Ok(final_ratio)
                     })
                     .collect::<Result<Vec<Float>, String>>()
             })

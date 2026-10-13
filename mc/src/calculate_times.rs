@@ -851,7 +851,6 @@ pub fn run_final_ratio_only(
     transitions: &Transitions,
     rng: &mut impl Rng,
 ) -> Result<Float, String> {
-    
     while time_temperature.current_max_dt() != 0.0 {
         let temperature = time_temperature.current_temperature();
         // current_max_dt is signed because geological profiles run backwards.
@@ -873,7 +872,6 @@ pub fn run_final_ratio_only(
             rng,
             &mut next_event,
         )?;
-    
         let signed_event_dt = direction * next_event.time;
         time_temperature.advance(signed_event_dt);
         apply_event(
@@ -885,7 +883,6 @@ pub fn run_final_ratio_only(
                     cube,
                     rng,
                 )?;
-                
     }
     Ok(trap_places.fill_ratio())
     

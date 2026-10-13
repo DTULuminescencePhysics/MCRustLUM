@@ -262,7 +262,6 @@ impl MCExperiment {
                 retrapping_parameters,
                 rng
             } => {
-                
                 run_final_ratio_only(
                     places,
                     trap_places,

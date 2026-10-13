@@ -18,13 +18,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let total_start = Instant::now();
 
-    let start = Instant::now();
-    mc::monte_carlo_run(105, 1, 100, None)?;
-    eprintln!("Monte Carlo Complete:             {:?}", start.elapsed());
-    
     // let start = Instant::now();
-    // chronology::thermo_chronology_run(10,1,595,100,false)?;
-    // eprintln!("Thermochronology Complete:             {:?}", start.elapsed());
+    // mc::monte_carlo_run(220, 1, 1600, None)?;
+    // eprintln!("Monte Carlo Complete:             {:?}", start.elapsed());
+    
+    let start = Instant::now();
+    chronology::thermo_chronology_experiment(250,1,200,10000,true)?;
+    eprintln!("Thermochronology Complete:             {:?}", start.elapsed());
     
     
     eprintln!("total:             {:?}", total_start.elapsed());

@@ -197,6 +197,7 @@ fn mark_point(
     profile_number: u64,
     visited_by_profile: &mut [u64],
     weights: &mut [u64],
+    touched_cells: &mut Option<Vec<usize>>,
 ) {
     let Some(time_index) = cell_index(time, time_bounds, time_cells) else {
         return;
@@ -210,6 +211,9 @@ fn mark_point(
     if visited_by_profile[index] != profile_number {
         visited_by_profile[index] = profile_number;
         weights[index] += 1;
+        if let Some(cells) = touched_cells.as_mut() {
+            cells.push(index);
+        }
     }
 }
 
@@ -236,6 +240,7 @@ fn rasterize_segment(
     profile_number: u64,
     visited_by_profile: &mut [u64],
     weights: &mut [u64],
+    touched_cells: &mut Option<Vec<usize>>,
 ) {
     let Some((time0, temperature0, time1, temperature1)) = clip_segment(
         time0,
@@ -262,6 +267,7 @@ fn rasterize_segment(
             profile_number,
             visited_by_profile,
             weights,
+            touched_cells,
         );
         return;
     }
@@ -305,8 +311,9 @@ fn rasterize_segment(
             time_cells,
             temperature_cells,
             profile_number,
-            visited_by_profile,
-            weights,
+                visited_by_profile,
+                weights,
+                touched_cells,
         );
     }
 }
@@ -343,6 +350,7 @@ fn add_profile(
         "temperature",
     )?;
 
+    let mut touched_cells = None;
     for (times, temperatures) in profile.times.windows(2).zip(profile.temps.windows(2)) {
         rasterize_segment(
             times[0],
@@ -356,10 +364,56 @@ fn add_profile(
             grid.accepted_profiles,
             visited_by_profile,
             &mut grid.weights,
+            &mut touched_cells,
         );
     }
 
     Ok(())
+}
+
+/// Mean ensemble occupancy of the cells traversed by one candidate profile.
+fn profile_support(profile: &TimeTempProfile, grid: &ProfileGrid) -> Result<Float, String> {
+    validate_profile(profile)?;
+    let time_bounds = Bounds::new(grid.time_bounds.0, grid.time_bounds.1, "time")?;
+    let temperature_bounds = Bounds::new(
+        grid.temperature_bounds.0,
+        grid.temperature_bounds.1,
+        "temperature",
+    )?;
+    let cell_count = grid
+        .time_cells
+        .checked_mul(grid.temperature_cells)
+        .ok_or_else(|| "grid dimensions are too large".to_string())?;
+    let mut visited_by_profile = vec![0; cell_count];
+    let mut scratch_weights = vec![0; cell_count];
+    let mut touched_cells = Some(Vec::new());
+
+    for (times, temperatures) in profile.times.windows(2).zip(profile.temps.windows(2)) {
+        rasterize_segment(
+            times[0],
+            temperatures[0],
+            times[1],
+            temperatures[1],
+            time_bounds,
+            temperature_bounds,
+            grid.time_cells,
+            grid.temperature_cells,
+            1,
+            &mut visited_by_profile,
+            &mut scratch_weights,
+            &mut touched_cells,
+        );
+    }
+
+    let cells = touched_cells.expect("support scoring collects traversed cells");
+    if cells.is_empty() {
+        return Ok(0.0);
+    }
+    Ok(cells
+        .iter()
+        .map(|&index| grid.weights[index] as Float)
+        .sum::<Float>()
+        / cells.len() as Float)
 }
 
 /// Read all stored profiles and accumulate their paths into an evenly spaced grid.
@@ -393,6 +447,8 @@ pub fn build_profile_grid(
         time_cells: options.time_cells,
         temperature_cells: options.temperature_cells,
         weights: vec![0; cell_count],
+        best_fit_times: Vec::new(),
+        best_fit_temperatures: Vec::new(),
     };
 
     let mut visited_by_profile = vec![0_u64; cell_count];
@@ -406,6 +462,26 @@ pub fn build_profile_grid(
             add_profile(&profile, &mut grid, &mut visited_by_profile)?;
         }
     }
+
+    // The stored profile with the greatest mean ensemble occupancy is used as
+    // the best-supported (best-fit) path. A second pass evaluates candidates
+    // against the completed grid rather than a partial prefix of the ensemble.
+    let reader = read_all_chrono_batches::<TimeTempProfile>(&input_path)
+        .map_err(|error| error.to_string())?;
+    let mut best_profile: Option<TimeTempProfile> = None;
+    let mut best_support = Float::NEG_INFINITY;
+    for batch in reader {
+        for profile in batch.map_err(|error| error.to_string())? {
+            let support = profile_support(&profile, &grid)?;
+            if support > best_support {
+                best_support = support;
+                best_profile = Some(profile);
+            }
+        }
+    }
+    let best_profile = best_profile.ok_or_else(|| "no profiles were found".to_string())?;
+    grid.best_fit_times = best_profile.times;
+    grid.best_fit_temperatures = best_profile.temps;
 
     Ok(grid)
 }

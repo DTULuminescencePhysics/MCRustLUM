@@ -22,7 +22,35 @@ use io::chrono_inputs::{ChronologyInputs,read_chrono_inputs};
 use io::chrono_outputs::write_profile_grid_csv;
 use std::path::Path;
 
-fn thermo_chronology_setup(
+pub fn thermo_chronology_experiment(
+    repetitions: usize, 
+    experiments: usize, 
+    minimum_traps: usize,
+    trial_num: usize,
+    use_real_profile: bool
+)-> Result<(), Box<dyn Error>> 
+{
+    let start = Instant::now();
+
+    let mc_inputs = read_inputs("input.toml")?;
+    let chron_inputs = read_chrono_inputs("chron_input.toml")?;
+    eprintln!("read inputs:       {:?}", start.elapsed());
+    
+    
+    thermo_chronology_setup_run(&chron_inputs, &mc_inputs,repetitions,experiments,minimum_traps,trial_num)?;
+    let profile: Option<TimeTempProfile> = if use_real_profile {
+        Some( TimeTempProfile {times: mc_inputs.time_temperature.times, temps: mc_inputs.time_temperature.temperatures  })
+    } else{
+       None
+    };
+
+    create_chronology_results(&chron_inputs,profile)?;
+
+    
+    Ok(())
+}
+
+fn thermo_chronology_setup_run(
     chron_inputs: &ChronologyInputs,
     mc_inputs: &SimulationInputs,
     repetitions: usize, 
@@ -47,37 +75,20 @@ fn thermo_chronology_setup(
     Ok(())
 }
 
-pub fn thermo_chronology_run(
-    repetitions: usize, 
-    experiments: usize, 
-    minimum_traps: usize,
-    trial_num: usize,
-    use_real_profile: bool
-)-> Result<(), Box<dyn Error>> 
+pub fn create_chronology_results(
+    profile_inputs: &ChronologyInputs, 
+    real_profile: Option<TimeTempProfile>
+) -> Result<(), Box<dyn Error>> 
 {
-    let start = Instant::now();
-
-    let mc_inputs = read_inputs("input.toml")?;
-    let chron_inputs = read_chrono_inputs("chron_input.toml")?;
-    eprintln!("read inputs:       {:?}", start.elapsed());
     
-    
-    thermo_chronology_setup(&chron_inputs, &mc_inputs,repetitions,experiments,minimum_traps,trial_num)?;
-    chronology_result(&chron_inputs,use_real_profile)?;
+    let output_csv = "profile_grid.csv";
+    let image = "profile_heatmap.png";
 
+    construct_heatmap_csv(profile_inputs, Path::new("tmp"), 
+    "chronology_results.bin.gz", output_csv)?;
     
-    Ok(())
-}
-
-pub fn chronology_result(chron_inputs: &ChronologyInputs, use_real_profile: bool) -> Result<(), Box<dyn Error>>{
+    plot_heatmap(real_profile, output_csv, image)?;
     
-    let profile = if use_real_profile {
-        None
-    } else{
-        None
-    };
-    create_chronology_results(chron_inputs,profile)?;
-
     Ok(())
 
 }
@@ -103,7 +114,8 @@ pub fn construct_heatmap_csv(
 
 }
 
-pub fn plot_heatmap(real_profile: Option<&TimeTempProfile>, csv_path: impl AsRef<Path>, file_name: &str) -> Result< (), PlotError> {
+
+pub fn plot_heatmap(real_profile: Option<TimeTempProfile>, csv_path: impl AsRef<Path>, file_name: &str) -> Result< (), PlotError> {
 
     let output_path = Path::new(file_name);
     let options = ProfileHeatmapOptions::default();
@@ -126,21 +138,6 @@ pub fn plot_heatmap(real_profile: Option<&TimeTempProfile>, csv_path: impl AsRef
     }
 }
 
-pub fn create_chronology_results(
-    profile_inputs: &ChronologyInputs, 
-    real_profile: Option<&TimeTempProfile>
-) -> Result<(), Box<dyn Error>> 
-{
-    
-    let output_csv = "profile_grid.csv";
-    let image = "profile_heatmap.png";
-
-    construct_heatmap_csv(profile_inputs, Path::new("tmp"), 
-    "chronology_results.bin.gz", output_csv)?;
-    
-    plot_heatmap(real_profile, output_csv, image)?;
-    
-    Ok(())
 
 
-}
+

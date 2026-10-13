@@ -169,6 +169,8 @@ pub mod time{
                 "year"     => Ok(Self::Year),
                 "ka annum" => Ok(Self::KAnnum),
                 "ma annum" => Ok(Self::MaAnnum),
+                "kaannum" => Ok(Self::KAnnum),
+                "maannum" => Ok(Self::MaAnnum),
                 _ => Err(format!("Invalid TimeUnit: {s}")),
             }
         }

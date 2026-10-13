@@ -7,8 +7,9 @@ use common::constants::time::TimeUnit;
 use common::numeric::{Float, Numeric, TimeFloat};
 use common::time_temperature::TimeTemperature;
 use io::chrono_inputs::RandomWalkInputs;
-use rand::distr::Open01;
 use rand::{Rng, RngExt};
+
+const MIN_TIME_STEP: TimeFloat = 1.0;
 
 fn bounds<T: Numeric>(values: &[T], name: &str) -> Result<(T, T), String> {
     let [first, second] = values else {
@@ -79,46 +80,6 @@ fn sample_positive<T: Numeric>(low: T, high: T, rng: &mut impl Rng) -> T {
     high
 }
 
-fn append_random_interior_times(
-    times: &mut Vec<TimeFloat>,
-    start: TimeFloat,
-    end: TimeFloat,
-    count: usize,
-    rng: &mut impl Rng,
-) -> Result<(), String> {
-    if count == 0 {
-        return Ok(());
-    }
-
-    let low = start.min(end);
-    let high = start.max(end);
-    let width = high - low;
-    let mut interior = Vec::with_capacity(count);
-
-    // Open01 excludes both endpoints. Retry the vanishingly unlikely case of
-    // duplicate floating-point samples so the ordering remains strictly monotonic.
-    for _ in 0..100 {
-        interior.clear();
-        for _ in 0..count {
-            let fraction: TimeFloat = rng.sample(Open01);
-            interior.push(low + fraction * width);
-        }
-        interior.sort_by(TimeFloat::total_cmp);
-        if interior.windows(2).all(|pair| pair[0] < pair[1])
-            && interior[0] > low
-            && interior[count - 1] < high
-        {
-            if start > end {
-                interior.reverse();
-            }
-            times.extend(interior.iter().copied());
-            return Ok(());
-        }
-    }
-
-    Err("time range is too narrow to generate distinct intermediate times".to_string())
-}
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TimeTempProfile {
     pub times: Vec<TimeFloat>,
@@ -126,13 +87,12 @@ pub struct TimeTempProfile {
 }
 
 impl TimeTempProfile {
-    pub fn generate_profile(&self, time_unit: TimeUnit, temp_unit: TemperatureUnit) -> Result<TimeTemperature, String> {
-        TimeTemperature::new(
-            self.times.clone(),
-            self.temps.clone(),
-            time_unit,
-            temp_unit,
-        )
+    pub fn generate_profile(
+        &self,
+        time_unit: TimeUnit,
+        temp_unit: TemperatureUnit,
+    ) -> Result<TimeTemperature, String> {
+        TimeTemperature::new(self.times.clone(), self.temps.clone(), time_unit, temp_unit)
     }
 }
 
@@ -141,6 +101,8 @@ pub struct RandomWalkConstructionParameters {
     pub time_unit: TimeUnit,
     pub temp_unit: TemperatureUnit,
     pub step_max: usize,
+    pub min_time: TimeFloat,
+    pub min_temp: Float,
     pub time_start_end_range: Vec<TimeFloat>,
     pub temp_start_range: Vec<Float>,
     pub temp_end_range: Vec<Float>,
@@ -168,10 +130,13 @@ impl RandomWalkConstructionParameters {
             (temp_min, temp_max),
             "temp_end_range and temp_range do not overlap",
         )?;
+
         Ok(Self {
             time_unit: inputs.time_unit,
             temp_unit: inputs.temp_unit,
             step_max: inputs.step_max,
+            min_time: inputs.min_time,
+            min_temp: inputs.min_temp,
             time_start_end_range: vec![t_min, t_max],
             temp_start_range: vec![temp_start_min, temp_start_max],
             temp_end_range: vec![temp_end_min, temp_end_max],
@@ -182,66 +147,119 @@ impl RandomWalkConstructionParameters {
 
     /// Create a profile using the supplied random-number generator.
     pub fn create_new_profile(&self, rng: &mut impl Rng) -> Result<TimeTempProfile, String> {
-        let intermediate_steps = rng.random_range(0..=self.step_max);
-        let point_count = intermediate_steps + 2;
-
         let reverse = self.time_unit.is_ka_or_ma();
-        let mut times = Vec::with_capacity(point_count);
-
-        if reverse {
-            let start = sample_positive(
-                self.time_start_end_range[0],
-                self.time_start_end_range[1],
-                rng,
-            );
-            times.push(start);
-            append_random_interior_times(&mut times, start, 0.0, intermediate_steps, rng)?;
-            times.push(0.0);
+        let (start_time, end_time) = if reverse {
+            (
+                sample_positive(
+                    self.time_start_end_range[0],
+                    self.time_start_end_range[1],
+                    rng,
+                ),
+                0.0,
+            )
         } else {
-            let end = sample_positive(
-                self.time_start_end_range[0],
-                self.time_start_end_range[1],
-                rng,
-            );
-            times.push(0.0);
-            append_random_interior_times(&mut times, 0.0, end, intermediate_steps, rng)?;
-            times.push(end);
-        }
+            (
+                0.0,
+                sample_positive(
+                    self.time_start_end_range[0],
+                    self.time_start_end_range[1],
+                    rng,
+                ),
+            )
+        };
 
         let start_temp = sample_inclusive(self.temp_start_range[0], self.temp_start_range[1], rng);
         let end_temp = sample_inclusive(self.temp_end_range[0], self.temp_end_range[1], rng);
-        let mut temps = Vec::with_capacity(point_count);
-        temps.push(start_temp);
 
-        if self.monotonic {
-            let (low, high) = ordered_pair(start_temp, end_temp);
-            for _ in 0..intermediate_steps {
-                temps.push(sample_inclusive(low, high, rng));
+        let mut times = vec![start_time];
+        let mut temps = vec![start_temp];
+        let time_direction = (end_time - start_time).signum();
+        let temp_direction = (end_temp - start_temp).signum();
+
+        for _ in 0..self.step_max {
+            let current_time = *times.last().expect("start time is present");
+            let current_temp = *temps.last().expect("start temperature is present");
+            let time_remaining = (end_time - current_time).abs();
+            let temp_remaining = (end_temp - current_temp).abs();
+
+            // The final endpoint may be closer than the minimum spacing. Stop
+            // adding interior points once either endpoint is within that range.
+            if time_remaining < 2.0 * self.min_time || temp_remaining < 2.0 * self.min_temp
+            {
+                break;
             }
 
-            if start_temp <= end_temp {
-                temps[1..].sort_by(Float::total_cmp);
-            } else {
-                temps[1..].sort_by(|a, b| b.total_cmp(a));
-            }
-        } else {
-            for _ in 0..intermediate_steps {
-                temps.push(sample_inclusive(
-                    self.temp_range[0],
-                    self.temp_range[1],
-                    rng,
-                ));
-            }
+            let next_time = self.sample_interior_time(current_time, end_time, time_direction, rng);
+            let Some(next_temp) =
+                self.sample_interior_temperature(current_temp, end_temp, temp_direction, rng)
+            else {
+                break;
+            };
+
+            times.push(next_time);
+            temps.push(next_temp);
         }
+
+        times.push(end_time);
         temps.push(end_temp);
 
-        Ok(TimeTempProfile {
-            times,
-            temps,
-        })
+        Ok(TimeTempProfile { times, temps })
+    }
+
+    fn sample_interior_temperature(
+        &self,
+        current: Float,
+        end: Float,
+        direction: Float,
+        rng: &mut impl Rng,
+    ) -> Option<Float> {
+        if self.monotonic {
+            let low = if direction >= 0.0 {
+                current + self.min_temp
+            } else {
+                end +  self.min_temp
+            };
+            let high = if direction >= 0.0 {
+                end -  self.min_temp
+            } else {
+                current -  self.min_temp
+            };
+            return (low <= high).then(|| sample_inclusive(low, high, rng));
+        }
+
+        // Non-monotonic walks may move in either direction, but every
+        // intermediate change must still meet the one-degree minimum.
+        for _ in 0..100 {
+            let candidate = sample_inclusive(self.temp_range[0], self.temp_range[1], rng);
+            if (candidate - current).abs() <  self.min_temp {
+                continue;
+            }
+            if (candidate - end).abs() <=  self.min_temp {
+                return None;
+            }
+            return Some(candidate);
+        }
+        None
+    }
+
+
+    fn sample_interior_time(
+        &self,
+        current: TimeFloat,
+        end: TimeFloat,
+        direction: TimeFloat,
+        rng: &mut impl Rng,
+    ) -> TimeFloat {
+        // Keep at least one configured time unit between the new point and both
+        // its predecessor and the final endpoint whenever an interior point fits.
+        let (low, high) = if direction >= 0.0 {
+            (current + self.min_time, end - self.min_time)
+        } else {
+            (end + self.min_time, current - self.min_time)
+        };
+        sample_inclusive(low, high, rng)
     }
 }
-
 pub enum ProfileType {
     RandomWalk {
         inputs: RandomWalkConstructionParameters,
@@ -252,15 +270,20 @@ pub enum ProfileType {
 }
 
 impl ProfileType {
-    pub fn new_random_walk(inputs: &RandomWalkInputs) -> Result<Self,String> {
-        Ok(Self::RandomWalk{inputs: RandomWalkConstructionParameters::new(inputs)?})
-
+    pub fn new_random_walk(inputs: &RandomWalkInputs) -> Result<Self, String> {
+        Ok(Self::RandomWalk {
+            inputs: RandomWalkConstructionParameters::new(inputs)?,
+        })
     }
 
     pub fn create_new_profile(&self, rng: &mut impl Rng) -> Result<TimeTempProfile, String> {
         match self {
-            ProfileType::RandomWalk { inputs, .. } => {return inputs.create_new_profile(rng);},
-            ProfileType::RJMCMC { .. } => {return Err("Not currently implemented RJMCMC".to_string());},
+            ProfileType::RandomWalk { inputs, .. } => {
+                return inputs.create_new_profile(rng);
+            }
+            ProfileType::RJMCMC { .. } => {
+                return Err("Not currently implemented RJMCMC".to_string());
+            }
         }
     }
 }
@@ -268,8 +291,8 @@ impl ProfileType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::SeedableRng;
     use rand::rngs::StdRng;
+    use rand::SeedableRng;
 
     fn parameters(time_unit: TimeUnit, monotonic: bool) -> RandomWalkConstructionParameters {
         RandomWalkConstructionParameters {
@@ -317,12 +340,10 @@ mod tests {
             .unwrap();
 
         assert!(profile.temps.windows(2).all(|pair| pair[0] <= pair[1]));
-        assert!(
-            profile
-                .temps
-                .iter()
-                .all(|temp| (0.0..=100.0).contains(temp))
-        );
+        assert!(profile
+            .temps
+            .iter()
+            .all(|temp| (0.0..=100.0).contains(temp)));
     }
 
     #[test]
@@ -345,11 +366,9 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(5);
         let profile = params.create_new_profile(&mut rng).unwrap();
 
-        assert!(
-            profile
-                .temps
-                .iter()
-                .all(|temp| (0.0..=100.0).contains(temp))
-        );
+        assert!(profile
+            .temps
+            .iter()
+            .all(|temp| (0.0..=100.0).contains(temp)));
     }
 }

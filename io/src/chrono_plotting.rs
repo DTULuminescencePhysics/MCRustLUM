@@ -8,6 +8,7 @@ use crate::errors::PlotError;
 use common::constants::temperature::TemperatureUnit;
 use common::constants::time::TimeUnit;
 use common::numeric::{Float, TimeFloat};
+use plotters::coord::Shift;
 use plotters::prelude::*;
 use std::path::Path;
 use std::str::FromStr;
@@ -98,6 +99,8 @@ pub struct ProfileGridCsv {
     pub temperature_min: Float,
     pub temperature_max: Float,
     pub temperature_unit: TemperatureUnit,
+    pub best_fit_times: Vec<TimeFloat>,
+    pub best_fit_temperatures: Vec<Float>,
     /// Rows are stored high-temperature first, exactly as they appear in CSV.
     pub weights: Vec<Vec<u64>>,
 }
@@ -239,6 +242,42 @@ pub fn read_profile_grid_csv(path: impl AsRef<Path>) -> Result<ProfileGridCsv, P
     let temperature_max: Float = parse_field(path, temperature.get(1), "maximum temperature")?;
     let temperature_unit = parse_temperature_unit(path, temperature.get(2))?;
 
+    let best_fit_times = records
+        .next()
+        .ok_or_else(|| invalid(path, "missing best-fit time row"))?
+        .map_err(|source| PlotError::Csv {
+            path: path.to_path_buf(),
+            source,
+        })?
+        .iter()
+        .map(|value| {
+            value
+                .parse::<TimeFloat>()
+                .map_err(|_| invalid(path, format!("invalid best-fit time {value:?}")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let best_fit_temperatures = records
+        .next()
+        .ok_or_else(|| invalid(path, "missing best-fit temperature row"))?
+        .map_err(|source| PlotError::Csv {
+            path: path.to_path_buf(),
+            source,
+        })?
+        .iter()
+        .map(|value| {
+            value
+                .parse::<Float>()
+                .map_err(|_| invalid(path, format!("invalid best-fit temperature {value:?}")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if best_fit_times.len() != best_fit_temperatures.len() || best_fit_times.len() < 2 {
+        return Err(invalid(
+            path,
+            "best-fit path must have matching time and temperature rows with at least two values",
+        ));
+    }
+
     if !time_start.is_finite() || !time_end.is_finite() || time_start == time_end {
         return Err(invalid(path, "time bounds must be finite and distinct"));
     }
@@ -257,6 +296,11 @@ pub fn read_profile_grid_csv(path: impl AsRef<Path>) -> Result<ProfileGridCsv, P
             path,
             "time direction does not agree with the stored time unit",
         ));
+    }
+    if best_fit_times.iter().any(|value| !value.is_finite())
+        || best_fit_temperatures.iter().any(|value| !value.is_finite())
+    {
+        return Err(invalid(path, "best-fit path contains a non-finite value"));
     }
 
     let mut weights = Vec::new();
@@ -299,6 +343,8 @@ pub fn read_profile_grid_csv(path: impl AsRef<Path>) -> Result<ProfileGridCsv, P
         temperature_min,
         temperature_max,
         temperature_unit,
+        best_fit_times,
+        best_fit_temperatures,
         weights,
     })
 }
@@ -366,6 +412,14 @@ pub fn plot_profile_grid_heatmap(
     let output_path = output_path.as_ref();
     validate_options(output_path, options)?;
     let grid = read_profile_grid_csv(csv_path)?;
+    validate_overlay(
+        output_path,
+        ProfilePath {
+            times: &grid.best_fit_times,
+            temperatures: &grid.best_fit_temperatures,
+        },
+        grid.time_unit,
+    )?;
     if let Some(profile) = real_profile {
         validate_overlay(output_path, profile, grid.time_unit)?;
     }
@@ -373,12 +427,13 @@ pub fn plot_profile_grid_heatmap(
     let root = BitMapBackend::new(output_path, (options.width, options.height)).into_drawing_area();
     root.fill(&WHITE)
         .map_err(|error| draw_error(output_path, error))?;
+    let (plot_area, scale_area) = root.split_horizontally(options.width.saturating_sub(105));
 
     let caption = format!(
         "{} ({} accepted profiles)",
         options.caption, grid.accepted_profiles
     );
-    let mut chart = ChartBuilder::on(&root)
+    let mut chart = ChartBuilder::on(&plot_area)
         .caption(caption, ("sans-serif", 28))
         .margin(20)
         .x_label_area_size(55)
@@ -399,41 +454,30 @@ pub fn plot_profile_grid_heatmap(
         .draw()
         .map_err(|error| draw_error(output_path, error))?;
 
-    let maximum_weight = grid.weights.iter().flatten().copied().max().unwrap_or(0);
+    let maximum_probability = 0.10;
     let time_width = grid.time_width();
     let temperature_height = grid.temperature_height();
-    if maximum_weight > 0 {
-        chart
-            .draw_series(grid.weights.iter().enumerate().flat_map(|(row, weights)| {
-                weights
-                    .iter()
-                    .enumerate()
-                    .filter_map(move |(column, &weight)| {
-                        if weight == 0 {
-                            return None;
-                        }
-                        let intensity = if options.logarithmic_colours {
-                            (1.0 + weight as Float).ln() / (1.0 + maximum_weight as Float).ln()
-                        } else {
-                            weight as Float / maximum_weight as Float
-                        };
-                        let time0 = grid.time_start + column as TimeFloat * time_width;
-                        let time1 = time0 + time_width;
-                        let temperature1 = grid.temperature_max - row as Float * temperature_height;
-                        let temperature0 = temperature1 - temperature_height;
-                        let colour = HSLColor((1.0 - intensity) * 240.0 / 360.0, 0.95, 0.52);
-                        Some(Rectangle::new(
-                            [(time0, temperature0), (time1, temperature1)],
-                            colour.mix(0.78).filled(),
-                        ))
-                    })
-            }))
-            .map_err(|error| draw_error(output_path, error))?;
-    }
+    chart
+        .draw_series(grid.weights.iter().enumerate().flat_map(|(row, weights)| {
+            weights.iter().enumerate().map(move |(column, &weight)| {
+                let probability = weight as Float / grid.accepted_profiles.max(1) as Float;
+                let intensity = (probability / maximum_probability).clamp(0.0, 1.0);
+                let time0 = grid.time_start + column as TimeFloat * time_width;
+                let time1 = time0 + time_width;
+                let temperature1 = grid.temperature_max - row as Float * temperature_height;
+                let temperature0 = temperature1 - temperature_height;
+                let colour = probability_colour(intensity);
+                Rectangle::new(
+                    [(time0, temperature0), (time1, temperature1)],
+                    colour.filled(),
+                )
+            })
+        }))
+        .map_err(|error| draw_error(output_path, error))?;
 
     let band_colours = [
-        RGBColor(40, 120, 220),
-        RGBColor(0, 150, 110),
+        BLACK,
+        RGBColor(0, 150, 0),
         RGBColor(160, 80, 180),
         RGBColor(220, 130, 20),
     ];
@@ -470,25 +514,29 @@ pub fn plot_profile_grid_heatmap(
             let series = chart
                 .draw_series(std::iter::once(Polygon::new(
                     polygon,
-                    colour.mix(0.16).filled(),
+                    colour.mix(0.06).filled(),
                 )))
                 .map_err(|error| draw_error(output_path, error))?;
             if run_index == 0 {
                 series.label(band.label.clone()).legend(move |(x, y)| {
-                    Rectangle::new([(x, y - 5), (x + 20, y + 5)], colour.mix(0.24).filled())
+                    PathElement::new([(x, y), (x + 20, y)], colour.stroke_width(5))
                 });
             }
 
             chart
-                .draw_series(LineSeries::new(
+                .draw_series(DashedLineSeries::new(
                     run.iter().map(|&(time, lower, _)| (time, lower)),
-                    colour.stroke_width(1),
+                    1,
+                    5,
+                    colour.stroke_width(5),
                 ))
                 .map_err(|error| draw_error(output_path, error))?;
             chart
-                .draw_series(LineSeries::new(
+                .draw_series(DashedLineSeries::new(
                     run.iter().map(|&(time, _, upper)| (time, upper)),
-                    colour.stroke_width(1),
+                    1,
+                    5,
+                    colour.stroke_width(5),
                 ))
                 .map_err(|error| draw_error(output_path, error))?;
         }
@@ -511,28 +559,45 @@ pub fn plot_profile_grid_heatmap(
             continue;
         }
         let series = chart
-            .draw_series(LineSeries::new(run.iter().copied(), BLACK.stroke_width(3)))
+            .draw_series(LineSeries::new(run.iter().copied(), RED.stroke_width(5)))
             .map_err(|error| draw_error(output_path, error))?;
         if run_index == 0 {
             series
                 .label("Median path")
-                .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], BLACK.stroke_width(3)));
+                .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], RED.stroke_width(5)));
         }
     }
 
+    let best_fit_colour = RGBColor(255, 20, 147);
+    chart
+        .draw_series(LineSeries::new(
+            grid.best_fit_times
+                .iter()
+                .copied()
+                .zip(grid.best_fit_temperatures.iter().copied()),
+            best_fit_colour.stroke_width(4),
+        ))
+        .map_err(|error| draw_error(output_path, error))?
+        .label("Best-fit profile")
+        .legend(move |(x, y)| {
+            PathElement::new([(x, y), (x + 20, y)], best_fit_colour.stroke_width(4))
+        });
+
     if let Some(profile) = real_profile {
         chart
-            .draw_series(LineSeries::new(
+            .draw_series(DashedLineSeries::new(
                 profile
                     .times
                     .iter()
                     .copied()
                     .zip(profile.temperatures.iter().copied()),
-                RED.stroke_width(3),
+                6,
+                4,
+                WHITE.stroke_width(4),
             ))
             .map_err(|error| draw_error(output_path, error))?
             .label("Known profile")
-            .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], RED.stroke_width(3)));
+            .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], WHITE.stroke_width(4)));
     }
 
     chart
@@ -541,8 +606,69 @@ pub fn plot_profile_grid_heatmap(
         .border_style(BLACK)
         .draw()
         .map_err(|error| draw_error(output_path, error))?;
+    draw_probability_scale(&scale_area, output_path, maximum_probability)?;
     root.present()
         .map_err(|error| draw_error(output_path, error))
+}
+
+fn probability_colour(intensity: Float) -> RGBColor {
+    let intensity = intensity.clamp(0.0, 1.0);
+    let stops = [
+        (0.0, 0.0, 100.0),     // dark blue
+        (0.0, 0.0, 255.0),     // blue
+        (173.0, 216.0, 230.0), // light blue
+        (0.0, 128.0, 0.0),     // green
+        (255.0, 255.0, 0.0),   // yellow
+        (255.0, 140.0, 0.0),   // orange
+        (255.0, 99.0, 71.0),   // lighter red
+        (139.0, 0.0, 0.0),     // dark red
+    ];
+    let position = intensity * (stops.len() - 1) as Float;
+    let index = (position.floor() as usize).min(stops.len() - 2);
+    let fraction = position - index as Float;
+    let start = stops[index];
+    let end = stops[index + 1];
+    RGBColor(
+        (start.0 + (end.0 - start.0) * fraction).round() as u8,
+        (start.1 + (end.1 - start.1) * fraction).round() as u8,
+        (start.2 + (end.2 - start.2) * fraction).round() as u8,
+    )
+}
+
+fn draw_probability_scale<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    output: &Path,
+    maximum_probability: Float,
+) -> Result<(), PlotError>
+where
+    DB::ErrorType: std::fmt::Debug,
+{
+    let mut scale = ChartBuilder::on(area)
+        .margin(8)
+        .x_label_area_size(0)
+        .y_label_area_size(48)
+        .build_cartesian_2d(0.0..1.0, 0.0..maximum_probability)
+        .map_err(|error| draw_error(output, error))?;
+    scale
+        .configure_mesh()
+        .disable_x_mesh()
+        .disable_x_axis()
+        .y_labels(5)
+        .y_label_formatter(&|value| format!("{:.0}%", value * 100.0))
+        .y_desc("Probability")
+        .draw()
+        .map_err(|error| draw_error(output, error))?;
+    scale
+        .draw_series((0..100).map(|step| {
+            let low = maximum_probability * step as Float / 100.0;
+            let high = maximum_probability * (step + 1) as Float / 100.0;
+            Rectangle::new(
+                [(0.0, low), (1.0, high)],
+                probability_colour((step as Float + 0.5) / 100.0).filled(),
+            )
+        }))
+        .map_err(|error| draw_error(output, error))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -582,7 +708,7 @@ mod tests {
         let png_path = temporary_path("png");
         fs::write(
             &csv_path,
-            "3\n2,0,Ka annum\n0,3,Celsius\n0,1\n1,2\n2,0\n",
+            "3\n2,0,Ka annum\n0,3,Celsius\n2,0\n0.5,2.5\n0,1\n1,2\n2,0\n",
         )
         .unwrap();
 

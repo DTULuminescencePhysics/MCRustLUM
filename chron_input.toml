@@ -8,7 +8,7 @@
 [setup]
 fill_ratio = [0.5802147315855186]
 fill_ratio_error = [0.013265066801318712]
-random_paths = true
+random_paths = false
 
 [random_walks]
 time_unit = "ma_annum"
@@ -22,6 +22,30 @@ temp_start_range = [150,150.0]
 temp_end_range = [60,0.0]
 temp_range = [150,0.0]
 monotonic = true
+
+[rjmcmc]
+time_unit = "ma_annum"
+temp_unit = "celsius"
+step_max = 100
+min_time = 1.0
+min_temp = 1.0
+time_start_range = [0.5,0.5]
+time_end_range = [0.0,0.0]
+temp_start_range = [150,150.0]
+temp_end_range = [60,0.0]
+temp_range = [150,0.0]
+p_birth = 0.15
+p_death = 0.15
+p_time =  0.35 
+p_temp =  0.35 
+s_time_birth = 1.0
+s_temp_birth = 1.0
+s_time = 1.0 
+s_temp = 20.0
+monotonic = true
+
+
+
 
 [grid_options]
 time_cells = 50

@@ -63,6 +63,56 @@ impl Default for RandomWalkInputs {
 
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 #[serde(default)]
+pub struct RJMCMCInputs {
+    pub time_unit: TimeUnit,
+    pub temp_unit: TemperatureUnit,
+    pub step_max: usize,
+    pub min_time: TimeFloat,
+    pub min_temp: Float,
+    pub time_start_range: Vec<TimeFloat>,
+    pub time_end_range: Vec<TimeFloat>,
+    pub temp_start_range: Vec<Float>,
+    pub temp_end_range: Vec<Float>,
+    pub temp_range: Vec<Float>,
+    pub p_birth: Float,
+    pub p_death: Float,
+    pub p_time:  Float, 
+    pub p_temp:  Float, 
+    pub s_time_birth: TimeFloat,
+    pub s_temp_birth: Float,
+    pub s_time: TimeFloat, 
+    pub s_temp: Float,
+    pub monotonic: bool, 
+}
+impl Default for RJMCMCInputs {
+    fn default() -> Self {
+        Self {
+            time_unit: TimeUnit::Second,
+            temp_unit: TemperatureUnit::Celsius,
+            step_max: 100,
+            min_time: 1.0,
+            min_temp: 1.0,
+            time_start_range: vec![0.0, 0.0],
+            time_end_range: vec![160.0, 160.0],
+            temp_start_range: vec![0.0, 0.0],
+            temp_end_range: vec![800.0, 800.0],
+            temp_range: vec![0.0, 800.0],
+            p_birth: 0.15,
+            p_death: 0.15,
+            p_time:  0.35, 
+            p_temp:  0.35, 
+            s_time_birth: 20.0,
+            s_temp_birth: 15.0,
+            s_time: 15.0, 
+            s_temp: 20.0,
+            monotonic: true,
+        }
+    }
+}
+
+
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(default)]
 pub struct GridOptions {
     /// Number of columns along the time axis.
     pub time_cells: usize,
@@ -90,6 +140,7 @@ impl Default for GridOptions {
 pub struct ChronologyInputs {
     pub setup: ChronSetup,
     pub random_walks: RandomWalkInputs,
+    pub rjmcmc: RJMCMCInputs,
     pub grid_options: GridOptions,
 }
 impl Default for ChronologyInputs {
@@ -97,7 +148,9 @@ impl Default for ChronologyInputs {
         Self {
             setup: ChronSetup::default(),
             random_walks: RandomWalkInputs::default(),
+            rjmcmc: RJMCMCInputs::default(),
             grid_options: GridOptions::default(),
+
         }
     }
 }

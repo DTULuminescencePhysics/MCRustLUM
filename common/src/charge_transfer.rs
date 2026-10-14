@@ -23,7 +23,7 @@ use crate::rate_equation_inputs::{
 use crate::rate_equation_selection::{
     DelocalisedRateEquation, FillingRateEquation, LocalisedRateEquation,
 };
-use crate::random::generatre_exponential_random;
+use crate::random::generate_exponential_random;
 use crate::rate_equations::{retrapping_probability_by_r};
 use rand::{Rng, RngExt,};
 
@@ -452,7 +452,7 @@ impl TimedCandidate {
         if candidate.rate == 0.0 {
             return Ok(TimedCandidate { event: candidate.event, time: TimeFloat::INFINITY });
         }
-        let u = generatre_exponential_random(rng)as TimeFloat;
+        let u = generate_exponential_random(rng)as TimeFloat;
         
         // let u: TimeFloat = rng.sample(rand::distributions::Open01);
         let time = u / candidate.rate;
@@ -500,7 +500,7 @@ impl TimedCandidate {
         if total_rate == 0.0 {
             return Ok(());
         }
-        let u = generatre_exponential_random(rng)as TimeFloat;
+        let u = generate_exponential_random(rng)as TimeFloat;
         let event_time: TimeFloat = u / total_rate ;
      
         if event_time.total_cmp(&self.time).is_lt(){

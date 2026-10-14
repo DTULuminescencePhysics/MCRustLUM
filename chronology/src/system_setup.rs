@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use crate::random_paths::RandomWalkSimulation;
+use crate::markov_chain_mc::RJMCMCSimulation;
 use io::chrono_inputs::ChronologyInputs;
 use io::inputs::SimulationInputs;
 use common::random::get_std_rng_for_rep;
@@ -11,7 +12,7 @@ pub enum ChronologyExperiment{
 
     RandomWalk {experiment: RandomWalkSimulation },
 
-    RJMCMC,
+    RJMCMC {experiment: RJMCMCSimulation },
 
 }
 
@@ -35,7 +36,13 @@ impl ChronologyExperiment {
                                                                             minimum_traps)?;
             return Ok(Self::RandomWalk { experiment });
         }else{
-            return Err(format!("RJMCM not set up yet"))
+            let experiment =  RJMCMCSimulation::new(profile_inputs.setup.fill_ratio.clone(), 
+                                                                      profile_inputs.setup.fill_ratio_error.clone(), 
+                                                                      profile_inputs.rjmcmc.clone(), 
+                                                                      inputs, repetitions, 
+                                                                      experiments, 
+                                                                      minimum_traps)?;
+            return Ok(Self::RJMCMC {experiment});
         }
 
     }
@@ -47,9 +54,9 @@ impl ChronologyExperiment {
                 experiment.run_random_walks(trial_num, Path::new("tmp"), & mut rng)?;
                 Ok(())
             },
-            ChronologyExperiment::RJMCMC => {
-                return Err(format!("RJMCM not set up yet"))
-
+            ChronologyExperiment::RJMCMC { experiment } => {
+                experiment.run_rjmcmc(trial_num, Path::new("tmp"), & mut rng)?;
+                Ok(())
             }
         }
 

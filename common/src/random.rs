@@ -7,8 +7,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
-use rand_distr::{Distribution, Exp1};
-use rand::Rng;
+use rand_distr::{Distribution, Exp1, Normal, StandardNormal, weighted::WeightedIndex};
+use rand::distr::{Open01, StandardUniform, OpenClosed01, uniform};
+use rand::{Rng, RngExt};
 
 /// Seed used when [`set_seed`] is not called during program startup.
 pub const DEFAULT_SEED: u64 = 0;
@@ -54,6 +55,52 @@ pub fn get_std_rng_for_rep(rep: usize) -> StdRng  {
 ///
 /// The returned sample is suitable for inverse-rate lifetime calculations and
 /// is always finite and non-negative for a valid random-number generator.
-pub fn generatre_exponential_random(rng: &mut impl Rng) -> f64 {
+pub fn generate_exponential_random(rng: &mut impl Rng) -> f64 {
     Exp1.sample(rng)
 }
+
+/// Draw a normally distributed random value from `rng` with standard deviation s.
+pub fn generate_scaled_normal_random(rng: &mut impl Rng, s: f64) -> f64 {
+    let normal = Normal::new(0.0, s)
+        .expect("sigma must be finite and positive");
+
+    normal.sample(rng)
+}
+
+/// Draw a normally distributed random value from `rng` with standard deviation 1.0.
+pub fn generate_normal_random(rng: &mut impl Rng,) -> f64 {
+    StandardNormal.sample(rng)
+}
+
+/// Draws an index from a weighted distribution in input vector weights.
+pub fn generate_weighted_index_random(weights: &[f64], rng: &mut impl Rng,) -> usize {
+    let dist = WeightedIndex::new(weights).unwrap();
+    dist.sample(rng)
+}
+
+/// Generates a uniform random number in the open interval (0, 1).
+pub fn generate_open_uniform_random(rng: &mut impl Rng,) -> f64 {
+    rng.sample(Open01)
+}
+
+/// Generates a uniform random number in the half open interval [0, 1)
+pub fn generate_uniform_zero_random(rng: &mut impl Rng,) -> f64 {
+    rng.sample(StandardUniform)
+}
+
+/// Generate a uniform random number in the half open interval (0, 1]
+pub fn generate_uniform_one_random(rng: &mut impl Rng,) -> f64 {
+    rng.sample(OpenClosed01)
+}
+/// Generates a random number between two values a and b.
+pub fn generate_uniform_between_values(a: f64, b: f64, rng: &mut impl Rng,) -> f64{
+   rng.random_range(a..b)
+
+}
+
+/// Generates a log of uniform random number in the closed interval (0, 1).
+pub fn generate_log_open_uniform_random(rng: &mut impl Rng,) -> f64 {
+    let a: f64 = rng.sample(Open01);
+     a.ln()
+}
+

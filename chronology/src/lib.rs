@@ -6,6 +6,8 @@ pub mod profiles;
 
 pub mod random_paths;
 
+pub mod markov_chain_mc;
+
 pub mod system_setup;
 
 pub mod analyse;

@@ -6,12 +6,12 @@ use common::numeric::Float;
 use crate::profiles::{TimeTempProfile,ProfileType};
 use common::constants::temperature::TemperatureUnit;
 use common::constants::time::TimeUnit;
+use common::random::generate_uniform_zero_random;
 use mc::system_setup::MonteCarloSimulation;
 use io::chrono_inputs::RandomWalkInputs;
 use io::inputs::SimulationInputs;
 use io::chrono_outputs;
-use rand::{Rng, RngExt};
-use rand::distr::Open01;
+use rand::Rng;
 use std::path::Path;
 
 
@@ -102,7 +102,7 @@ impl  RandomWalkSimulation {
             total += diff.powf(2.0);
         }
 
-        if (-0.5*total).exp() > rng.sample(Open01){
+        if (-0.5*total).exp() > generate_uniform_zero_random(rng){
 
             return true; 
         }else{

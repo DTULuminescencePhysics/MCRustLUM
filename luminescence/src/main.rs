@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // eprintln!("Monte Carlo Complete:             {:?}", start.elapsed());
     
     let start = Instant::now();
-    chronology::thermo_chronology_experiment(250,1,200,10000,true)?;
+    chronology::thermo_chronology_experiment(250,1,200,1000,true)?;
     eprintln!("Thermochronology Complete:             {:?}", start.elapsed());
     
     

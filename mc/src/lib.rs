@@ -72,7 +72,7 @@ fn monte_carlo_result(inputs: &SimulationInputs, experiments: usize, event_bin_w
         &inputs.time_temperature
     )?;
 
-    // average_fill()?;
+    average_fill()?;
     eprintln!("Average fill calculation:      {:?}", start.elapsed());
     
     let start = Instant::now();
@@ -82,37 +82,37 @@ fn monte_carlo_result(inputs: &SimulationInputs, experiments: usize, event_bin_w
     
     let start = Instant::now();
 
-    // average_events()?;
+    average_events()?;
     eprintln!("Average events calculation:    {:?}", start.elapsed());
 
     let start = Instant::now();
 
-    // for exp in 0..experiments{
-    //     let fill_csv = format!("average_fill_{}.csv", exp);
-    //     let av_fill_csv = format!("rolling_average_fill_{}.csv", exp);
-    //     let event_csv = format!("average_event_{}.csv", exp); 
+    for exp in 0..experiments{
+        let fill_csv = format!("average_fill_{}.csv", exp);
+        let av_fill_csv = format!("rolling_average_fill_{}.csv", exp);
+        let event_csv = format!("average_event_{}.csv", exp); 
         
-    //     plot_default_continuous_results(
-    //         fill_csv,
-    //         output_directory,
-    //         inputs.time_temperature.time_unit,
-    //         inputs.time_temperature.temp_unit,
-    //     )?;
+        plot_default_continuous_results(
+            fill_csv,
+            output_directory,
+            inputs.time_temperature.time_unit,
+            inputs.time_temperature.temp_unit,
+        )?;
 
-    //     plot_rolling_average_fill_results(
-    //         av_fill_csv,
-    //         output_directory,
-    //         inputs.time_temperature.time_unit,
+        plot_rolling_average_fill_results(
+            av_fill_csv,
+            output_directory,
+            inputs.time_temperature.time_unit,
 
-    //     )?;
+        )?;
         
-    //     plot_default_event_results(
-    //         event_csv,
-    //         output_directory,
-    //         event_bin_width,
-    //         inputs.time_temperature.time_unit,
-    //     )?;
-    // }   
+        plot_default_event_results(
+            event_csv,
+            output_directory,
+            event_bin_width,
+            inputs.time_temperature.time_unit,
+        )?;
+    }   
     
     eprintln!("Plotting:          {:?}", start.elapsed());
 

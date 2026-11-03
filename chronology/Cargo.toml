@@ -9,4 +9,5 @@ common = { path = "../common" }
 io = { path = "../io" }
 mc = { path = "../mc" }
 rand = "0.10.0"
+statrs = "0.19"
 serde = { version = "1", features = ["derive"] }

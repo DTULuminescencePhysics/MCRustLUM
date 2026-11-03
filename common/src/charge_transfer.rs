@@ -11,11 +11,10 @@
 //! Competing pathways are handled by retaining the candidate with the shortest
 //! sampled lifetime.
 
-use std::f64::consts::{PI, SQRT_2};
+
 
 use crate::place_ids::{PlaceId};
 use crate::numeric::{TimeFloat,Float};
-use rand_distr::Exp;
 use serde::{Deserialize, Serialize};
 use crate::rate_equation_inputs::{
     DelocalisedTransitionInputs, FillingTransitionInputs, LocalisedTransitionInputs,
@@ -33,8 +32,10 @@ use rand::{Rng, RngExt,};
 ///
 /// Physical rates must be non-negative. [`TimedCandidate::find_shortest`]
 /// recognises this value and omits the candidate from the competition.
+
+/// Negative value so transition is ignored 
 pub const DISABLED_RATE: TimeFloat = -1.0;
-pub const root: TimeFloat = SQRT_2*PI;
+
 
 /// Localised state occupied immediately before a charge-transfer event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

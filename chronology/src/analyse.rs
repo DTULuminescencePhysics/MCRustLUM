@@ -6,7 +6,7 @@ use crate::profiles::TimeTempProfile;
 
 use common::numeric::{Float, Numeric, TimeFloat};
 use io::chrono_inputs::{GridOptions};
-use io::chrono_outputs::{read_all_chrono_batches, ProfileGrid};
+use io::chrono_outputs::{read_all_chrono_batches, ProfileGrid, AcceptedProfile};
 use io::chrono_plotting::{
     plot_profile_grid_heatmap as plot_grid_heatmap, ProfileHeatmapOptions, ProfilePath,
 };
@@ -88,10 +88,11 @@ pub fn find_bounds(
     let mut detected_temperature = None;
 
     if find_time || find_temperature {
-        let reader = read_all_chrono_batches::<TimeTempProfile>(input_path)
+        let reader = read_all_chrono_batches::<AcceptedProfile<TimeTempProfile>>(input_path)
             .map_err(|error| error.to_string())?;
         for batch in reader {
-            for profile in batch.map_err(|error| error.to_string())? {
+            for record in batch.map_err(|error| error.to_string())? {
+                let profile = record.profile;
                 validate_profile(&profile)?;
                 if find_time {
                     update_detected_bounds(&profile.times, &mut detected_time);
@@ -184,7 +185,7 @@ fn cell_index<T: Numeric>(value: T, bounds: Bounds<T>, cells: usize) -> Option<u
     }
 
     let index = (((value - min) / (max - min)) * cells as Float).floor() as usize;
-    Some(index.min(cells - 1))
+    Some(std::cmp::min(index, cells - 1))
 }
 
 fn mark_point(
@@ -428,7 +429,7 @@ pub fn build_profile_grid(
     let (time_bounds, temperature_bounds) =
         find_bounds(&input_path, options.time_bounds, options.temperature_bounds)?;
 
-    let reader = read_all_chrono_batches::<TimeTempProfile>(&input_path)
+    let reader = read_all_chrono_batches::<AcceptedProfile<TimeTempProfile>>(&input_path)
         .map_err(|error| error.to_string())?;
     let time_unit = reader.time_unit;
     let temperature_unit = reader.temp_unit;
@@ -454,7 +455,8 @@ pub fn build_profile_grid(
     let mut visited_by_profile = vec![0_u64; cell_count];
 
     for batch in reader {
-        for profile in batch.map_err(|error| error.to_string())? {
+        for record in batch.map_err(|error| error.to_string())? {
+            let profile = record.profile;
             grid.accepted_profiles = grid
                 .accepted_profiles
                 .checked_add(1)
@@ -466,12 +468,13 @@ pub fn build_profile_grid(
     // The stored profile with the greatest mean ensemble occupancy is used as
     // the best-supported (best-fit) path. A second pass evaluates candidates
     // against the completed grid rather than a partial prefix of the ensemble.
-    let reader = read_all_chrono_batches::<TimeTempProfile>(&input_path)
+    let reader = read_all_chrono_batches::<AcceptedProfile<TimeTempProfile>>(&input_path)
         .map_err(|error| error.to_string())?;
     let mut best_profile: Option<TimeTempProfile> = None;
     let mut best_support = Float::NEG_INFINITY;
     for batch in reader {
-        for profile in batch.map_err(|error| error.to_string())? {
+        for record in batch.map_err(|error| error.to_string())? {
+            let profile = record.profile;
             let support = profile_support(&profile, &grid)?;
             if support > best_support {
                 best_support = support;
@@ -509,6 +512,7 @@ mod tests {
     use common::constants::time::TimeUnit;
     use io::chrono_outputs::{
         append_chronology_profile_to_experiment_file, write_temporary_chronology_units,
+        AcceptanceInfo,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -528,7 +532,15 @@ mod tests {
 
     fn write_profiles(path: &Path, profiles: &[TimeTempProfile]) {
         write_temporary_chronology_units(path, TimeUnit::Second, TemperatureUnit::Celsius).unwrap();
-        append_chronology_profile_to_experiment_file(path, profiles).unwrap();
+        append_profiles(path, profiles);
+    }
+
+    fn append_profiles(path: &Path, profiles: &[TimeTempProfile]) {
+        let records: Vec<_> = profiles.iter().cloned().map(|profile| AcceptedProfile {
+            profile,
+            acceptance: AcceptanceInfo::BayesianRandom { log_likelihood: -1.0 },
+        }).collect();
+        append_chronology_profile_to_experiment_file(path, &records).unwrap();
     }
 
     #[test]
@@ -679,14 +691,13 @@ mod tests {
         let path = temporary_output_path("geological");
         write_temporary_chronology_units(&path, TimeUnit::KAnnum, TemperatureUnit::Celsius)
             .unwrap();
-        append_chronology_profile_to_experiment_file(
+        append_profiles(
             &path,
             &[TimeTempProfile {
                 times: vec![2.0, 0.0],
                 temps: vec![0.0, 2.0],
             }],
-        )
-        .unwrap();
+        );
 
         let grid = build_profile_grid(
             &path,

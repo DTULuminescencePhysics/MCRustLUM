@@ -87,6 +87,10 @@ pub struct ProfilePath<'a> {
     pub times: &'a [TimeFloat],
     pub temperatures: &'a [Float],
 }
+/// Coordinates needed to draw a stored chronology profile.
+pub trait ProfileCoordinates {
+    fn coordinates(&self) -> ProfilePath<'_>;
+}
 
 /// Parsed contents of `write_profile_grid_csv` output.
 #[derive(Debug, Clone)]
@@ -466,7 +470,11 @@ pub fn plot_profile_grid_heatmap(
                 let time1 = time0 + time_width;
                 let temperature1 = grid.temperature_max - row as Float * temperature_height;
                 let temperature0 = temperature1 - temperature_height;
-                let colour = probability_colour(intensity);
+                let colour = if weight == 0 {
+                    WHITE
+                } else {
+                    probability_colour(intensity)
+                };
                 Rectangle::new(
                     [(time0, temperature0), (time1, temperature1)],
                     colour.filled(),
@@ -554,17 +562,18 @@ pub fn plot_profile_grid_heatmap(
     if !median_run.is_empty() {
         median_runs.push(median_run);
     }
+    let median_colour = RGBColor(255, 140, 0);
     for (run_index, run) in median_runs.iter().enumerate() {
         if run.is_empty() {
             continue;
         }
         let series = chart
-            .draw_series(LineSeries::new(run.iter().copied(), RED.stroke_width(5)))
+            .draw_series(LineSeries::new(run.iter().copied(), median_colour.stroke_width(5)))
             .map_err(|error| draw_error(output_path, error))?;
         if run_index == 0 {
             series
                 .label("Median path")
-                .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], RED.stroke_width(5)));
+                .legend(move |(x, y)| PathElement::new([(x, y), (x + 20, y)], median_colour.stroke_width(5)));
         }
     }
 
@@ -591,13 +600,17 @@ pub fn plot_profile_grid_heatmap(
                     .iter()
                     .copied()
                     .zip(profile.temperatures.iter().copied()),
+                12,
                 6,
-                4,
-                WHITE.stroke_width(4),
+                BLUE.stroke_width(4),
             ))
             .map_err(|error| draw_error(output_path, error))?
             .label("Known profile")
-            .legend(|(x, y)| PathElement::new([(x, y), (x + 20, y)], WHITE.stroke_width(4)));
+            .legend(|(x, y)| {
+                EmptyElement::at((x, y))
+                    + PathElement::new([(0, 0), (8, 0)], BLUE.stroke_width(4))
+                    + PathElement::new([(14, 0), (22, 0)], BLUE.stroke_width(4))
+            });
     }
 
     chart
@@ -670,6 +683,190 @@ where
         .map_err(|error| draw_error(output, error))?;
     Ok(())
 }
+
+/// Draw all accepted profiles, highlighting frequentist p-values >= 0.5.
+///
+/// The known profile must use the units stored in the input file.
+pub fn plot_accepted_profiles<P>(
+    input_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+    known_profile: Option<ProfilePath<'_>>,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    P: serde::de::DeserializeOwned + ProfileCoordinates,
+{
+    use crate::chrono_outputs::{
+        read_all_chrono_batches, AcceptedProfile, AcceptanceInfo,
+    };
+
+    let input_path = input_path.as_ref();
+    let output_path = output_path.as_ref();
+
+    let reader = read_all_chrono_batches::<AcceptedProfile<P>>(input_path)?;
+    let time_unit = reader.time_unit;
+    let temp_unit = reader.temp_unit;
+
+    let mut time_min = TimeFloat::INFINITY;
+    let mut time_max = TimeFloat::NEG_INFINITY;
+    let mut temp_min = Float::INFINITY;
+    let mut temp_max = Float::NEG_INFINITY;
+    let mut count = 0_u64;
+
+    // First pass: validate profiles and find bounds.
+    {
+        let mut include = |profile: ProfilePath<'_>| -> Result<(), PlotError> {
+            validate_overlay(input_path, profile, time_unit)?;
+
+            for &time in profile.times {
+                time_min = time_min.min(time);
+                time_max = time_max.max(time);
+            }
+            for &temperature in profile.temperatures {
+                temp_min = temp_min.min(temperature);
+                temp_max = temp_max.max(temperature);
+            }
+            Ok(())
+        };
+
+        for batch in reader {
+            for record in batch? {
+                include(record.profile.coordinates())?;
+                count += 1;
+            }
+        }
+
+        if let Some(profile) = known_profile {
+            include(profile)?;
+        }
+    }
+
+    if count == 0 {
+        return Err(invalid(input_path, "no accepted profiles were found").into());
+    }
+
+    // Pad the axes, including constant-temperature profiles.
+    let time_padding = (time_max - time_min) * 0.02;
+    let temp_padding = ((temp_max - temp_min) * 0.05).max(1.0);
+
+    time_min -= time_padding;
+    time_max += time_padding;
+    temp_min -= temp_padding;
+    temp_max += temp_padding;
+
+    let time_range = if time_unit.is_ka_or_ma() {
+        time_max..time_min
+    } else {
+        time_min..time_max
+    };
+
+    let root =
+        BitMapBackend::new(output_path, (1200, 800)).into_drawing_area();
+    root.fill(&WHITE)?;
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption(
+            format!("Time-temperature paths ({count} accepted profiles)"),
+            ("sans-serif", 28),
+        )
+        .margin(20)
+        .x_label_area_size(55)
+        .y_label_area_size(75)
+        .build_cartesian_2d(time_range, temp_min..temp_max)?;
+
+    chart
+        .configure_mesh()
+        .x_desc(format!("Time ({time_unit})"))
+        .y_desc(format!("Temperature ({temp_unit})"))
+        .draw()?;
+
+    let grey = RGBColor(160, 160, 160);
+    let green = RGBColor(0, 150, 0);
+
+    // Draw grey first, then green so highlighted paths remain visible.
+    for highlight in [false, true] {
+        let reader =
+            read_all_chrono_batches::<AcceptedProfile<P>>(input_path)?;
+        let mut labelled = false;
+
+        for batch in reader {
+            for record in batch? {
+                let is_green = matches!(
+                    &record.acceptance,
+                    AcceptanceInfo::Frequentist { p_test }
+                        if *p_test >= 0.5
+                );
+
+                if is_green != highlight {
+                    continue;
+                }
+
+                let profile = record.profile.coordinates();
+                let colour = if highlight { green } else { grey };
+
+                // Same segment rendering as plot_time_temperature.
+                let series = chart.draw_series(
+                    profile.times.windows(2)
+                        .zip(profile.temperatures.windows(2))
+                        .map(|(times, temperatures)| {
+                            PathElement::new(
+                                [
+                                    (times[0], temperatures[0]),
+                                    (times[1], temperatures[1]),
+                                ],
+                                colour.stroke_width(2),
+                            )
+                        }),
+                )?;
+
+                if !labelled {
+                    series
+                        .label(if highlight {
+                            "Frequentist p >= 0.5"
+                        } else {
+                            "Other accepted profiles"
+                        })
+                        .legend(move |(x, y)| {
+                            PathElement::new(
+                                [(x, y), (x + 20, y)],
+                                colour.stroke_width(2),
+                            )
+                        });
+                    labelled = true;
+                }
+            }
+        }
+    }
+
+    // Draw the known profile last.
+    if let Some(profile) = known_profile {
+        chart
+            .draw_series(DottedLineSeries::new(
+                profile.times.iter().copied()
+                    .zip(profile.temperatures.iter().copied()),
+                0,
+                8,
+                |point| Circle::new(point, 2, BLUE.filled()),
+            ))?
+            .label("Known profile")
+            .legend(|(x, y)| {
+                EmptyElement::at((x, y))
+                    + Circle::new((0, 0), 2, BLUE.filled())
+                    + Circle::new((8, 0), 2, BLUE.filled())
+                    + Circle::new((16, 0), 2, BLUE.filled())
+            });
+    }
+
+    chart
+        .configure_series_labels()
+        .background_style(WHITE.mix(0.9))
+        .border_style(BLACK)
+        .draw()?;
+
+    root.present()?;
+    Ok(())
+}
+
+
 
 #[cfg(test)]
 mod tests {

@@ -1079,7 +1079,7 @@ mod tests {
         let mut lines = contents.lines();
         assert_eq!(
             lines.next().unwrap(),
-            "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9,fill_quantile_0_25,fill_quantile_0_75"
+                "t,T,n/N μ,n/N σ,n/N s,n/N η,Q 10%,Q 90%,Q 25%,Q 75%",
         );
         let rows = lines
             .map(|line| {
@@ -1089,13 +1089,12 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let expected = [
-            [0.0, 100.0, 0.4, 0.2, 0.4, 0.24, 0.56, 0.3, 0.5],
-            [1.0, 110.0, 0.5, 0.3, 0.5, 0.26, 0.74, 0.35, 0.65],
-            [2.0, 120.0, 0.6, 0.2, 0.6, 0.44, 0.76, 0.5, 0.7],
-            [3.0, 130.0, 0.3, 0.1, 0.3, 0.22, 0.38, 0.25, 0.35],
-            [4.0, 140.0, 0.5, 0.1, 0.5, 0.42, 0.58, 0.45, 0.55],
+            [0.0, 100.0, 0.4, 0.2, 0.282842712475, 0.4, 0.24, 0.56, 0.3, 0.5,],
+            [1.0, 110.0, 0.5, 0.3, 0.424264068712, 0.5, 0.26, 0.74, 0.35, 0.65],
+            [2.0, 120.0, 0.6, 0.2, 0.282842712475, 0.6, 0.44, 0.76, 0.5, 0.7],
+            [3.0, 130.0, 0.3, 0.1, 0.141421356237, 0.3, 0.22, 0.38, 0.25, 0.35],
+            [4.0, 140.0, 0.5, 0.1, 0.141421356237, 0.5, 0.42, 0.58, 0.45, 0.55],
         ];
-
         assert_eq!(rows.len(), expected.len());
         for (row, expected_row) in rows.iter().zip(expected) {
             assert_eq!(row.len(), expected_row.len());

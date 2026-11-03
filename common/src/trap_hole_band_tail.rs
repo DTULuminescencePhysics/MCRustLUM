@@ -13,6 +13,7 @@ use crate::numeric::{Float, TimeFloat, Numeric};
 use crate::place_ids::{PlaceId, PlaceAvailability};
 use crate::rate_equation_inputs::{DelocalisedTransitionInputs, LocalisedTransitionInputs,};
 use crate::rate_equations::ground_excited_state_weights;
+use crate::random::{generate_closed_random};
 use rand::Rng;
 
 /// A three-dimensional site position.
@@ -57,9 +58,9 @@ impl Coord {
         Coord::validate_dimension("z", z)?;
 
         Ok(Coord {
-            x: Float::random_in(x, &mut *rng),
-            y: Float::random_in(y, &mut *rng),
-            z: Float::random_in(z, &mut *rng),
+            x: generate_closed_random(0.0, x, rng),
+            y: generate_closed_random(0.0, y, rng),
+            z: generate_closed_random(0.0, z, rng),
         })
     }
 

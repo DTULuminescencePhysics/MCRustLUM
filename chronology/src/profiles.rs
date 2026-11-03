@@ -3,51 +3,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 
+
 use common::constants::temperature::TemperatureUnit;
 use common::constants::time::TimeUnit;
 use common::numeric::{Float, Numeric, TimeFloat};
 use common::time_temperature::TimeTemperature;
-use io::chrono_inputs::{RandomWalkInputs, RJMCMCInputs};
-use rand::{Rng, RngExt};
-use common::random::{generate_normal_random, generate_weighted_index_random, 
-    generate_uniform_one_random, generate_uniform_between_values};
+use common::random::{generate_weighted_index_random, 
+    generate_normal_random, generate_closed_random,
+    generate_open_random};
+use io::chrono_inputs::{ChronologyInputs};
 
-
-fn bounds<T: Numeric>(values: &[T], name: &str) -> Result<(T, T), String> {
-    let [first, second] = values else {
-        return Err(format!("{name} must contain exactly two values"));
-    };
-
-    if !first.is_finite() || !second.is_finite() {
-        return Err(format!("{name} values must be finite"));
-    }
-
-    Ok(ordered_pair(*first, *second))
-}
-
-fn positive_bounds<T: Numeric>(values: &[T], name: &str) -> Result<(T, T), String> {
-    let (low, high) = bounds(values, name)?;
-    if high <= T::zero() {
-        return Err(format!("{name} must contain a value greater than zero"));
-    }
-
-    // Sampling from an open interval ensures that zero cannot be selected when
-    // the user's range crosses zero.
-    Ok((low.max(T::zero()), high))
-}
-
-fn intersect_bounds<T: Numeric>(
-    first: (T, T),
-    second: (T, T),
-    error: &str,
-) -> Result<(T, T), String> {
-    let intersection = (first.0.max(second.0), first.1.min(second.1));
-    if intersection.0 > intersection.1 {
-        Err(error.to_string())
-    } else {
-        Ok(intersection)
-    }
-}
+use rand::Rng;
 
 fn ordered_pair<T: Numeric>(first: T, second: T) -> (T, T) {
     if first <= second {
@@ -57,47 +23,102 @@ fn ordered_pair<T: Numeric>(first: T, second: T) -> (T, T) {
     }
 }
 
-fn sample_inclusive<T: Numeric>(low: T, high: T, rng: &mut impl Rng) -> T {
-    if low == high {
-        low
+fn sample_inclusive<T: Numeric>(range: (T,T), rng: &mut impl Rng) -> T 
+{
+    if range.0 == range.1 {
+        range.0
     } else {
-        T::random_range(low, high, rng)
+        T::sample_closed(range.0, range.1, rng)
     }
 }
 
-fn sample_positive<T: Numeric>(low: T, high: T, rng: &mut impl Rng) -> T {
-    let zero = T::zero();
-    if low > zero {
-        return sample_inclusive(low, high, rng);
+fn sample_exclusive<T: Numeric>(range: (T,T), rng: &mut impl Rng) -> T {
+    if range.0 == range.1 {
+        range.0
+    } else {
+        T::sample_open(range.0, range.1, rng)
     }
-
-    // An inclusive range may select zero. Retry, then use the already
-    // validated positive upper bound as a deterministic fallback.
-    for _ in 0..100 {
-        let sample = sample_inclusive(low, high, rng);
-        if sample > zero {
-            return sample;
-        }
-    }
-    high
 }
-pub fn check_within_bounds<T: Numeric>(to_check: T, low: T, high: T) -> bool {
-    if to_check < low {
+
+pub fn check_within_bounds<T: Numeric>(to_check: T, range: (T,T)) -> bool {
+    if to_check < range.0 {
         return false; 
     }
-    if to_check > high {
+    if to_check > range.1 {
         return false;
     }
     true
 } 
-pub fn check_if_monotonic<T: Numeric>(to_check: T, before: T, after: T, decreasing: bool) -> bool {
 
-    if decreasing{
-        return check_within_bounds(to_check, after, before);
-     
-    }else {
-        return check_within_bounds(to_check, before, after);
+fn intermediate_sample_inclusive<T: Numeric>(
+    reps: u8, 
+    range: (T,T), 
+    rng: &mut impl Rng ) -> T 
+where 
+    T: std::iter::Sum<T> + std::ops::Div<Output = T> + From<u8> 
+{
+    (0..reps).map(|_| sample_inclusive(range,rng)).sum::<T>() /T::from(reps)
+}
+
+fn intermediate_sample_exclusive<T: Numeric>(
+    reps: u8, 
+    range: (T,T), 
+    rng: &mut impl Rng ) -> T 
+where 
+    T: std::iter::Sum<T> + std::ops::Div<Output = T> + From<u8> 
+{
+    (0..reps).map(|_| sample_exclusive(range,rng)).sum::<T>() /T::from(reps)
+}
+
+
+fn fill_intermediate_nodes(
+    times: &mut [TimeFloat],
+    temps: &mut [Float],
+    left: usize,
+    right: usize,
+    random_rep_number: u8,
+    monotonic: &char,
+    temp_range: &(Float, Float),
+    rng: &mut impl Rng,
+) {
+    // No intermediate nodes remain
+    if right - left <= 1 {
+        return;
     }
+
+    let mid = left + (right - left) / 2;
+
+    // Generate midpoint values
+    times[mid] = intermediate_sample_exclusive(
+        random_rep_number,
+        ordered_pair(times[left], times[right]),
+        rng,
+    );
+
+    temps[mid] = match monotonic{ 
+        'D' => {
+                intermediate_sample_inclusive(random_rep_number,
+                                            ordered_pair(temps[right], temps[left]),
+                                            rng)
+        },
+        'I' => {
+                intermediate_sample_inclusive(random_rep_number,
+                                      ordered_pair(temps[left], temps[right]),
+                                    rng)
+        },
+        _ => {
+              intermediate_sample_inclusive(random_rep_number, *temp_range, rng)
+            }
+    };
+    
+    // Fill the left half
+    fill_intermediate_nodes(
+        times, temps, left, mid, random_rep_number, monotonic, temp_range, rng,);
+
+    // Fill the right half
+    fill_intermediate_nodes(
+        times, temps, mid, right, random_rep_number, monotonic, temp_range, rng,
+    );
 }
 
 
@@ -106,7 +127,14 @@ pub struct TimeTempProfile {
     pub times: Vec<TimeFloat>,
     pub temps: Vec<Float>,
 }
-
+impl io::chrono_plotting::ProfileCoordinates for TimeTempProfile {
+    fn coordinates(&self) -> io::chrono_plotting::ProfilePath<'_> {
+        io::chrono_plotting::ProfilePath {
+            times: &self.times,
+            temperatures: &self.temps,
+        }
+    }
+}
 impl TimeTempProfile {
 
     pub fn generate_profile(
@@ -117,858 +145,569 @@ impl TimeTempProfile {
     {
         TimeTemperature::new(self.times.clone(), self.temps.clone(), time_unit, temp_unit)
     }
-
-    pub fn new_with_temperature(
-        &self,
-        i: usize,
-        new_temp: Float,
-    ) -> Option<Self> {
-        if self.times.len() != self.temps.len() {
-            return None
-        }
-        if i >= self.temps.len() {
-            return None
-        }
-
-        let mut new_profile = self.clone();
-        new_profile.temps[i] = new_temp;
-        Some(new_profile)
+    pub fn k(&self) -> usize {
+        self.times.len()-1
     }
-
-    pub fn new_with_time(
-        &self,
-        i: usize,
-        new_time: TimeFloat,
-    ) -> Option<Self> {
-        if self.times.len() != self.temps.len() {
-            return None;
-        }
-        if i >= self.times.len() {
-            return None;
-        }
-
-        let mut new_profile = self.clone();
-        new_profile.times[i] = new_time;
-        Some(new_profile)
-    }
-
-    pub fn new_with_death(
-        &self, i: usize
-    ) -> Option<Self> 
-    {
-        if self.times.len() != self.temps.len() {
-            return None;
-        }
-        if i >= self.times.len() {
-            return None;
-        }
-
-        let mut new_profile = self.clone();
-        new_profile.times.remove(i);
-        new_profile.temps.remove(i);
-        Some(new_profile)
-    }
-
-    pub fn new_with_birth(
-        &self,
-        i: usize,
-        new_time: TimeFloat,
-        new_temp: Float,
-    ) -> Option<Self> {
-        if self.times.len() != self.temps.len() {
-            return None;
-        }
-        if i > self.times.len() {
-            return None;
-        }
-
-        let mut new_profile = self.clone();
-        new_profile.times.insert(i+1, new_time);
-        new_profile.temps.insert(i+1, new_temp);
-        Some(new_profile)
-    }
-
-
-    pub fn log_prior(
-        &self, 
-        k_max: usize, 
-        temp_min: Float, temp_max:Float, 
-        temp_start_min: Float, temp_start_max: Float,
-        temp_end_min: Float, temp_end_max: Float 
-    ) -> Float 
-    {
-        let k = self.times.len();
-        let (t_min, t_max) = if self.times[0] < self.times[k-1]{
-            (self.times[0], self.times[k-1])
-        } else{
-            (self.times[k-1], self.times[0])
-        };
-
-        let mut log_p: Float = - (
-                            (k_max as Float).ln() + 
-                            ((k as Float)*(t_max-t_min).ln() as Float) +
-                            (((k-2) as Float)*(temp_max - temp_min).ln()) +
-                            (temp_start_max-temp_start_min).ln() +
-                            (temp_end_max-temp_end_min).ln()
-                        );
-
-        for i in 0..k {
-            log_p +=  ((self.times[i]-self.times[i+1]).abs()).ln() as Float +
-                      ((i + 1) as Float).ln();
-        }    
-
-        return log_p;
-
+    pub fn age(&self,) -> TimeFloat{
+        let i = self.times.len()-1;
+        (self.times[0]-self.times[i]).abs()
     }
 
 }
 
 #[derive(Debug, Clone)]
-pub struct RandomWalkConstructionParameters {
-    pub time_unit: TimeUnit,
-    pub temp_unit: TemperatureUnit,
+pub struct RandomProfileConstructor{
+    pub temp_range: (Float, Float),
+    pub age_range: (TimeFloat, TimeFloat),
     pub step_max: usize,
     pub min_time: TimeFloat,
     pub min_temp: Float,
-    pub time_start_end_range: Vec<TimeFloat>,
-    pub temp_start_range: Vec<Float>,
-    pub temp_end_range: Vec<Float>,
-    pub temp_range: Vec<Float>,
-    pub monotonic: bool,
+    pub profile_length:usize,
+    pub intermediate_node_num:  usize,
+    pub constraint_indices: Vec<usize>,
+    pub constraint_boxes: Vec< ((TimeFloat,TimeFloat), (Float,Float))>,
+    pub random_rep_number: u8, 
+    pub monotonicity: Vec<char>,
 }
 
-impl RandomWalkConstructionParameters {
-    pub fn new(inputs: &RandomWalkInputs) -> Result<Self, String> {
-        let reverse = inputs.time_unit.is_ka_or_ma();
+impl RandomProfileConstructor{
 
-        let (t_min, t_max): (TimeFloat, TimeFloat) = if reverse {
-            positive_bounds(&inputs.time_start_range, "time_start_range")?
-        } else {
-            positive_bounds(&inputs.time_end_range, "time_end_range")?
+    pub fn new(inputs: &ChronologyInputs) -> Result<Self, String> {
+        if inputs.random_profiles.monotonicity.len() != inputs.random_profiles.constraint_box_num {
+            return Err(format!("Number of constraint boxes must be the same las the monotonicity vector length they had {}, {} respecively",inputs.random_profiles.constraint_box_num, inputs.random_profiles.monotonicity.len()) );
+        }
+        if !inputs.random_profiles.monotonicity.iter().all(|&c| matches!(c, 'D' | 'I' | 'V')) {
+            return Err("Invalid character: only D, I, V are allowed".into());
+        }
+        let random_rep_number:u8 = match inputs.random_profiles.random_segment_kind {
+            'I' => 1,
+            'E' => 2,
+            'G' => 4,
+            _ => return Err(format!("Intermediate Random segment has to one of I, E, G but actual value was {} ",inputs.random_profiles.random_segment_kind))
+
         };
-        let (temp_min, temp_max): (Float, Float) = bounds(&inputs.temp_range, "temp_range")?;
-        let (temp_start_min, temp_start_max): (Float, Float) = intersect_bounds(
-            bounds(&inputs.temp_start_range, "temp_start_range")?,
-            (temp_min, temp_max),
-            "temp_start_range and temp_range do not overlap",
-        )?;
-        let (temp_end_min, temp_end_max): (Float, Float) = intersect_bounds(
-            bounds(&inputs.temp_end_range, "temp_end_range")?,
-            (temp_min, temp_max),
-            "temp_end_range and temp_range do not overlap",
-        )?;
 
-        Ok(Self {
-            time_unit: inputs.time_unit,
-            temp_unit: inputs.temp_unit,
-            step_max: inputs.step_max,
-            min_time: inputs.min_time,
-            min_temp: inputs.min_temp,
-            time_start_end_range: vec![t_min, t_max],
-            temp_start_range: vec![temp_start_min, temp_start_max],
-            temp_end_range: vec![temp_end_min, temp_end_max],
-            temp_range: vec![temp_min, temp_max],
-            monotonic: inputs.monotonic,
+        let intermediate_node_num: usize = (2_u32.pow(inputs.random_profiles.intermediate_node_halving_num)-1) as usize;
+        
+        let profile_length: usize = (intermediate_node_num + 1) * inputs.random_profiles.constraint_box_num + 1;
+        
+        let constraint_indices: Vec<usize> = (0..profile_length)
+                                            .step_by(intermediate_node_num + 1)
+                                            .collect();
+
+        let fixed_point: ((TimeFloat,TimeFloat), (Float,Float)) = ((0.0,0.0), 
+                                                                    ordered_pair(inputs.constraints.fixed_temp_point_range.0, 
+                                                                                inputs.constraints.fixed_temp_point_range.1) 
+                                                                  );
+        let mut constraint_boxes: Vec<((TimeFloat,TimeFloat), (Float,Float))> = Vec::with_capacity(profile_length);
+        
+        if inputs.setup.time_unit.is_ka_or_ma() {
+            for ((t_1,t_2),(temp_1, temp_2)) in inputs.random_profiles.constraint_boxes.iter().copied(){
+                constraint_boxes.push((ordered_pair(t_1, t_2), (ordered_pair(temp_1, temp_2)))); 
+            }
+            constraint_boxes.push(fixed_point);
+        } else {
+            constraint_boxes.push(fixed_point);
+            for ((t_1,t_2),(temp_1, temp_2)) in inputs.random_profiles.constraint_boxes.iter().copied(){
+                constraint_boxes.push((ordered_pair(t_1, t_2), (ordered_pair(temp_1, temp_2)))); 
+            }
+        };
+       
+        Ok( Self{
+            temp_range: ordered_pair(inputs.constraints.temp_range.0,inputs.constraints.temp_range.1),
+            age_range: ordered_pair(inputs.constraints.age_range.0, inputs.constraints.age_range.1),
+            step_max: inputs.constraints.step_max,
+            min_time: inputs.constraints.min_time,
+            min_temp: inputs.constraints.min_temp,
+            profile_length: profile_length,
+            intermediate_node_num: intermediate_node_num,
+            constraint_indices: constraint_indices,
+            constraint_boxes: constraint_boxes,
+            random_rep_number: random_rep_number,
+            monotonicity: inputs.random_profiles.monotonicity.clone(),
+
         })
     }
 
-    /// Create a profile using the supplied random-number generator.
-    pub fn create_new_profile(&self, rng: &mut impl Rng) -> Result<TimeTempProfile, String> {
-        let reverse = self.time_unit.is_ka_or_ma();
-        let (start_time, end_time) = if reverse {
-            (
-                sample_positive(
-                    self.time_start_end_range[0],
-                    self.time_start_end_range[1],
-                    rng,
-                ),
-                0.0,
-            )
-        } else {
-            (
-                0.0,
-                sample_positive(
-                    self.time_start_end_range[0],
-                    self.time_start_end_range[1],
-                    rng,
-                ),
-            )
-        };
+    pub fn construct_new_profile(&self, rng: &mut impl Rng)-> Result<TimeTempProfile, String> {
 
-        let start_temp = sample_inclusive(self.temp_start_range[0], self.temp_start_range[1], rng);
-        let end_temp = sample_inclusive(self.temp_end_range[0], self.temp_end_range[1], rng);
+        let mut times: Vec<TimeFloat> = vec![0.0; self.profile_length];// Vec::with_capacity(self.profile_length);
+        let mut temps: Vec<Float> = vec![0.0; self.profile_length];// Vec::with_capacity(self.profile_length);
 
-        let mut times = vec![start_time];
-        let mut temps = vec![start_temp];
-        let time_direction = (end_time - start_time).signum();
-        let temp_direction = (end_temp - start_temp).signum();
+        for (&index, &(time, temp)) in self.constraint_indices
+                                                                          .iter()
+                                                                          .zip(self.constraint_boxes.iter())
+        {
+            times[index] = sample_inclusive(time, rng);
+            temps[index] = sample_inclusive(temp, rng);
 
-        for _ in 0..self.step_max {
-            let current_time = *times.last().expect("start time is present");
-            let current_temp = *temps.last().expect("start temperature is present");
-            let time_remaining = (end_time - current_time).abs();
-            let temp_remaining = (end_temp - current_temp).abs();
-
-            // The final endpoint may be closer than the minimum spacing. Stop
-            // adding interior points once either endpoint is within that range.
-            if time_remaining < 2.0 * self.min_time || temp_remaining < 2.0 * self.min_temp
-            {
-                break;
-            }
-
-            let next_time = self.sample_interior_time(current_time, end_time, time_direction, rng);
-            let Some(next_temp) =
-                self.sample_interior_temperature(current_temp, end_temp, temp_direction, rng)
-            else {
-                break;
-            };
-
-            times.push(next_time);
-            temps.push(next_temp);
         }
 
-        times.push(end_time);
-        temps.push(end_temp);
+        for (indices, monotonic ) in self.constraint_indices
+                                            .windows(2)
+                                            .zip(self.monotonicity.iter()) 
+        {
+            fill_intermediate_nodes(&mut times, &mut temps, 
+                                    indices[0], indices[1], 
+                                    self.random_rep_number, monotonic, &self.temp_range, rng);                            
+
+        }
 
         Ok(TimeTempProfile { times, temps })
+
     }
 
-    fn sample_interior_temperature(
-        &self,
-        current: Float,
-        end: Float,
-        direction: Float,
-        rng: &mut impl Rng,
-    ) -> Option<Float> {
-        if self.monotonic {
-            let low = if direction >= 0.0 {
-                current + self.min_temp
-            } else {
-                end +  self.min_temp
-            };
-            let high = if direction >= 0.0 {
-                end -  self.min_temp
-            } else {
-                current -  self.min_temp
-            };
-            return (low <= high).then(|| sample_inclusive(low, high, rng));
+    pub fn check_profile(&self, profile: &TimeTempProfile, box_check: bool, monotonicity: Option<char>, ) -> bool {
+    
+        let count = profile.times.len();
+
+        // Check structure before indexing points.
+        if count != profile.temps.len() || count < 2 {
+            return false
         }
 
-        // Non-monotonic walks may move in either direction, but every
-        // intermediate change must still meet the one-degree minimum.
-        for _ in 0..100 {
-            let candidate = sample_inclusive(self.temp_range[0], self.temp_range[1], rng);
-            if (candidate - current).abs() <  self.min_temp {
-                continue;
-            }
-            if (candidate - end).abs() <=  self.min_temp {
-                return None;
-            }
-            return Some(candidate);
+        let steps = count - 1;
+        if steps >= self.step_max {
+            return false;
         }
-        None
+
+        // Check every point against the global bounds.
+        for (&time, &temperature) in
+            profile.times.iter().zip(&profile.temps)
+        {
+            if !time.is_finite()
+                || !check_within_bounds(time, self.age_range)
+                || !temperature.is_finite()
+                || !check_within_bounds(temperature, self.temp_range)
+            {
+                return false;
+            }
+        }
+        if box_check {
+            if !check_within_bounds(profile.times[0], self.constraint_boxes[0].0){
+                return false;
+            }
+            if !check_within_bounds(profile.temps[0], self.constraint_boxes[0].1){
+                return false;
+            }
+            let con_count = self.constraint_boxes.len()-1;
+            if !check_within_bounds(profile.times[steps], self.constraint_boxes[con_count].0){
+                return false;
+            }
+            if !check_within_bounds(profile.temps[steps], self.constraint_boxes[con_count].1){
+                return false;
+            }
+            for box_index in 1..con_count {
+                let time = profile.times.clone();
+                let time_con = time.iter()
+                    .any(|t| {check_within_bounds(*t, self.constraint_boxes[box_index].0)});
+                let temp = profile.temps.clone();
+                let temp_con = temp.iter()
+                    .any(|t| {check_within_bounds(*t, self.constraint_boxes[box_index].1)});
+                if !time_con || !temp_con{
+                    return false;
+                }
+            }
+        }
+
+        // Check time direction and minimum changes between adjacent points.
+        for index in 0..steps {
+            let dt = (profile.times[index + 1] - profile.times[index]).abs();
+            let dtemp = (profile.temps[index + 1] - profile.temps[index]).abs();
+
+            if !dt.is_finite() 
+            || dt <= self.min_time 
+            ||!dtemp.is_finite() 
+            || dtemp <= self.min_temp {
+                return false;
+            }
+        }
+        
+        match monotonicity {
+            None => {
+                for (indices, &mode) in self.constraint_indices
+                    .windows(2)
+                    .zip(&self.monotonicity)
+                {
+                    if mode == 'V' {
+                        continue;
+                    }
+
+                    let start = indices[0];
+                    let end = indices[1];
+                    let temperatures = &profile.temps[start..=end];
+            
+                    let valid = match mode {
+                        'I' => temperatures.windows(2).all(|pair| pair[1] > pair[0]),
+                        'D' => temperatures.windows(2).all(|pair| pair[1] < pair[0]),
+                        'V' => true,
+                        _ => false,
+                    };
+
+                    if !valid {
+                        return false;
+                    }
+                }
+            },
+            Some(monotonicity) => {
+                let temperatures = &profile.temps.clone();
+                let valid = match monotonicity {
+                        'I' => temperatures.windows(2).all(|pair| pair[1] > pair[0]),
+                        'D' => temperatures.windows(2).all(|pair| pair[1] < pair[0]),
+                        'V' => true,
+                        _ => false,
+                    };
+
+                    if !valid {
+                        return false;
+                    }
+
+            }
+        }
+
+        return true;
+
+
+   
+}
+
+
+
+
+
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoveKind{
+    Birth,
+    Death,
+    Time,
+    Temp,
+}
+impl MoveKind {
+    pub fn from_name(choice: &str) -> Result<Self, String> {
+        match choice {
+            "birth" => Ok(Self::Birth),
+            "death" => Ok(Self::Death),
+            "time" => Ok(Self::Time),
+            "temp" => Ok(Self::Temp),
+            _ => Err(format!("Unknown RJMCMC move type: {choice}")),
+        }
+    }
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            0 => MoveKind::Birth,
+            1 => MoveKind::Death,
+            2 => MoveKind::Time,
+            3 => MoveKind::Temp,
+            _ => unreachable!("expected an in index in 0..4")
+        }
+    }
+    pub fn to_index(self) -> usize {
+        match self {
+            Self::Birth => 0,
+            Self::Death => 1,
+            Self::Time => 2,
+            Self::Temp => 3,
+        }
     }
 
-
-    fn sample_interior_time(
-        &self,
-        current: TimeFloat,
-        end: TimeFloat,
-        direction: TimeFloat,
-        rng: &mut impl Rng,
-    ) -> TimeFloat {
-        // Keep at least one configured time unit between the new point and both
-        // its predecessor and the final endpoint whenever an interior point fits.
-        let (low, high) = if direction >= 0.0 {
-            (current + self.min_time, end - self.min_time)
-        } else {
-            (end + self.min_time, current - self.min_time)
-        };
-        sample_inclusive(low, high, rng)
+    pub fn to_name(self) -> &'static str {
+        match self {
+            Self::Birth => "birth",
+            Self::Death => "death",
+            Self::Time => "time",
+            Self::Temp => "temp",
+        }
     }
 }
 
 
 #[derive(Debug, Clone)]
-pub struct RJMCMCSigmas{
+pub struct MoveProbabilities {
+    pub all: Vec<Float>,
+    pub no_birth: Vec<Float>,
+    pub no_death: Vec<Float>,
+    pub k_max: usize, 
+}
+impl MoveProbabilities {
+
+    pub fn new(birth: Float, death: Float, time: Float, temp: Float , k_max: usize) -> Self{
+        let total = birth + death + time + temp;
+        let all:Vec<Float> = vec![ birth/total, death/total, time/total,temp/total];
+        let total = death + time + temp;
+        let no_birth:Vec<Float> = vec![ 0.0, death/total, time/total,temp/total];
+        let total = birth + time + temp;
+        let no_death:Vec<Float> = vec![ birth/total, 0.0, time/total,temp/total];
+        Self{
+            all: all,
+            no_birth: no_birth,
+            no_death: no_death,
+            k_max: k_max
+        }
+    }
+    pub fn choose_step(&self, rng: &mut impl Rng, k:usize) -> MoveKind{
+
+        let index = if k == 1 {
+            generate_weighted_index_random(&self.no_death,rng)
+        } else if k == self.k_max {
+            generate_weighted_index_random(&self.no_birth,rng)
+        } else {
+            generate_weighted_index_random(&self.all, rng)
+        };
+        MoveKind::from_index(index)
+    }
+
+}
+
+#[derive(Debug, Clone)]
+pub struct MoveSigmas{
     pub time_birth: TimeFloat,
     pub temp_birth: Float,
     pub time: TimeFloat, 
     pub temp: Float
 
 }
-impl RJMCMCSigmas {
+impl MoveSigmas {
 
     pub fn new(time_birth: TimeFloat, temp_birth:Float, time: TimeFloat, temp:Float) -> Self{  
         Self { time_birth, temp_birth, time, temp }
     }
 
-    pub fn temp(&self, current_temp: Float, rng: &mut impl Rng) -> Float {
-        current_temp + self.temp*generate_normal_random(rng)
+    pub fn temp(&self, k:usize, current_temps: &Vec<Float>, rng: &mut impl Rng) -> Vec<Float> {
+        let mut temps = current_temps.clone();
+        temps[k] += self.temp*generate_normal_random(rng);
+        return temps;
     }
 
-    pub fn time(&self, current_time: TimeFloat, rng: &mut impl Rng) -> Float {
-        current_time + self.time*generate_normal_random(rng)
+    pub fn time(&self, k:usize, current_times: &Vec<TimeFloat> , rng: &mut impl Rng) -> Vec<TimeFloat> {
+        let mut times = current_times.clone();
+        times[k] += self.time*generate_normal_random(rng);
+        return times;
     }
 
-    pub fn birth(
-        &self, 
-        before_time: TimeFloat, 
-        after_time: TimeFloat, 
-        before_temp: Float, 
-        after_temp: Float, 
-        rng: &mut impl Rng) -> (TimeFloat, Float, Float) {
+    pub fn birth(&self, k:usize, current_times: &Vec<TimeFloat>, 
+        current_temps: &Vec<Float>, rng: &mut impl Rng
+    ) -> (Vec<TimeFloat>, Vec<Float>) 
+    {
 
-            let t_rand = generate_uniform_one_random(rng);
-            let temp_rand = generate_uniform_between_values(-0.5,0.5, rng);
+            let t_rand: TimeFloat = generate_open_random(0.0,1.0,rng) * self.time_birth;
+            let temp_rand:Float = generate_open_random(-0.5, 0.5, rng) * self.temp_birth;
 
-            (
-                before_time - self.time_birth*t_rand*(before_time-after_time),
-                before_temp - (before_temp-after_temp)*self.time_birth*t_rand - self.temp_birth*temp_rand,
-                t_rand*temp_rand
-            )
-
+            let new_time = current_times[k] - t_rand * (current_times[k]-current_times[k+1]).abs();
+            let new_temp = current_temps[k] - t_rand * (current_temps[k]-current_temps[k+1]) - temp_rand;
+            
+            let mut times = current_times.clone();
+            let mut temps = current_temps.clone();
+            times.insert(k+1, new_time);
+            temps.insert(k+1, new_temp);
+            
+            (times, temps)
     }
-
-    pub fn death(&self, rng: &mut impl Rng) -> Float {
-        generate_uniform_one_random(rng)*generate_uniform_between_values(-0.5,0.5, rng)
+    pub fn death(&self, k:usize, current_times: &Vec<TimeFloat>, 
+        current_temps: &Vec<Float> )-> (Vec<TimeFloat>, Vec<Float>)  
+    {
+        let mut times = current_times.clone();
+        let mut temps = current_temps.clone();
+        times.remove(k);
+        temps.remove(k);
+        (times, temps)
     }
     
 }
 
-
 #[derive(Debug, Clone)]
-pub struct RJMCMCConstructionParameters {
-    pub time_unit: TimeUnit,
-    pub temp_unit: TemperatureUnit,
-    pub step_max: usize,
-    pub min_time: TimeFloat,
-    pub min_temp: Float,
-    pub time_start_end_range: Vec<TimeFloat>,
-    pub temp_start_range: Vec<Float>,
-    pub temp_end_range: Vec<Float>,
-    pub temp_range: Vec<Float>,
-    pub sigmas: RJMCMCSigmas,
-    pub monotonic: bool,
-    pub decreasing: bool
+pub struct RandomWalkConstructor {
+    pub age_range: (TimeFloat, TimeFloat),
+    pub temp_range: (Float, Float),
+    pub fixed_point_last: bool,
+    pub maintain_constraint_boxes: bool,
+    pub monotonicity: char,
+    pub move_probs: MoveProbabilities,
+    pub move_sigmas: MoveSigmas,
 }
 
-impl RJMCMCConstructionParameters{
+impl RandomWalkConstructor{
 
-    pub fn new(inputs: &RJMCMCInputs) -> Result<Self, String> {
-        let reverse = inputs.time_unit.is_ka_or_ma();
+    pub fn new(inputs: &ChronologyInputs) -> Result<Self, String> {
+        let move_probs = MoveProbabilities::new(
+                                                inputs.random_walk.p_birth, 
+                                                inputs.random_walk.p_death, 
+                                                inputs.random_walk.p_time, 
+                                                inputs.random_walk.p_temp, 
+                                                inputs.random_walk.k_max);
 
-        let (t_min, t_max): (TimeFloat, TimeFloat) = if reverse {
-            positive_bounds(&inputs.time_start_range, "time_start_range")?
-        } else {
-            positive_bounds(&inputs.time_end_range, "time_end_range")?
-        };
+        let move_sigmas = MoveSigmas::new(
+                                        inputs.random_walk.s_time_birth, 
+                                        inputs.random_walk.s_temp_birth, 
+                                        inputs.random_walk.s_time, 
+                                        inputs.random_walk.s_temp);
 
-        let (temp_min, temp_max): (Float, Float) = bounds(&inputs.temp_range, "temp_range")?;
-        let (temp_start_min, temp_start_max): (Float, Float) = intersect_bounds(
-            bounds(&inputs.temp_start_range, "temp_start_range")?,
-            (temp_min, temp_max),
-            "temp_start_range and temp_range do not overlap",
-        )?;
-        let (temp_end_min, temp_end_max): (Float, Float) = intersect_bounds(
-            bounds(&inputs.temp_end_range, "temp_end_range")?,
-            (temp_min, temp_max),
-            "temp_end_range and temp_range do not overlap",
-        )?;
-        let sigmas = RJMCMCSigmas::new(inputs.s_time_birth, inputs.s_temp_birth, inputs.s_time, inputs.s_temp);
-        let decreasing = if temp_start_min > temp_end_max {
-            true
-        } else {
-            false
-        };
-        Ok( Self {
-            time_unit: inputs.time_unit,
-            temp_unit: inputs.temp_unit,
-            step_max: inputs.step_max,
-            min_time: inputs.min_time,
-            min_temp: inputs.min_temp,
-            time_start_end_range: vec![t_min, t_max],
-            temp_start_range: vec![temp_start_min, temp_start_max],
-            temp_end_range: vec![temp_end_min, temp_end_max],
-            temp_range: vec![temp_min, temp_max],
-            sigmas,
-            monotonic: inputs.monotonic,
-            decreasing,
-        })
-
-    }
-
-    pub fn propose_trial_profile(
-        &self, 
-        current_profile: &TimeTempProfile, 
-        move_choice: &str, 
-        rng: &mut impl Rng
-    ) -> Result<(Option<TimeTempProfile>, Float), String> 
-    {
-        
-        match move_choice {
-            "birth" => Ok(self.alter_birth(current_profile, rng)),
-            "death" => Ok(self.alter_death(current_profile, rng)),
-            "time"  => Ok(self.alter_time(current_profile, rng)),
-            "temp"  => Ok(self.alter_temperature(current_profile, rng)),
-            _       => return Err(format!("This outcome should never occur the chosen move is: {move_choice}"))
-        }
-
-    }
-
-    pub fn alter_temperature(
-        &self,
-        current_profile: &TimeTempProfile, 
-        rng: &mut impl Rng,
-    ) -> (Option<TimeTempProfile>, Float) 
-    {
-        let k = current_profile.times.len();
-        let i: usize = rng.random_range(0..k);
-
-        let new_temp = self.sigmas.temp(current_profile.temps[i], rng);
-
-        let mut lower = self.temp_range[0];
-        let mut upper = self.temp_range[1];
-
-        if i == 0 {
-            lower = lower.max(self.temp_start_range[0]);
-            upper = upper.min(self.temp_start_range[1]);
-        }
-
-        if i == k - 1 {
-            lower = lower.max(self.temp_end_range[0]);
-            upper = upper.min(self.temp_end_range[1]);
-        }
-
-        if self.monotonic && k > 1 {
-            if i == 0 {
-                let next = current_profile.temps[i + 1];
-                if self.decreasing {
-                    lower = lower.max(next);
-                } else {
-                    upper = upper.min(next);
-                }
-            } else if i == k - 1 {
-                let prev = current_profile.temps[i - 1];
-                if self.decreasing {
-                    upper = upper.min(prev);
-                } else {
-                    lower = lower.max(prev);
-                }
-            } else {
-                let prev = current_profile.temps[i - 1];
-                let next = current_profile.temps[i + 1];
-                if self.decreasing {
-                    lower = lower.max(next);
-                    upper = upper.min(prev);
-                } else {
-                    lower = lower.max(prev);
-                    upper = upper.min(next);
-                }
+        Ok(
+            Self{
+                age_range: ordered_pair(inputs.constraints.age_range.0,
+                                         inputs.constraints.age_range.1),
+                temp_range: ordered_pair(inputs.constraints.temp_range.0, 
+                                        inputs.constraints.temp_range.1),
+                fixed_point_last: inputs.setup.time_unit.is_ka_or_ma(),
+                maintain_constraint_boxes: inputs.random_walk.maintain_constraint_boxes,
+                monotonicity: inputs.random_walk.monotonicity,
+                move_probs: move_probs,
+                move_sigmas: move_sigmas,
             }
-        }
-        
-        if lower <= upper && check_within_bounds(new_temp, lower, upper) {
-            (current_profile.new_with_temperature(i, new_temp), 0.0)
-        } else {
-            (None, 0.0) 
-        }
-
+        )
+    }
+    pub fn update_self(&mut self, new: RandomWalkConstructor) {
+        self.age_range = new.age_range;
+        self.temp_range= new.temp_range;
+        self.fixed_point_last = new.fixed_point_last;
+        self.maintain_constraint_boxes = new.maintain_constraint_boxes;
+        self.monotonicity = new.monotonicity;
+        self.move_probs = new.move_probs;
+        self.move_sigmas = new.move_sigmas;
     }
 
-    pub fn alter_time(
-        &self,
-        current_profile: &TimeTempProfile,
-        rng: &mut impl Rng,
-    ) -> (Option<TimeTempProfile>, Float) 
+    fn pick_k(&self, k:usize, rng: &mut impl Rng) -> usize
     {
-        let k = current_profile.times.len();
-        let i: usize = if self.time_unit.is_ka_or_ma(){
-            rng.random_range(0..k-1)
+        if self.fixed_point_last{
+            generate_closed_random(0, k, rng)
         } else {
-            rng.random_range(1..k)
-        };
-        
-        
-        let new_time = self.sigmas.time(current_profile.times[i], rng);
-        
-
-        let (lower, upper) = if i == 0 {
-            (current_profile.times[i+1],
-            self.time_start_end_range[0].max(self.time_start_end_range[1]))
-       
-        } else if i == k - 1 {
-            (self.time_start_end_range[0].min(self.time_start_end_range[1]),
-            current_profile.times[i-1])  
-        } else {
-            if self.time_unit.is_ka_or_ma(){
-                (current_profile.times[i+1],current_profile.times[i-1])
-            }else{
-                (current_profile.times[i-1],current_profile.times[i+1])
-            }
-        };
-
-        if lower <= upper && check_within_bounds(new_time, lower, upper) {
-            let prop = current_profile.new_with_time(i, new_time);
-            match prop {
-                None => (None, 0.0), 
-                Some(profile) => {
-                    let k_float = k as TimeFloat - 1.0;
-                    let log_prior_ratio = if i == 0 {
-                        k_float*(current_profile.times[0].max(current_profile.times[k-1])).ln() -
-                        k_float*(profile.times[0].max(profile.times[k-1])).ln() +
-                        (profile.times[i]-profile.times[i+1]).abs().ln() -
-                        (current_profile.times[i]- current_profile.times[i+1]).abs().ln()
-                    } else if i == k - 1 {
-                        k_float*(current_profile.times[0].max(current_profile.times[k-1])).ln() -
-                        k_float*(profile.times[0].max(profile.times[k-1])).ln() +
-                        (profile.times[i-1]-profile.times[i]).abs().ln() + 
-                        (current_profile.times[i-1]- current_profile.times[i]).abs().ln() 
-                    } else {
-                
-                    k_float*(current_profile.times[0].max(current_profile.times[k-1])).ln() -
-                    k_float*(profile.times[0].max(profile.times[k-1])).ln() +
-                    (profile.times[i-1]-profile.times[i]).abs().ln() + 
-                    (profile.times[i]-profile.times[i+1]).abs().ln() -
-                    (current_profile.times[i-1]- current_profile.times[i]).abs().ln() - 
-                    (current_profile.times[i]- current_profile.times[i+1]).abs().ln()
-                    };
-                    (Some(profile), log_prior_ratio)
-                } 
-            }
-        } else {
-            (None, 0.0) 
+            generate_closed_random(1, k+1, rng)
         }
-
     }
 
-    pub fn alter_birth(
-        &self,
-        current_profile: &TimeTempProfile,
-        rng: &mut impl Rng,
-    ) -> (Option<TimeTempProfile>, Float) 
+    pub fn construct_new_profile(&self, current_profile: &TimeTempProfile,  rng: &mut impl Rng
+    )-> Result<(TimeTempProfile,MoveKind,usize), String> 
     {
-        let k = current_profile.times.len();
-        let time_gaps: Vec<Float> = current_profile.times
+        let move_type = self.move_probs.choose_step(rng, current_profile.k());
+        let k_choice = match move_type {
+            MoveKind::Birth => {
+                let time_gaps: Vec<Float> = current_profile.times
                                                     .windows(2)
                                                     .map(|pair| (pair[1] - pair[0]) .abs())
                                                     .collect();
 
-        let i = generate_weighted_index_random(&time_gaps,rng);
-        
-        let (new_time, new_temp, jacobian) = self.sigmas.birth(
-                                                            current_profile.times[i], 
-                                                            current_profile.times[i+1], 
-                                                            current_profile.temps[i], 
-                                                            current_profile.temps[i+1], 
-                                                            rng
-                                                        );
-        
-        let (lower, upper) = if self.time_unit.is_ka_or_ma(){
-                                            (current_profile.times[i+1],current_profile.times[i])
-                                        }else{
-                                            (current_profile.times[i],current_profile.times[i+1])
-                                        };
-        let mut lower_temp = self.temp_range[0];
-        let mut upper_temp = self.temp_range[1];
-        if self.monotonic && k > 1 {
-            let prev = current_profile.temps[i];
-            let next = current_profile.temps[i + 1];
-                if self.decreasing {
-                    lower_temp = lower_temp.max(next);
-                    upper_temp = upper_temp.min(prev);
-                } else {
-                    lower_temp = lower_temp.max(prev);
-                    upper_temp = upper_temp.min(next);
-                }
-           
-        }
-        if lower <= upper && check_within_bounds(new_time, lower, upper) && 
-         lower_temp <= upper_temp && check_within_bounds(new_temp, lower_temp, upper_temp){
-            (
-                current_profile.new_with_birth(i, new_time, new_temp), 
-                (new_time-lower).abs().ln() + (upper - new_time).abs().ln() - 
-                (upper-lower).ln() - (self.temp_range[1]-self.temp_range[0]).abs().ln()
-                + jacobian.ln() )        
-            
-        } else {
-            (None, 0.0) 
-        }
-
-    }
-
-    pub fn alter_death(
-        &self,
-        current_profile: &TimeTempProfile,
-        rng: &mut impl Rng,
-    ) -> (Option<TimeTempProfile>, Float) 
-    {   
-        let k = current_profile.times.len();
-        let i: usize = rng.random_range(1..k-1);
-       
-        let jacobian = self.sigmas.death(rng);
-        let old_time = current_profile.times[i];
-        ( current_profile.new_with_death(i), 
-
-        (current_profile.times[i-1]-current_profile.times[i+1]).abs().ln() +
-        (self.temp_range[1]-self.temp_range[0]).ln() -
-        (old_time-current_profile.times[i+1]).abs().ln() -
-        (current_profile.times[i-1]-old_time).abs().ln() -jacobian.ln())
-    }
-
-    /// Create a profile using the supplied random-number generator.
-    pub fn create_new_profile(&self, rng: &mut impl Rng) -> Result<TimeTempProfile, String> {
-        let reverse = self.time_unit.is_ka_or_ma();
-        let (start_time, end_time) = if reverse {
-            (
-                sample_positive(
-                    self.time_start_end_range[0],
-                    self.time_start_end_range[1],
-                    rng,
-                ),
-                0.0,
-            )
-        } else {
-            (
-                0.0,
-                sample_positive(
-                    self.time_start_end_range[0],
-                    self.time_start_end_range[1],
-                    rng,
-                ),
-            )
+                generate_weighted_index_random(&time_gaps,rng)
+            },
+            _ => self.pick_k(current_profile.k(), rng)
         };
 
-        let start_temp = sample_inclusive(self.temp_start_range[0], self.temp_start_range[1], rng);
-        let end_temp = sample_inclusive(self.temp_end_range[0], self.temp_end_range[1], rng);
+        let (times, temps) = match move_type {
 
-        let mut times = vec![start_time];
-        let mut temps = vec![start_temp];
-        let time_direction = (end_time - start_time).signum();
-        let temp_direction = (end_temp - start_temp).signum();
+            MoveKind::Birth => {
+                self.move_sigmas.birth(k_choice, &current_profile.times, &current_profile.temps, rng)
+            }, 
+            MoveKind::Death => {
+                self.move_sigmas.death(k_choice, &current_profile.times, &current_profile.temps)
 
-        for _ in 0..self.step_max {
-            let current_time = *times.last().expect("start time is present");
-            let current_temp = *temps.last().expect("start temperature is present");
-            let time_remaining = (end_time - current_time).abs();
-            let temp_remaining = (end_temp - current_temp).abs();
-
-            // The final endpoint may be closer than the minimum spacing. Stop
-            // adding interior points once either endpoint is within that range.
-            if time_remaining < 2.0 * self.min_time || temp_remaining < 2.0 * self.min_temp
-            {
-                break;
+            },
+            MoveKind::Time => {
+                ( self.move_sigmas.time(k_choice, &current_profile.times, rng),
+                    current_profile.temps.clone()
+                )
+            },
+            MoveKind::Temp => {
+                ( current_profile.times.clone(),
+                    self.move_sigmas.temp(k_choice, &current_profile.temps, rng)
+                )
             }
-
-            let next_time = self.sample_interior_time(current_time, end_time, time_direction, rng);
-            let Some(next_temp) =
-                self.sample_interior_temperature(current_temp, end_temp, temp_direction, rng)
-            else {
-                break;
-            };
-
-            times.push(next_time);
-            temps.push(next_temp);
-        }
-
-        times.push(end_time);
-        temps.push(end_temp);
-
-        Ok(TimeTempProfile { times, temps })
-    }
-
-    fn sample_interior_temperature(
-        &self,
-        current: Float,
-        end: Float,
-        direction: Float,
-        rng: &mut impl Rng,
-    ) -> Option<Float> {
-        if self.monotonic {
-            let low = if direction >= 0.0 {
-                current + self.min_temp
-            } else {
-                end +  self.min_temp
-            };
-            let high = if direction >= 0.0 {
-                end -  self.min_temp
-            } else {
-                current -  self.min_temp
-            };
-            return (low <= high).then(|| sample_inclusive(low, high, rng));
-        }
-
-        // Non-monotonic walks may move in either direction, but every
-        // intermediate change must still meet the one-degree minimum.
-        for _ in 0..100 {
-            let candidate = sample_inclusive(self.temp_range[0], self.temp_range[1], rng);
-            if (candidate - current).abs() <  self.min_temp {
-                continue;
-            }
-            if (candidate - end).abs() <=  self.min_temp {
-                return None;
-            }
-            return Some(candidate);
-        }
-        None
-    }
-
-
-    fn sample_interior_time(
-        &self,
-        current: TimeFloat,
-        end: TimeFloat,
-        direction: TimeFloat,
-        rng: &mut impl Rng,
-    ) -> TimeFloat {
-        // Keep at least one configured time unit between the new point and both
-        // its predecessor and the final endpoint whenever an interior point fits.
-        let (low, high) = if direction >= 0.0 {
-            (current + self.min_time, end - self.min_time)
-        } else {
-            (end + self.min_time, current - self.min_time)
         };
-        sample_inclusive(low, high, rng)
+        Ok((TimeTempProfile{times,temps},move_type, k_choice))
+
     }
-
-
-
 }
 
-pub enum ProfileType {
-    RandomWalk {
-        inputs: RandomWalkConstructionParameters,
-    },
-    RJMCMC {
-        inputs: RJMCMCConstructionParameters,
-    },
+
+pub enum ProfileType{
+    Random {constructor: RandomProfileConstructor},
+    Walk   {constructor: RandomProfileConstructor, walker: RandomWalkConstructor}
 }
 
 impl ProfileType {
-    pub fn new_random_walk(inputs: &RandomWalkInputs) -> Result<Self, String> {
-        Ok(Self::RandomWalk {
-            inputs: RandomWalkConstructionParameters::new(inputs)?,
-        })
-    }
-    pub fn new_rjmcmc(inputs: &RJMCMCInputs) -> Result<Self, String> {
-         Ok(Self::RJMCMC {
-            inputs: RJMCMCConstructionParameters::new(inputs)?,
-        })
-    }
-
-    pub fn create_new_profile(&self, rng: &mut impl Rng) -> Result<TimeTempProfile, String> {
-        match self {
-            ProfileType::RandomWalk { inputs } => {
-                return inputs.create_new_profile(rng);
-            }
-            ProfileType::RJMCMC { inputs } => {
-                return inputs.create_new_profile(rng);
-            }
+    pub fn new(inputs: &ChronologyInputs) -> Result<Self, String> {
+        if !matches!(inputs.setup.profile_generation, 'R' | 'W' ) {
+            return Err(format!("Invalid profile generation character: only R, and W are allowed, {} was entered",inputs.setup.profile_generation))
+        }
+        
+        let constructor = RandomProfileConstructor::new(inputs)?;
+        if inputs.setup.profile_generation == 'R' {
+            Ok(ProfileType::Random { constructor })
+        } else if inputs.setup.profile_generation == 'W' {
+            let walker = RandomWalkConstructor::new(inputs)?;
+            Ok(ProfileType::Walk { constructor, walker })
+        } else{
+            return Err(format!("Invalid profile generation character: only R, and W are allowed, {} was entered",inputs.setup.profile_generation))
         }
     }
-
-    pub fn create_new_trial_profile(
-        &self,
-        current_profile: &TimeTempProfile, 
-        move_choice: &str,  
-        rng: &mut impl Rng 
-    ) -> Result<(Option<TimeTempProfile>, Float) , String >
-    {
+    pub fn check_profile(&self, profile: &TimeTempProfile) -> bool {
         match self {
-            ProfileType::RandomWalk { .. } => {
-                return Err("Not currently implemented RJMCMC".to_string());
+            ProfileType::Random { constructor } => {
+              
+                if constructor.check_profile(&profile, true, None){
+                   true
+                }else{
+                  false
+                }
+             
+            },
+            ProfileType::Walk { constructor, walker } => {
+                if constructor.check_profile(
+                            &profile, 
+                            walker.maintain_constraint_boxes,
+                            Some(walker.monotonicity))
+                {
+                    true
+                } else {
+                    false
+                }
             }
-            ProfileType::RJMCMC { inputs, .. } => {
-                return inputs.propose_trial_profile(current_profile, move_choice, rng)
+        }  
+    } 
+
+    pub fn generate_next_profile(&self, current_profile: &Option<TimeTempProfile>, rng: &mut impl Rng
+    ) -> Result<(Option<TimeTempProfile>, Option<MoveKind>, usize),String>{
+
+        match self {
+            ProfileType::Random { constructor } => {
+                let profile = constructor.construct_new_profile(rng)?;
+                if constructor.check_profile(&profile, true, None){
+                    Ok((Some(profile),None,0))
+                }else{
+                    Ok((None,None,0))
+                }
+             
+            },
+            ProfileType::Walk { constructor, walker } => {
+                match current_profile{
+                    Some(current_profile) => {
+                        let (profile, 
+                            kind, 
+                            k_choice) = walker.construct_new_profile(current_profile, rng)?;
+
+                        if constructor.check_profile(
+                            &profile, 
+                            walker.maintain_constraint_boxes,
+                            Some(walker.monotonicity)){
+
+                            Ok((Some(profile),Some(kind),k_choice))
+                        }else{
+                            Ok((None,Some(kind),k_choice))
+                        }
+                    },
+                    None => {
+                        let profile = constructor.construct_new_profile(rng)?;
+                        if constructor.check_profile(&profile, true, None){
+                            Ok((Some(profile),None,0))
+                        }else{
+                            Ok((None,None,0))
+                        } 
+                    }
+                }
             }
         }
 
     }
+
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rand::rngs::StdRng;
-    use rand::SeedableRng;
-
-    fn parameters(time_unit: TimeUnit, monotonic: bool) -> RandomWalkConstructionParameters {
-        RandomWalkConstructionParameters {
-            time_unit,
-            temp_unit: TemperatureUnit::Celsius,
-            step_max: 20,
-            min_time: 1.0,
-            min_temp: 0.01,
-            time_start_end_range: vec![50.0, 100.0],
-            temp_start_range: vec![10.0, 20.0],
-            temp_end_range: vec![80.0, 90.0],
-            temp_range: vec![0.0, 100.0],
-            monotonic,
-        }
-    }
-
-    #[test]
-    fn forward_profile_has_strictly_increasing_times() {
-        let mut rng = StdRng::seed_from_u64(1);
-        let profile = parameters(TimeUnit::Year, false)
-            .create_new_profile(&mut rng)
-            .unwrap();
-
-        assert_eq!(profile.times[0], 0.0);
-        assert!(profile.times.windows(2).all(|pair| pair[0] < pair[1]));
-        assert!((50.0..=100.0).contains(profile.times.last().unwrap()));
-        assert_eq!(profile.times.len(), profile.temps.len());
-    }
-
-    #[test]
-    fn reverse_profile_has_strictly_decreasing_times() {
-        let mut rng = StdRng::seed_from_u64(2);
-        let profile = parameters(TimeUnit::KAnnum, false)
-            .create_new_profile(&mut rng)
-            .unwrap();
-
-        assert!((50.0..=100.0).contains(&profile.times[0]));
-        assert_eq!(*profile.times.last().unwrap(), 0.0);
-        assert!(profile.times.windows(2).all(|pair| pair[0] > pair[1]));
-    }
-
-    #[test]
-    fn monotonic_temperatures_follow_the_endpoint_direction() {
-        let mut rng = StdRng::seed_from_u64(3);
-        let profile = parameters(TimeUnit::Year, true)
-            .create_new_profile(&mut rng)
-            .unwrap();
-
-        assert!(profile.temps.windows(2).all(|pair| pair[0] <= pair[1]));
-        assert!(profile
-            .temps
-            .iter()
-            .all(|temp| (0.0..=100.0).contains(temp)));
-    }
-
-    #[test]
-    fn descending_monotonic_temperatures_are_non_increasing() {
-        let mut params = parameters(TimeUnit::Year, true);
-        params.temp_start_range = vec![80.0, 90.0];
-        params.temp_end_range = vec![10.0, 20.0];
-        let mut rng = StdRng::seed_from_u64(4);
-        let profile = params.create_new_profile(&mut rng).unwrap();
-
-        assert!(profile.temps.windows(2).all(|pair| pair[0] >= pair[1]));
-    }
-
-    #[test]
-    fn temperature_endpoint_ranges_are_clipped_to_the_global_range() {
-        let mut params = parameters(TimeUnit::Year, false);
-        params.temp_start_range = vec![-10.0, 10.0];
-        params.temp_end_range = vec![90.0, 110.0];
-        params.temp_range = vec![0.0, 100.0];
-        let mut rng = StdRng::seed_from_u64(5);
-        let profile = params.create_new_profile(&mut rng).unwrap();
-
-        assert!(profile
-            .temps
-            .iter()
-            .all(|temp| (0.0..=100.0).contains(temp)));
-    }
-}
+////////////////////////////////////

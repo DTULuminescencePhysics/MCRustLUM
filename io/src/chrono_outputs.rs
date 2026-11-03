@@ -27,7 +27,30 @@ use flate2::bufread::MultiGzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Serialize,Deserialize};
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AcceptanceInfo {
+    BayesianRandom {
+        log_likelihood: Float,
+    },
+    Frequentist {
+        p_test: Float,
+    },
+    BayesianWalk {
+        log_likelihood: Float,
+        /// Reserved for a future calculation; currently written as 0.0.
+        log_posterior: Float,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptedProfile<P> {
+    pub profile: P,
+    pub acceptance: AcceptanceInfo,
+}
+
 
 /// Return the stable bincode configuration shared by the writer and reader.
 fn bincode_options() -> impl Options {
@@ -98,7 +121,7 @@ pub fn write_temporary_chronology_units(
 ///
 /// `T` is generic so this crate does not need to depend on the `chronology`
 /// crate (which already depends on this crate). In normal use, `T` is
-/// `chronology::profiles::TimeTempProfile`.
+/// `AcceptedProfile<chronology::profiles::TimeTempProfile>`.
 pub fn append_chronology_profile_to_experiment_file<T: Serialize>(
     path: impl AsRef<Path>,
     batch: &[T],

@@ -6,49 +6,59 @@
 # from the corresponding structure in io/src/inputs.rs.
 
 [setup]
-fill_ratio = [0.5802147315855186]
-fill_ratio_error = [0.013265066801318712]
-random_paths = false
-
-[random_walks]
+profile_generation = 'R' #Walk
+acceptance = 'B' # F frequentist; B Bayesian
 time_unit = "ma_annum"
 temp_unit = "celsius"
+
+[measurement]
+fill_ratio = [0.5802147315855186]
+fill_ratio_error = [0.01] #[0.013265066801318712]
+age = [0.5]
+age_error = [0.075]
+
+[constraints]
+fixed_temp_point_range = [25,30]
+age_range = [0.55,0.0]
+temp_range = [0.0, 150.0]
 step_max = 182500000
 min_time = 2.737850787e-9
 min_temp = 0.1
-time_start_range = [0.5,0.5]
-time_end_range = [0.0,0.0]
-temp_start_range = [150,150.0]
-temp_end_range = [60,0.0]
-temp_range = [150,0.0]
-monotonic = true
 
-[rjmcmc]
-time_unit = "ma_annum"
-temp_unit = "celsius"
-step_max = 100
-min_time = 1.0
-min_temp = 1.0
-time_start_range = [0.5,0.5]
-time_end_range = [0.0,0.0]
-temp_start_range = [150,150.0]
-temp_end_range = [60,0.0]
-temp_range = [150,0.0]
+[random_profiles]
+constraint_box_num = 1
+constraint_boxes = [[[0.55,0.45],[60.0,150.0]]]
+fixed_intermediate_node_num = true
+intermediate_node_halving_num = 3
+random_segment_kind = 'E' #"Intermediate" avg from 2; "Gradual" avg from 4
+monotonicity = ['D'] # D strictly decreasing; I strictly increasing; V variable 
+
+[random_walk]
+k_max = 100
 p_birth = 0.15
 p_death = 0.15
 p_time =  0.35 
 p_temp =  0.35 
-s_time_birth = 1.0
-s_temp_birth = 1.0
-s_time = 1.0 
+s_time_birth = 15.0
+s_temp_birth = 20.0
+s_time = 0.1
 s_temp = 20.0
-monotonic = true
+maintain_constraint_boxes = false
+monotonicity = 'D'
 
-
+[burn_in]
+run = true
+window = 100
+maximum_no_windows = 1000
+stable_window = 3
+birth_range = [0.10, 0.40]
+death_range = [0.10, 0.40]
+time_range =  [0.20, 0.50]
+temp_range =  [0.20, 0.50]
 
 
 [grid_options]
-time_cells = 50
-temperature_cells = 50
-time_bounds = [0.5,0.0]
+time_cells = 100
+temperature_cells = 100
+time_bounds = [0.55,0.0]
 temperature_bounds = [150,0]

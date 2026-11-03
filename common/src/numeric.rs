@@ -19,8 +19,8 @@
 //! individual values or complete containers between them.
 
 use ndarray::{Array, Array1, ArrayBase, ArrayD, Data, Dimension, Zip};
-use rand::distr::uniform::SampleUniform;
-use rand::{Rng, RngExt};
+use crate::random::{OpenRandom, ClosedRandom, HalfOpenRandom, HalfClosedRandom};
+use rand::{Rng};
 use std::ops::{Add, Div, Mul, Sub};
 
 /// Default floating-point precision used for model parameters and state.
@@ -35,13 +35,18 @@ pub type TimeFloat = f64;
 /// This trait allows coordinates and model inputs to be supplied as common
 /// integer or floating-point types. Conversion is explicit so calculations
 /// can consistently target either [`Float`] or [`TimeFloat`].
-pub trait Numeric: Copy + Clone + PartialEq + PartialOrd + SampleUniform + std::fmt::Debug {
+pub trait Numeric: 
+    Copy + Clone + PartialEq + PartialOrd + std::fmt::Debug +
+    OpenRandom + ClosedRandom + HalfOpenRandom + HalfClosedRandom
+{
     /// Convert this value to the normal simulation precision.
     fn to_float(self) -> Float;
     /// Convert this value to the precision used for time and rates.
     fn to_time_float(self) -> TimeFloat;
     /// Return the additive identity for this numeric type.
     fn zero() -> Self;
+    /// Return 1
+    fn one() -> Self;
     /// Return whether this value is finite.
     fn is_finite(self) -> bool {
         self.to_float().is_finite()
@@ -54,12 +59,9 @@ pub trait Numeric: Copy + Clone + PartialEq + PartialOrd + SampleUniform + std::
     fn max(self, other: Self) -> Self {
         if self >= other { self } else { other }
     }
-    /// Generate a value in the inclusive range `low..=high`.
-    fn random_range(low: Self, high: Self, rng: &mut impl Rng) -> Self {
-        rng.random_range(low..=high)
-    }
-    /// Generate a value in the inclusive range `0..=max`.
-    fn random_in(max: Self, rng: &mut impl Rng) -> Float;
+    /// Converts Numeric type to f64
+    fn to_f64(self) -> f64;
+
 }
 
 impl Numeric for f32 {
@@ -72,9 +74,13 @@ impl Numeric for f32 {
     fn zero() -> Self {
         0.0
     }
-    fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        rng.random_range(0.0..=max).to_float()
+    fn one() -> Self {
+        1.0
     }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+ 
 }
 impl Numeric for f64 {
     fn to_float(self) -> Float {
@@ -86,8 +92,28 @@ impl Numeric for f64 {
     fn zero() -> Self {
         0.0
     }
-    fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        rng.random_range(0.0..=max).to_float()
+    fn one() -> Self {
+        1.0
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+}
+impl Numeric for u8 {
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
     }
 }
 impl Numeric for i8 {
@@ -100,11 +126,30 @@ impl Numeric for i8 {
     fn zero() -> Self {
         0
     }
-    fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        rng.random_range(0..=max).to_float()
+    fn one() -> Self {
+        1
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
     }
 }
-
+impl Numeric for u16 {
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+}
 impl Numeric for i16 {
     fn to_float(self) -> Float {
         self as Float
@@ -115,8 +160,28 @@ impl Numeric for i16 {
     fn zero() -> Self {
         0
     }
-    fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        rng.random_range(0..=max).to_float()
+    fn one() -> Self {
+        1
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+}
+impl Numeric for u32 {
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
     }
 }
 
@@ -130,71 +195,13 @@ impl Numeric for i32 {
     fn zero() -> Self {
         0
     }
-    fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        rng.random_range(0..=max).to_float()
+    fn one() -> Self {
+        1
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
     }
 }
-
-impl Numeric for i64 {
-    fn to_float(self) -> Float {
-        self as Float
-    }
-    fn to_time_float(self) -> TimeFloat {
-        self as TimeFloat
-    }
-    fn zero() -> Self {
-        0
-    }
-    fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        rng.random_range(0..=max).to_float()
-    }
-}
-
-impl Numeric for u8 {
-    fn to_float(self) -> Float {
-        self as Float
-    }
-    fn to_time_float(self) -> TimeFloat {
-        self as TimeFloat
-    }
-    fn zero() -> Self {
-        0
-    }
-    fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        rng.random_range(0..=max).to_float()
-    }
-}
-
-impl Numeric for u16 {
-    fn to_float(self) -> Float {
-        self as Float
-    }
-    fn to_time_float(self) -> TimeFloat {
-        self as TimeFloat
-    }
-    fn zero() -> Self {
-        0
-    }
-    fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        rng.random_range(0..=max).to_float()
-    }
-}
-
-impl Numeric for u32 {
-    fn to_float(self) -> Float {
-        self as Float
-    }
-    fn to_time_float(self) -> TimeFloat {
-        self as TimeFloat
-    }
-    fn zero() -> Self {
-        0
-    }
-    fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        rng.random_range(0..=max).to_float()
-    }
-}
-
 impl Numeric for u64 {
     fn to_float(self) -> Float {
         self as Float
@@ -205,10 +212,85 @@ impl Numeric for u64 {
     fn zero() -> Self {
         0
     }
-    fn random_in(max: Self, rng: &mut impl Rng) -> Float {
-        rng.random_range(0..=max).to_float()
+    fn one() -> Self {
+        1
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
     }
 }
+impl Numeric for i64 {
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+}
+impl Numeric for usize {
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+}
+impl Numeric for isize {
+    fn to_float(self) -> Float {
+        self as Float
+    }
+    fn to_time_float(self) -> TimeFloat {
+        self as TimeFloat
+    }
+    fn zero() -> Self {
+        0
+    }
+    fn one() -> Self {
+        1
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+}
+/// For floats random unit sampling is possible
+pub trait FloatRandom: Numeric {
+     /// Sample (0, 1).
+    fn sample_open_unit(rng: &mut impl Rng) -> Self {
+        Self::sample_open(Self::zero(), Self::one(), rng)
+    }
+    /// Sample [0, 1].
+    fn sample_closed_unit(rng: &mut impl Rng) -> Self {
+        Self::sample_closed(Self::zero(), Self::one(), rng)
+    }
+    /// Sample [0, 1).
+    fn sample_half_open_unit(rng: &mut impl Rng) -> Self {
+        Self::sample_half_open(Self::zero(), Self::one(), rng)
+    }
+    /// Sample (0, 1].
+    fn sample_half_closed_unit(rng: &mut impl Rng) -> Self {
+        Self::sample_half_closed(Self::zero(), Self::one(), rng)
+    }
+}
+impl FloatRandom for f32 {}
+impl FloatRandom for f64 {}
 
 /// Describes a precision to which numeric inputs can be converted.
 ///
@@ -670,7 +752,7 @@ where
     where
         P: Numeric,
     {
-        let power = T::from_f64(T::to_f64(power));
+        let power = T::from_f64(power.to_f64());
         self.iter().map(|value| value.powf(power)).collect()
     }
 }
@@ -851,7 +933,7 @@ where
     where
         P: Numeric,
     {
-        let power = T::from_f64(T::to_f64(power));
+        let power = T::from_f64(power.to_f64());
         self.iter().map(|value| value.powf(power)).collect()
     }
 }
@@ -990,7 +1072,7 @@ where
     where
         P: Numeric,
     {
-        let power = T::from_f64(T::to_f64(power));
+        let power = T::from_f64(power.to_f64());
         self.mapv(|value| value.powf(power))
     }
 }

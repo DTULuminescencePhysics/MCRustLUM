@@ -13,7 +13,7 @@ use io::inputs::{CubeSpecification, SimulationInputs, TimeTempSpecification};
 use common::rate_equation_inputs::FillingTransitionInputs;
 use std::path::Path;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
+// use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// State shared by the repetitions and experiments in one Monte Carlo run.
 ///

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rand_distr::{Distribution, Exp1, Normal, StandardNormal, weighted::WeightedIndex};
-use rand::distr::{Open01, StandardUniform, OpenClosed01, uniform};
+use rand::distr::{Open01, OpenClosed01};
 use rand::{Rng, RngExt};
 
 /// Seed used when [`set_seed`] is not called during program startup.
@@ -78,25 +78,164 @@ pub fn generate_weighted_index_random(weights: &[f64], rng: &mut impl Rng,) -> u
     dist.sample(rng)
 }
 
-/// Generates a uniform random number in the open interval (0, 1).
-pub fn generate_open_uniform_random(rng: &mut impl Rng,) -> f64 {
-    rng.sample(Open01)
+/// Open sample (a,b)
+pub trait OpenRandom: Sized{
+    /// Creates the actual OpenRandom, Sample (a, b).
+    fn sample_open(a: Self, b: Self, rng: &mut impl Rng,) -> Self;
+}
+/// Closed sample [a,b]
+pub trait ClosedRandom: Sized{
+    /// Creates the actual ClosedRandom Sample [a, b].
+    fn sample_closed(a: Self, b: Self, rng: &mut impl Rng,) -> Self;
+}
+/// Half open on right side [a,b)
+pub trait HalfOpenRandom: Sized{
+    /// Creates the actual HalfOpenRandom Sample [a, b).
+    fn sample_half_open(a: Self, b: Self, rng: &mut impl Rng,) -> Self;
+}
+/// Hald open on left side (a,b]
+pub trait HalfClosedRandom: Sized{
+    /// Creates the actual HalfClosedRandom Sample (a, b].
+    fn sample_half_closed(a: Self, b: Self, rng: &mut impl Rng,) -> Self;
+}
+/// Generates open random number
+pub fn generate_open_random<T: OpenRandom>(a: T, b: T, rng: &mut impl Rng,) -> T {
+    T::sample_open(a, b, rng)
+}
+/// Generates closed random number
+pub fn generate_closed_random<T: ClosedRandom>(a: T, b: T, rng: &mut impl Rng,) -> T {
+    T::sample_closed(a, b, rng)
+}
+/// Generates half open random number
+pub fn generate_half_open_random<T: HalfOpenRandom>(a: T, b: T, rng: &mut impl Rng,) -> T {
+    T::sample_half_open(a, b, rng)
+}
+/// Generates half closed random number
+pub fn generate_half_closed_random<T: HalfClosedRandom>(a: T, b: T, rng: &mut impl Rng,) -> T {
+    T::sample_half_closed(a, b, rng)
 }
 
-/// Generates a uniform random number in the half open interval [0, 1)
-pub fn generate_uniform_zero_random(rng: &mut impl Rng,) -> f64 {
-    rng.sample(StandardUniform)
+/// Rules for integers
+macro_rules! impl_integer {
+    ($($ty:ty),*) => {
+        $(
+            impl OpenRandom for $ty {
+                fn sample_open(a: Self, b: Self, rng: &mut impl Rng) -> Self {
+                    let start = a.checked_add(1).expect("lower bound overflows");
+                    assert!(start < b, "interval contains no integers");
+                    rng.random_range(start..b)
+                }
+            }
+            impl ClosedRandom for $ty {
+                fn sample_closed(a: Self, b: Self, rng: &mut impl Rng) -> Self {
+                    assert!(a <= b, "interval is too small or incorrect way round");
+                    
+                    rng.random_range(a..=b)
+                }
+            }
+            impl HalfOpenRandom for $ty {
+                fn sample_half_open(a: Self, b: Self, rng: &mut impl Rng) -> Self {
+                    rng.random_range(a..b)
+                }
+            }
+            impl HalfClosedRandom for $ty {
+                fn sample_half_closed(a: Self, b: Self, rng: &mut impl Rng) -> Self {
+                    let start = a.checked_add(1).expect("lower bound overflows");
+                    rng.random_range(start..=b)
+                }
+            }
+
+        )*
+    };
+}
+impl_integer!(u8, u16, u32, u64, u128, usize,
+              i8, i16, i32, i64, i128);
+
+impl OpenRandom for isize {
+    fn sample_open(a: Self, b: Self, rng: &mut impl Rng) -> Self {
+        let start = a.checked_add(1).expect("lower bound overflows");
+        assert!(start < b, "interval contains no integers");
+
+        rng.random_range((start as i128)..(b as i128)) as isize
+    }
+}
+impl ClosedRandom for isize {
+    fn sample_closed(a: Self, b: Self, rng: &mut impl Rng) -> Self {
+        assert!(a <= b, "interval is too small or incorrect way round");
+        rng.random_range((a as i128)..=(b as i128)) as isize
+    }
+}
+impl HalfOpenRandom for isize {
+    fn sample_half_open(a: Self, b: Self, rng: &mut impl Rng) -> Self {
+        rng.random_range((a as i128)..(b as i128)) as isize
+    }
+}
+impl HalfClosedRandom for isize {
+    fn sample_half_closed(a: Self, b: Self, rng: &mut impl Rng) -> Self {
+        let start = a.checked_add(1).expect("lower bound overflows");
+        rng.random_range((start as i128)..=(b as i128)) as isize
+    }
+}
+/// Rules for Floats
+macro_rules! impl_float {
+    ($($ty:ty),*) => {
+        $(
+            impl OpenRandom for $ty {
+                fn sample_open(a: Self, b: Self, rng: &mut impl Rng) -> Self {
+                    assert!(
+                        a.is_finite() && b.is_finite() && a < b,
+                        "bounds must be finite and increasing"
+                    );
+
+                    loop {
+                        let u: Self = rng.sample(Open01);
+                        let value = (1.0 - u) * a + u * b;
+
+                        // Floating-point rounding can reach an endpoint.
+                        if a < value && value < b {
+                            return value;
+                        }
+
+                        assert!(
+                            a.next_up() < b,
+                            "interval contains no representable floats"
+                        );
+                    }
+                }
+            }
+            impl ClosedRandom for $ty {
+                fn sample_closed(a: Self, b: Self, rng: &mut impl Rng) -> Self {
+                    assert!(a <= b, "interval is too small or incorrect way round");
+                    
+                    rng.random_range(a..=b)
+                }
+            }
+            impl HalfOpenRandom for $ty {
+                fn sample_half_open(a: Self, b: Self, rng: &mut impl Rng) -> Self {
+                    rng.random_range(a..b)
+                }
+            }
+            impl HalfClosedRandom for $ty {
+                fn sample_half_closed(a: Self, b: Self, rng: &mut impl Rng) -> Self {
+                    assert!(a.is_finite() && b.is_finite() && a < b);
+                    loop {
+                        let u: Self = rng.sample(OpenClosed01);
+                        let value = (1.0 - u) * a + u * b;
+
+                        if a < value && value <= b {
+                            return value;
+                        }
+                    }
+                }
+            }
+        )*
+    };
 }
 
-/// Generate a uniform random number in the half open interval (0, 1]
-pub fn generate_uniform_one_random(rng: &mut impl Rng,) -> f64 {
-    rng.sample(OpenClosed01)
-}
-/// Generates a random number between two values a and b.
-pub fn generate_uniform_between_values(a: f64, b: f64, rng: &mut impl Rng,) -> f64{
-   rng.random_range(a..b)
+impl_float!(f32, f64);
 
-}
+
+
 
 /// Generates a log of uniform random number in the closed interval (0, 1).
 pub fn generate_log_open_uniform_random(rng: &mut impl Rng,) -> f64 {

@@ -4,9 +4,9 @@
 
 pub mod profiles;
 
-pub mod random_paths;
+pub mod acceptance;
 
-pub mod markov_chain_mc;
+pub mod burn_in;
 
 pub mod system_setup;
 
@@ -64,14 +64,14 @@ fn thermo_chronology_setup_run(
     
     let start = Instant::now();
     
-    let chronology = ChronologyExperiment::setup(
+    let mut chronology = ChronologyExperiment::setup(
         chron_inputs, mc_inputs, 
         repetitions, experiments, minimum_traps)?;
     eprintln!("system setup:      {:?}", start.elapsed());
     
     let start = Instant::now();
     let seed = repetitions*experiments*trial_num +1;
-    chronology.run(trial_num, seed)?;
+    chronology.run(chron_inputs,trial_num, seed)?;
     eprintln!("Chronology:       {:?}", start.elapsed());
 
     Ok(())
@@ -89,6 +89,19 @@ pub fn create_chronology_results(
     construct_heatmap_csv(profile_inputs, Path::new("tmp"), 
     "chronology_results.bin.gz", output_csv)?;
     
+    let known_profile = real_profile.as_ref().map(|profile| {
+        io::chrono_plotting::ProfilePath {
+            times: &profile.times,
+            temperatures: &profile.temps,
+        }
+    });
+
+    io::chrono_plotting::plot_accepted_profiles::<TimeTempProfile>(
+        Path::new("tmp").join("chronology_results.bin.gz"),
+        "accepted_profiles.png",
+        known_profile,
+    )?;
+
     plot_heatmap(real_profile, output_csv, image)?;
     
     Ok(())

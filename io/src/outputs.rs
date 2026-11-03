@@ -292,7 +292,7 @@ where
 
     writeln!(
         writer,
-        "t,T,n/N μ,n/N σ,n/N s, n/N η,Q 10%,Q 90%,Q 25%,Q 75%"
+        "t,T,n/N μ,n/N σ,n/N s,n/N η,Q 10%,Q 90%,Q 25%,Q 75%"
     )
     .map_err(|source| CsvOutputError::Write {
         path: path.to_path_buf(),
@@ -584,9 +584,9 @@ mod tests {
         assert_eq!(
             contents,
             concat!(
-                "time,temperature,fill,fill_standard_deviation,fill_median,fill_quantile_0_1,fill_quantile_0_9,fill_quantile_0_25,fill_quantile_0_75\n",
-                "0,273.15,0.25,0.05,0.25,0.21,0.29,0.225,0.275\n",
-                "1,283.15,0.5,0.1,0.5,0.42,0.58,0.45,0.55\n",
+                "t,T,n/N μ,n/N σ,n/N s,n/N η,Q 10%,Q 90%,Q 25%,Q 75%\n",
+                "0,273.15,0.25,0.05,0.07,0.25,0.21,0.29,0.225,0.275\n",
+                "1,283.15,0.5,0.1,0.12,0.5,0.42,0.58,0.45,0.55\n"
             )
         );
     }

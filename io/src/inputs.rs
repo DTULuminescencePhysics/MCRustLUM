@@ -16,6 +16,7 @@ use common::numeric::{Float, TimeFloat};
 use std::fs::read_to_string;
 use std::path::Path;
 
+
 /// Geometry, site density, and boundary settings used to construct a cube.
 ///
 /// Lengths are expressed in metres and `density` is the volumetric trap

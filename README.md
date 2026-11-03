@@ -11,8 +11,7 @@ Detailed documentation can be found in the accompanying [website](https://dtulum
 ## Project status
 
 > [!IMPORTANT]
-> MCRustLum is under active development and does not yet provide a complete
-> runnable simulation.
+> MCRustLum is under active development
 
 ## Requirements
 
@@ -54,14 +53,26 @@ copies this file into the experiment directory before starting a run.
 Run with an automatically numbered experiment directory:
 
 ```console
-cargo run -p luminescence
+cargo run --release -p luminescence -- [Options]
 ```
+Options:
+  -f, --folder      NAME    Experiment folder (default: automatic numbering)
+  -r, --repetitions NUMBER  Repetitions (default: 1000)
+  -e, --experiments NUMBER  Experiments (default: 1)
+  -s, --seed        NUMBER  Random seed (default: 0)
+  -t, --traps       NUMBER  Minimum traps (default: 800)
+  -mc               BOOLEAN Run a Monte Carlo Simulation (default: true)
+  -tc               BOOLEAN Run a Thermochronology experiment  
+  -p, --profiles    NUMBER  Number of profiles to test during a thermochronology experiment (default: 10000)
+  -h, --help                Show this help
 
-Or provide a folder name:
+The original single positional experiment-folder name is also supported."
 
+For multiple threads: 
 ```console
-cargo run -p luminescence -- my_experiment
+RAYON_NUM_THREADS=#1 cargo run -p luminescence -- [Options]
 ```
+
 
 The output layout is `run/<name>/`, containing the copied `input.toml`, the
 consolidated `average_fill.csv` and `average_event.csv`, six PNG plots, and a
@@ -69,21 +80,6 @@ consolidated `average_fill.csv` and `average_event.csv`, six PNG plots, and a
 mean filling with standard-deviation limits, median filling with interquartile
 limits, temperature against time, and aggregate event frequencies. Automatic
 names use the first available `experiment_N`, starting with `experiment_1`.
-
-Plotting can also be used separately from a simulation:
-
-```rust,no_run
-use io::plotting::{EventSeries, PlotOptions, SimulationResults};
-
-let results = SimulationResults::from_csv("average_fill.csv", "average_event.csv")?;
-results.plot_events_vs_time(
-    "smoothed_events.png",
-    &[EventSeries::Recombination, EventSeries::Retrapping],
-    Some(1.0), // rebin into one-second bins
-    PlotOptions::default(),
-)?;
-# Ok::<(), io::plotting::PlotError>(())
-```
 
 ## License
 

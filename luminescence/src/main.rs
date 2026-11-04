@@ -88,8 +88,9 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Opti
         let flag = argument.to_str().unwrap_or("");
         match flag {
             "-h" | "--help" => return Ok(None),
-            "-f" | "--folder" | "-r" | "--repetitions" | "-e" | "--experiments"
-            | "-s" | "--seed" | "-t" | "--traps" |"-tc"| "-mc" | "-p" | "--profiles" => {
+            "-f" | "--folder" | "-r" | "--repetitions" | "-e" | "--experiments" |
+            "-s" | "--seed"   | "-t" | "--traps" | "-mc" |"--montec"  |
+            "--thermochron"|"-tc" | "-p" | "--profiles" => {
                 let value = arguments.next().ok_or_else(|| format!("missing value for {flag}"))?;
                 if value.to_string_lossy().starts_with('-') {
                     return Err(format!("expected a value for {flag}, got {value:?}"));
@@ -106,8 +107,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Opti
                     "-s" | "--seed" => parsed.seed = parse_number(flag, value)?,
                     "-t" | "--traps" => parsed.traps = parse_number(flag, value)?,
                     "-p" | "--profiles" => parsed.profiles = parse_number(flag, value)?,
-                    "-mc" => parsed.mc = parse_number(flag, value)?,
-                    "-tc" => parsed.tc = parse_number(flag, value)?,
+                    "-mc"| "--montec" => parsed.mc = parse_number(flag, value)?,
+                    "-tc"| "--thermochron" => parsed.tc = parse_number(flag, value)?,
                    
                     _ => unreachable!(),
                 }

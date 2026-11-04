@@ -83,34 +83,34 @@ pub trait OpenRandom: Sized{
     /// Creates the actual OpenRandom, Sample (a, b).
     fn sample_open(a: Self, b: Self, rng: &mut impl Rng,) -> Self;
 }
-/// Closed sample [a,b]
+/// Closed sample \[a,b\]
 pub trait ClosedRandom: Sized{
-    /// Creates the actual ClosedRandom Sample [a, b].
+    /// Creates the actual ClosedRandom Sample \[a, b\].
     fn sample_closed(a: Self, b: Self, rng: &mut impl Rng,) -> Self;
 }
-/// Half open on right side [a,b)
+/// Half open on right side \[a,b)
 pub trait HalfOpenRandom: Sized{
     /// Creates the actual HalfOpenRandom Sample [a, b).
     fn sample_half_open(a: Self, b: Self, rng: &mut impl Rng,) -> Self;
 }
-/// Hald open on left side (a,b]
+/// Hald open on left side (a,b\]
 pub trait HalfClosedRandom: Sized{
-    /// Creates the actual HalfClosedRandom Sample (a, b].
+    /// Creates the actual HalfClosedRandom Sample (a, b\].
     fn sample_half_closed(a: Self, b: Self, rng: &mut impl Rng,) -> Self;
 }
-/// Generates open random number
+/// Generates open random number on open interval (a, b)
 pub fn generate_open_random<T: OpenRandom>(a: T, b: T, rng: &mut impl Rng,) -> T {
     T::sample_open(a, b, rng)
 }
-/// Generates closed random number
+/// Generates closed random number on closed interval \[a, b\]
 pub fn generate_closed_random<T: ClosedRandom>(a: T, b: T, rng: &mut impl Rng,) -> T {
     T::sample_closed(a, b, rng)
 }
-/// Generates half open random number
+/// Generates half open random number on half open on right side, closed on left \[a,b)
 pub fn generate_half_open_random<T: HalfOpenRandom>(a: T, b: T, rng: &mut impl Rng,) -> T {
     T::sample_half_open(a, b, rng)
 }
-/// Generates half closed random number
+/// Generates half closed random number on closed on right side open on left (a,b\]
 pub fn generate_half_closed_random<T: HalfClosedRandom>(a: T, b: T, rng: &mut impl Rng,) -> T {
     T::sample_half_closed(a, b, rng)
 }

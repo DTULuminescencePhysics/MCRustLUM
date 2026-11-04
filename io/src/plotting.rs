@@ -983,7 +983,7 @@ impl EventSeries {
     }
 }
 
-/// Paths written by [`plot_default_results`].
+/// Paths written by \[`plot_default_results`\].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedPlots {
     /// Mean filling against time, with a standard-deviation band.

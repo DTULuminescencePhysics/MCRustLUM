@@ -8,9 +8,7 @@ use common::constants::temperature::TemperatureUnit;
 use common::constants::time::TimeUnit;
 use common::numeric::{Float, Numeric, TimeFloat};
 use common::time_temperature::TimeTemperature;
-use common::random::{generate_weighted_index_random, 
-    generate_normal_random, generate_closed_random,
-    generate_open_random};
+use common::random::{generate_closed_random, generate_half_closed_random, generate_half_open_random, generate_normal_random, generate_open_random, generate_weighted_index_random};
 use io::chrono_inputs::{ChronologyInputs};
 
 use rand::Rng;
@@ -309,14 +307,19 @@ impl RandomProfileConstructor{
                 }
             }
         }
-
+        let reverse_time = if self.constraint_boxes[0].0.0 == 0.0 {
+            false
+        }else{
+            true
+        };
         // Check time direction and minimum changes between adjacent points.
         for index in 0..steps {
-            let dt = (profile.times[index + 1] - profile.times[index]).abs();
+            let dt = profile.times[index + 1] - profile.times[index];
             let dtemp = (profile.temps[index + 1] - profile.temps[index]).abs();
 
-            if !dt.is_finite() 
-            || dt <= self.min_time 
+            let directed_dt = if reverse_time { -dt } else { dt };
+            if !directed_dt.is_finite() 
+            || directed_dt <= self.min_time 
             ||!dtemp.is_finite() 
             || dtemp <= self.min_temp {
                 return false;
@@ -487,20 +490,25 @@ impl MoveSigmas {
     }
 
     pub fn birth(&self, k:usize, current_times: &Vec<TimeFloat>, 
-        current_temps: &Vec<Float>, rng: &mut impl Rng
+        current_temps: &Vec<Float>, fixed_point_last: bool, rng: &mut impl Rng
     ) -> (Vec<TimeFloat>, Vec<Float>) 
     {
 
             let t_rand: TimeFloat = generate_open_random(0.0,1.0,rng) * self.time_birth;
             let temp_rand:Float = generate_open_random(-0.5, 0.5, rng) * self.temp_birth;
 
-            let new_time = current_times[k] - t_rand * (current_times[k]-current_times[k+1]).abs();
-            let new_temp = current_temps[k] - t_rand * (current_temps[k]-current_temps[k+1]) - temp_rand;
+            let (neighbour, insertion_index) = if fixed_point_last {
+                (k + 1, k + 1)
+            } else {
+                (k - 1, k)
+            };
+            let new_time = current_times[k] + t_rand * (current_times[neighbour] - current_times[k]);
+            let new_temp = current_temps[k] + t_rand * (current_temps[neighbour] - current_temps[k]) - temp_rand;
             
             let mut times = current_times.clone();
             let mut temps = current_temps.clone();
-            times.insert(k+1, new_time);
-            temps.insert(k+1, new_temp);
+            times.insert(insertion_index, new_time);
+            temps.insert(insertion_index, new_temp);
             
             (times, temps)
     }
@@ -567,35 +575,52 @@ impl RandomWalkConstructor{
         self.move_sigmas = new.move_sigmas;
     }
 
-    fn pick_k(&self, k:usize, rng: &mut impl Rng) -> usize
-    {
-        if self.fixed_point_last{
-            generate_closed_random(0, k, rng)
-        } else {
-            generate_closed_random(1, k+1, rng)
-        }
-    }
-
-    pub fn construct_new_profile(&self, current_profile: &TimeTempProfile,  rng: &mut impl Rng
-    )-> Result<(TimeTempProfile,MoveKind,usize), String> 
-    {
-        let move_type = self.move_probs.choose_step(rng, current_profile.k());
-        let k_choice = match move_type {
+    fn pick_k(
+        &self, 
+        current_profile: &TimeTempProfile, 
+        move_type: &MoveKind, 
+        rng: &mut impl Rng
+    ) -> usize
+    {   
+        let k = current_profile.k();
+        match move_type {
             MoveKind::Birth => {
                 let time_gaps: Vec<Float> = current_profile.times
                                                     .windows(2)
                                                     .map(|pair| (pair[1] - pair[0]) .abs())
                                                     .collect();
 
-                generate_weighted_index_random(&time_gaps,rng)
+                let gap = generate_weighted_index_random(&time_gaps,rng);
+                // Anchor on the left for right insertion, or on the right for left insertion.
+                if self.fixed_point_last { gap } else { gap + 1 }
             },
-            _ => self.pick_k(current_profile.k(), rng)
-        };
+            MoveKind::Death => { 
+                generate_open_random(0, k, rng)
+            },
+            _ => {
+                if self.fixed_point_last{
+                    generate_half_open_random(0, k, rng)
+                } else {
+                    generate_half_closed_random(0, k, rng)
+                }
+            }
+        }
 
+
+
+    }
+
+    pub fn construct_new_profile(&self, current_profile: &TimeTempProfile,  rng: &mut impl Rng
+    )-> Result<(TimeTempProfile,MoveKind,usize), String> 
+    {
+        let move_type = self.move_probs.choose_step(rng, current_profile.k());
+        let k_choice =  self.pick_k(current_profile, &move_type, rng);
+        
         let (times, temps) = match move_type {
 
             MoveKind::Birth => {
-                self.move_sigmas.birth(k_choice, &current_profile.times, &current_profile.temps, rng)
+                self.move_sigmas.birth(k_choice, &current_profile.times, &current_profile.temps,
+                    self.fixed_point_last, rng)
             }, 
             MoveKind::Death => {
                 self.move_sigmas.death(k_choice, &current_profile.times, &current_profile.temps)
@@ -612,7 +637,13 @@ impl RandomWalkConstructor{
                 )
             }
         };
-        Ok((TimeTempProfile{times,temps},move_type, k_choice))
+        // Acceptance uses the inserted point's index, rather than the birth anchor.
+        let changed_index = if move_type == MoveKind::Birth && self.fixed_point_last {
+            k_choice + 1
+        } else {
+            k_choice
+        };
+        Ok((TimeTempProfile{times,temps},move_type, changed_index))
 
     }
 }
@@ -711,3 +742,46 @@ impl ProfileType {
 }
 
 ////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn walk_moves_preserve_the_fixed_endpoint_in_both_directions() {
+        for fixed_point_last in [true, false] {
+            let current = TimeTempProfile {
+                times: if fixed_point_last { vec![10.0, 4.0, 0.0] } else { vec![0.0, 4.0, 10.0] },
+                temps: vec![100.0, 200.0, 300.0],
+            };
+            for kind in [MoveKind::Birth, MoveKind::Death, MoveKind::Time, MoveKind::Temp] {
+                let mut probabilities = vec![0.0; 4];
+                probabilities[kind.to_index()] = 1.0;
+                let walker = RandomWalkConstructor {
+                    age_range: (0.0, 20.0), temp_range: (0.0, 500.0), fixed_point_last,
+                    maintain_constraint_boxes: false, monotonicity: 'N',
+                    move_probs: MoveProbabilities::new(probabilities[0], probabilities[1],
+                        probabilities[2], probabilities[3], 10),
+                    move_sigmas: MoveSigmas::new(1.0, 1.0, 1.0, 1.0),
+                };
+                let mut rng = common::random::get_std_rng_for_rep(0);
+                for _ in 0..100 {
+                    let (trial, actual_kind, index) = walker.construct_new_profile(&current, &mut rng).unwrap();
+                    assert_eq!(actual_kind, kind);
+                    let fixed_before = if fixed_point_last { current.times.len() - 1 } else { 0 };
+                    let fixed_after = if fixed_point_last { trial.times.len() - 1 } else { 0 };
+                    assert_eq!(trial.times[fixed_after], current.times[fixed_before]);
+                    assert_eq!(trial.temps[fixed_after], current.temps[fixed_before]);
+                    if kind == MoveKind::Birth {
+                        assert!(index > 0 && index < trial.times.len() - 1);
+                        assert!(trial.times.windows(2).all(|pair|
+                            if fixed_point_last { pair[0] > pair[1] } else { pair[0] < pair[1] }));
+                        let (times, temps) = walker.move_sigmas.death(index, &trial.times, &trial.temps);
+                        assert_eq!(times, current.times);
+                        assert_eq!(temps, current.temps);
+                    }
+                }
+            }
+        }
+    }
+}

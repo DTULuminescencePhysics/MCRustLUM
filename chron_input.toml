@@ -6,7 +6,7 @@
 # from the corresponding structure in io/src/inputs.rs.
 
 [setup]
-profile_generation = 'R' #Walk
+profile_generation = 'W' #Walk
 acceptance = 'B' # F frequentist; B Bayesian
 time_unit = "ma_annum"
 temp_unit = "celsius"
@@ -18,12 +18,12 @@ age = [0.5]
 age_error = [0.075]
 
 [constraints]
-fixed_temp_point_range = [25,30]
+fixed_temp_point_range = [45,55]
 age_range = [0.55,0.0]
 temp_range = [0.0, 150.0]
 step_max = 182500000
 min_time = 2.737850787e-9
-min_temp = 0.1
+min_temp = 0.01
 
 [random_profiles]
 constraint_box_num = 1
@@ -48,8 +48,8 @@ monotonicity = 'D'
 
 [burn_in]
 run = true
-window = 100
-maximum_no_windows = 1000
+window = 200
+maximum_no_windows = 25
 stable_window = 3
 birth_range = [0.10, 0.40]
 death_range = [0.10, 0.40]

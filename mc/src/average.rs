@@ -827,7 +827,7 @@ fn average_fill_paths(paths: Vec<PathBuf>, output_file: &Path) -> Result<(), Str
     write_continuous_values_csv(output_file, rows).map_err(|error| error.to_string())
 }
 
-/// Produce rolling_average_fill_<experiment>.csv from tmp/.
+/// Produce rolling_average_fill_ExperimentNumber.csv from tmp/.
 pub fn rolling_average_fill(divisor: usize) -> Result<(), String> {
     rolling_average_fill_in(TEMPORARY_DIRECTORY, ".", divisor)
 }

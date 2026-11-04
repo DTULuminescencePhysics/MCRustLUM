@@ -36,17 +36,18 @@ impl BayesianWalk {
     fn calculate_log_likelihood(&self, ratio_likelihood: Vec<Float>, age_likelihood: Float) -> Float {
         -0.5*(ratio_likelihood.iter().sum::<Float>() + age_likelihood)
     }
+    
     fn birth_prior_ratio(
         &self,
         trial_profile: &TimeTempProfile, 
         current_profile: &TimeTempProfile, 
         k_choice: usize
     ) -> Float{
-        (
-            (( trial_profile.times[k_choice]-trial_profile.times[k_choice+1])
-                *(trial_profile.times[k_choice+1]-trial_profile.times[k_choice+2])
+        (   
+            (( trial_profile.times[k_choice-1]-trial_profile.times[k_choice])
+                *(trial_profile.times[k_choice]-trial_profile.times[k_choice+1])
                 * self.birth_sigmas)
-            /((current_profile.times[k_choice-1]-current_profile.times[k_choice+1])
+            /((current_profile.times[k_choice-1]-current_profile.times[k_choice])
                 *self.temp_diff)
             
         ).abs().ln()
@@ -58,6 +59,13 @@ impl BayesianWalk {
         current_profile: &TimeTempProfile, 
         k_choice: usize
     ) -> Float{
+        // Birth only splits an existing interval, so it cannot reverse an
+        // endpoint deletion. Reject these proposals before indexing neighbours.
+        if current_profile.times.len() <= 2 || k_choice == 0
+            || k_choice >= current_profile.times.len() - 1
+        {
+            return Float::NEG_INFINITY;
+        }
         (
             ( (trial_profile.times[k_choice-1] - trial_profile.times[k_choice]) 
              * self.temp_diff)
@@ -66,7 +74,7 @@ impl BayesianWalk {
               *self.birth_sigmas)
         ).abs().ln()
     }
-    
+
     fn time_prior_ratio(
         &self,
         trial_profile: &TimeTempProfile, 
@@ -259,13 +267,11 @@ impl AcceptorType{
         k_choice: usize,
         rng: &mut impl Rng
     ) -> Result<(bool, AcceptanceInfo), String> 
-    {
-
+    {   
         match self {
             AcceptorType::BayesianRandom => {
                 let log_likelihood = -0.5*(ratio_likelihood.iter().sum::<Float>() + age_likelihood);
                 if generate_log_open_uniform_random(rng) < log_likelihood{
-                // if comp > Float::sample_half_open_unit(rng){
                     return Ok((true, AcceptanceInfo::BayesianRandom { log_likelihood })); 
                 }else{
                     return Ok((false, AcceptanceInfo::BayesianRandom { log_likelihood }));
@@ -368,7 +374,6 @@ impl AcceptanceConstructor{
 
         let ratio_likelihood = self.ratio_likelihood(result, reps);
         let age_likelihood = self.age_likelihood(trial_profile.age());
-        
         let (add_prof, data) =self.acceptor.make_decision(
             ratio_likelihood, 
             age_likelihood, 
@@ -430,9 +435,6 @@ impl AcceptanceConstructor{
         Ok(())
 
     }
-
-
-
 
 }
 

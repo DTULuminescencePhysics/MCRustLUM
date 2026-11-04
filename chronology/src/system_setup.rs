@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use crate::profiles::{ProfileType, TimeTempProfile};
+use crate::profiles::{ProfileType, TimeTempProfile,MoveKind};
 use crate::acceptance::{AcceptanceConstructor, AcceptorType};
 use crate::burn_in::BurnInApparatus;
 use io::chrono_inputs::ChronologyInputs;
@@ -107,7 +107,7 @@ impl ChronologyExperiment {
         let mut current_profile:Option<TimeTempProfile> = None; 
     
         let (trial_profile, 
-            move_kind, 
+            _, 
             k_choice) = self.generator.generate_next_profile(&None, rng)?;
         
         match trial_profile {
@@ -118,7 +118,7 @@ impl ChronologyExperiment {
                 let _ = self.acceptor.accept_reject_profile(
                         trial_profile,
                         &mut current_profile,
-                        move_kind,
+                        Some(MoveKind::Temp),
                         k_choice,
                         result,
                         self.monte_carlo.repetitions,
@@ -135,7 +135,6 @@ impl ChronologyExperiment {
                         burn.walker_alt.construct_new_profile(&current_profile, rng)?},
                     None => {return Err("There should now be a profile to use".to_string())}
                 };
-
                 let trial_move = burn.get_window(move_kind)?;
                 if !self.generator.check_profile(&trial_profile){
                     trial_move.record(false);

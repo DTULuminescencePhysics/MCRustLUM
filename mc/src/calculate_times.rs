@@ -44,7 +44,7 @@ fn build_candidates(
     trap_parameters: &TrapParameterLayout,
     temperature: Float,
     cube: &Cube,
-    filling_inputs: &mut FillingTransitionInputs,
+    filling_inputs: &mut Option<FillingTransitionInputs>,
     transitions: &Transitions,
     rng: &mut impl Rng,
     shortest: &mut TimedCandidate, 
@@ -56,7 +56,6 @@ fn build_candidates(
             excited_weights) = trap_parameters
                                          .get_ground_excited_weights(trap_places, &temperature)?;
     
-
         if transitions.get_delocalised(){
                 let mut delocalised_rates: Vec<Candidate> = Vec::with_capacity(trap_places.available_count()*2);
                 let inputs = trap_parameters.get_delocalised(
@@ -100,6 +99,7 @@ fn build_candidates(
                                     .map(|hole_coord| 
                                         cube.distance(source_coord, hole_coord)),
                                 );
+                // println!("{:?}",distance);
                 let inputs = trap_parameters.get_localised_recombination(
                                                                         &ground_weight, 
                                                                         &excited_weight, 
@@ -156,17 +156,19 @@ fn build_candidates(
         }
     }
 
-    if transitions.get_filling(){
-        filling_inputs.update_occ(trap_places.available_count());
+    match filling_inputs {
+        Some(filling_inputs) => {
+            filling_inputs.update_occ(trap_places.available_count());
         
-        let fill = filling_candidate(
-            &transitions.filling,
-            &filling_inputs,
+            let fill = filling_candidate(
+                &transitions.filling,
+                &filling_inputs,
             )?;
             
-        shortest.find_shortest(fill, rng)?;
-        
-    }  
+            shortest.find_shortest(fill, rng)?;
+        },
+        None => {}
+    }
 
     Ok(())
 }
@@ -764,7 +766,7 @@ pub fn run_standard(
     hole_places: &mut PlaceAvailability,
     trap_parameters: &TrapParameterLayout,
     retrapping_parameters: &ReTrapParameterLayout,
-    filling_inputs: &mut FillingTransitionInputs,
+    filling_inputs: &mut Option<FillingTransitionInputs>,
     time_temperature: &mut TimeTemperature,
     cube: &Cube,
     transitions: &Transitions,
@@ -780,12 +782,10 @@ pub fn run_standard(
                 });
    
     while time_temperature.current_max_dt() != 0.0 {
+       
         let temperature = time_temperature.current_temperature();
-        // current_max_dt is signed because geological profiles run backwards.
-        let signed_profile_dt = time_temperature.current_max_dt();
-        let max_dt = signed_profile_dt.abs();
-        let direction = signed_profile_dt.signum();
-
+        let max_dt = time_temperature.current_max_dt();
+      
         let mut next_event = TimedCandidate { event: Event::None, time: max_dt,};
         // Contains localised, delocalised, and one aggregate filling event.
         build_candidates(
@@ -800,9 +800,8 @@ pub fn run_standard(
             rng,
             &mut next_event,
         )?;
-    
-        let signed_event_dt = direction * next_event.time;
-        time_temperature.advance(signed_event_dt);
+      
+        time_temperature.advance(next_event.time);
         let applied_event = apply_event(
                     next_event.event,
                     places,
@@ -845,7 +844,7 @@ pub fn run_final_ratio_only(
     hole_places: &mut PlaceAvailability,
     trap_parameters: &TrapParameterLayout,
     retrapping_parameters: &ReTrapParameterLayout,
-    filling_inputs: &mut FillingTransitionInputs,
+    filling_inputs: &mut Option<FillingTransitionInputs>,
     time_temperature: &mut TimeTemperature,
     cube: &Cube,
     transitions: &Transitions,
@@ -916,7 +915,8 @@ mod tests {
     }
 
     fn parameters() -> TrapParameterLayout {
-        TrapParameterLayout::uniform(TrapParameters::new(
+        TrapParameterLayout::Uniform{parameters: TrapParameters::new(
+            "trap 1".to_string(),
             0.1, 
             1.0e12, 
             1.0e12, 
@@ -928,7 +928,7 @@ mod tests {
             1.0e12, 
             1.0, 
             1.0, 
-        ))
+        )}
     }
 
     fn delocalised_test_state() -> (ElectronPlaces, PlaceAvailability, PlaceAvailability, Cube) {
@@ -944,7 +944,7 @@ mod tests {
         trap_places.make_available(PlaceId::new(0).unwrap());
         let mut hole_places = PlaceAvailability::new(1).unwrap();
         hole_places.make_available(PlaceId::new(0).unwrap());
-        let cube = Cube::new(1.0, 1.0, 1.0, 2, 1, 0, false).unwrap();
+        let cube = Cube::new(1.0, 1.0, 1.0, vec![2], 1, 0, false).unwrap();
 
         (places, trap_places, hole_places, cube)
     }
@@ -1036,7 +1036,6 @@ mod tests {
             2.0,
             1,
             4,
-            TimeUnit::Second,
         )
         .unwrap();
         let transitions = selected_transitions(false, false, false, true);
@@ -1052,20 +1051,19 @@ mod tests {
     }
 
     #[test]
-    fn filling_candidate_uses_the_converted_dose_rate() {
+    fn filling_candidate_uses_the_configured_dose_rate() {
         let inputs = FillingTransitionInputs::get_inputs(
             4.0,
             120.0,
             0,
             4,
-            TimeUnit::Minute,
         )
         .unwrap();
         let transitions = selected_transitions(false, false, false, true);
         let candidate = filling_candidate(&transitions.filling, &inputs).unwrap();
 
-        assert_eq!(inputs.dose_rate, 2.0);
-        assert_eq!(candidate.rate, 2.0);
+        assert_eq!(inputs.dose_rate, 120.0);
+        assert_eq!(candidate.rate, 120.0);
     }
 
     #[test]

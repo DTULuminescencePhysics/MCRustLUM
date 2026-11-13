@@ -146,7 +146,7 @@ impl Boundary {
 #[derive(Debug, Clone)]
 pub struct Cube {
     /// Number of localised electron traps in each spatial realisation.
-    pub trap_total: usize,
+    pub trap_total: Vec<usize>,
     /// Number of hole recombination sites in each spatial realisation.
     pub hole_total: usize,
     /// Number of shallow band-tail states in each spatial realisation.
@@ -161,7 +161,7 @@ impl Cube {
         x: X,
         y: Y,
         z: Z,
-        trap_total: usize,
+        trap_total: Vec<usize>,
         hole_total: usize,
         bandtail_total: usize,
         periodic: bool,
@@ -179,32 +179,43 @@ impl Cube {
         x: X,
         y: Y,
         z: Z,
-        density: Float,
+        densities: Vec<Float>,
         h_no: usize,
         b_no: usize,
         periodic: bool,
         minimum_traps: usize
     ) -> Result<Self, String> {
+
+        let density = densities.iter().sum();
         let mut boundary = Boundary::new(x, y, z, periodic)?;
-        let mut trap_total = boundary.density_to_number(density)?;
+        let mut all_trap_total = boundary.density_to_number(density)?;
         
-        if trap_total == 0 {
+        if all_trap_total == 0 {
             let distance = (minimum_traps as Float /density).cbrt();
             boundary = Boundary::new(  distance, distance, distance , periodic, )?; 
-            trap_total = boundary.density_to_number(density)?;
+            all_trap_total = boundary.density_to_number(density)?;
         }
         
-        if trap_total < minimum_traps {
-            let scale = (minimum_traps as Float / trap_total as Float).cbrt();
+        if all_trap_total < minimum_traps {
+            let scale = (minimum_traps as Float / all_trap_total as Float).cbrt();
             boundary = Boundary::new(  boundary.x *scale, boundary.y * scale, boundary.z * scale, periodic, )?; 
-            trap_total = boundary.density_to_number(density)?;
+            all_trap_total = boundary.density_to_number(density)?;
         }
         let hole_total = h_no
-            .checked_mul(trap_total)
+            .checked_mul(all_trap_total)
             .ok_or_else(|| "hole count overflowed usize".to_string())?;
         let bandtail_total = b_no
-            .checked_mul(trap_total)
+            .checked_mul(all_trap_total)
             .ok_or_else(|| "bandtail count overflowed usize".to_string())?;
+        
+        let trap_total: Vec<usize> = densities
+        .iter()
+        .map(|&dens| {
+            (dens / density * all_trap_total as Float).round() as usize
+        })
+        .collect();
+        
+
 
         Ok(Self { trap_total, hole_total, bandtail_total, boundary })
     }
@@ -265,7 +276,7 @@ mod tests {
             10.0,
             10.0,
             10.0,
-            -1.0,
+            vec![-1.0],
             1,
             1,
             false,

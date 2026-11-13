@@ -40,7 +40,7 @@ mod tests {
 
     #[test]
     fn cube_contains_random_point() {
-        let cube = crystal::Cube::new(10.0, 20.0, 30.0, 0, 0, 0, true).unwrap();
+        let cube = crystal::Cube::new(10.0, 20.0, 30.0, vec![0], 0, 0, true).unwrap();
         let mut rng = random::get_std_rng_for_rep(0);
         let point = trap_hole_band_tail::Coord::random_in(10.0,20.0,30.0, &mut rng).unwrap();
         assert!(cube.contains(&point));
@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn filled_random_creates_features() {
-        let cube = crystal::Cube::new(5.0, 5.0, 5.0, 2, 3, 1, true).unwrap();
+        let cube = crystal::Cube::new(5.0, 5.0, 5.0, vec![2], 3, 1, true).unwrap();
         let mut rng = random::get_std_rng_for_rep(0);
         let places = trap_hole_band_tail::ElectronPlaces::random_from_cube(&cube, &mut rng).unwrap();
         assert_eq!(places.traps().len(), 2);

@@ -4,11 +4,10 @@
 
 
 
-use common::constants::temperature::TemperatureUnit;
 use common::constants::time::TimeUnit;
 use common::numeric::{Float, Numeric, TimeFloat};
 use common::time_temperature::TimeTemperature;
-use common::random::{generate_closed_random, generate_half_closed_random, generate_half_open_random, generate_normal_random, generate_open_random, generate_weighted_index_random};
+use common::random::{generate_half_closed_random, generate_half_open_random, generate_normal_random, generate_open_random, generate_weighted_index_random};
 use io::chrono_inputs::{ChronologyInputs};
 
 use rand::Rng;
@@ -138,10 +137,9 @@ impl TimeTempProfile {
     pub fn generate_profile(
         &self,
         time_unit: TimeUnit,
-        temp_unit: TemperatureUnit,
     ) -> Result<TimeTemperature, String> 
     {
-        TimeTemperature::new(self.times.clone(), self.temps.clone(), time_unit, temp_unit)
+        TimeTemperature::new(self.times.clone(), self.temps.clone(), time_unit)
     }
     pub fn k(&self) -> usize {
         self.times.len()-1

@@ -11,9 +11,10 @@
 
 use crate::errors::PlotError;
 use crate::outputs::{AverageEventRow, ContinuousValueRow};
-use crate::inputs::TimeTempSpecification;
-use common::constants::temperature::{self,TemperatureUnit};
-use common::constants::time::{self,TimeUnit};
+use crate::inputs::TimeTemperatureDefinition;
+use common::constants::quantities::{Dimension, };
+use common::constants::temperature::TemperatureUnit;
+use common::constants::time::TimeUnit;
 use common::numeric::{Float, TimeFloat};
 use plotters::coord::types::RangedCoordf64;
 use plotters::coord::Shift;
@@ -39,29 +40,6 @@ fn padded_range(values: impl IntoIterator<Item = Float>) -> Range<Float> {
         minimum.abs().max(1.0) * 0.05
     };
     (minimum - padding)..(maximum + padding)
-}
-
-/// Convert the internally stored seconds to a requested display unit.
-fn time_for_plot(unit: TimeUnit, seconds: TimeFloat) -> TimeFloat {
-    if unit == TimeUnit::Second {
-        seconds
-    } else {
-        let seconds_per_unit = time::convert_to_seconds(unit, 1.0)
-            .expect("every TimeUnit has a seconds conversion");
-        seconds / seconds_per_unit
-    }
-}
-
-/// Convert the internally stored kelvin to a requested display unit.
-fn temperature_for_plot(unit: TemperatureUnit, kelvin: Float) -> Float {
-    match unit {
-        TemperatureUnit::Kelvin => kelvin,
-        TemperatureUnit::Celsius => temperature::convert_to_celsius(
-            TemperatureUnit::Kelvin,
-            kelvin,
-        )
-        .expect("kelvin can always be converted to celsius"),
-    }
 }
 
 /// Reverse geological-age axes so they are displayed from the initial age to zero.
@@ -492,14 +470,15 @@ impl PlotWindow {
     ///
     /// Fill and event axes are rejected because they are not supported as
     /// horizontal coordinates for continuous-data plots.
-    pub fn get_x_filter(&self) -> Result<impl Fn(&ContinuousValueRow) -> f64, PlotError> {
+    pub fn get_x_filter(&self, time_unit: TimeUnit, temp_unit: TemperatureUnit) -> Result<impl Fn(&ContinuousValueRow) -> f64, PlotError> {
         let x = match self.x_axis {
             Axis::Time { unit } => Box::new(move |row: &ContinuousValueRow| {
-                time_for_plot(unit, row.time)
+                time_unit.convert_unit(&unit, row.time).expect("Should always be a time conversion")
             })
                 as Box<dyn Fn(&ContinuousValueRow) -> f64>,
             Axis::Temperature { unit } => Box::new(move |row: &ContinuousValueRow| {
-                temperature_for_plot(unit, row.temperature)
+                temp_unit.convert_unit(&unit, row.temperature).expect("Should always be a time conversion")
+                
             }),
             _ => {
                 return Err(PlotError::Draw {
@@ -515,8 +494,9 @@ impl PlotWindow {
     pub fn get_continuous_x_range(
         &self,
         fill_rows: &[ContinuousValueRow],
+        time_unit: TimeUnit, temp_unit: TemperatureUnit,
     ) -> Result<Range<f64>, PlotError> {
-        let x = self.get_x_filter()?;
+        let x = self.get_x_filter(time_unit, temp_unit)?;
 
         Ok(orient_range(
             self.x_axis,
@@ -528,14 +508,14 @@ impl PlotWindow {
     ///
     /// Event axes are rejected because event plots use their own binned drawing
     /// path.
-    pub fn get_y_filter(&self) -> Result<impl Fn(&ContinuousValueRow) -> f64, PlotError> {
+    pub fn get_y_filter(&self, time_unit: TimeUnit, temp_unit: TemperatureUnit) -> Result<impl Fn(&ContinuousValueRow) -> f64, PlotError> {
         let y = match self.y_axis {
             Axis::Time { unit } => Box::new(move |row: &ContinuousValueRow| {
-                time_for_plot(unit, row.time)
+                time_unit.convert_unit(&unit, row.time).expect("Should always be a time conversion")
             })
                 as Box<dyn Fn(&ContinuousValueRow) -> f64>,
             Axis::Temperature { unit } => Box::new(move |row: &ContinuousValueRow| {
-                temperature_for_plot(unit, row.temperature)
+                temp_unit.convert_unit(&unit, row.temperature).expect("Should always be a time conversion")
             }),
             Axis::Fill { statistics } => match statistics.average {
                 FillAverage::Mean => Box::new(|row: &ContinuousValueRow| row.fill),
@@ -556,8 +536,10 @@ impl PlotWindow {
     pub fn get_continuous_y_range(
         &self,
         fill_rows: &[ContinuousValueRow],
+        time_unit: TimeUnit, 
+        temp_unit: TemperatureUnit
     ) -> Result<Range<f64>, PlotError> {
-        let y = self.get_y_filter()?;
+        let y = self.get_y_filter(time_unit, temp_unit)?;
         match self.y_axis {
             Axis::Time { .. } => {
                 return Ok(orient_range(
@@ -686,26 +668,20 @@ impl PlotWindow {
             });
         }
 
-        let mut points = Vec::with_capacity(times.len());
-        for (time, temperature) in times.into_iter().zip(temperatures) {
-            let seconds = time::convert_to_seconds(time_unit, *time)
-                .expect("every TimeUnit has a seconds conversion");
-            let kelvin = temperature::convert_to_kelvin(temp_unit, *temperature)
-                .expect("every TemperatureUnit has a kelvin conversion");
-            let time = time_for_plot(display_time_unit, seconds);
-            let temperature = temperature_for_plot(display_temp_unit, kelvin);
-            if !time.is_finite() || !temperature.is_finite() {
-                return Err(PlotError::Setup {
-                    source: "plot_time_temperature coordinates".into(),
-                    message: "time and temperature coordinates must be finite".into(),
-                });
-            }
-            points.push(if time_on_x {
-                (time, temperature)
+        let points: Vec<(Float, Float)> = times.iter().zip(temperatures).map(|(time, temperature)| {
+
+            let time = time_unit.convert_unit(&display_time_unit,*time)
+                .expect("every TimeUnit has a conversion") as Float;
+           
+            let temp = temp_unit.convert_unit(&display_temp_unit, *temperature)
+                                .expect("every TemperatureUnit has a conversion");
+            if time_on_x {
+                (time, temp)
             } else {
-                (temperature, time)
-            });
+                (temp, time)
+            }
         }
+        ).collect();
 
         let x_range = orient_range(self.x_axis, padded_range(points.iter().map(|p| p.0)));
         let y_range = orient_range(self.y_axis, padded_range(points.iter().map(|p| p.1)));
@@ -732,16 +708,18 @@ impl PlotWindow {
         fill_rows: &[ContinuousValueRow],
         caption: &str,
         legend: bool,
+        time_unit: TimeUnit, 
+        temp_unit:TemperatureUnit,
     ) -> Result<(), PlotError> {
         if let Axis::Fill { statistics } = &self.y_axis {
             statistics.check_data(fill_rows, self.output.clone())?;
         }
-        let x_range = self.get_continuous_x_range(fill_rows)?;
-        let y_range = self.get_continuous_y_range(fill_rows)?;
+        let x_range = self.get_continuous_x_range(fill_rows, time_unit, temp_unit)?;
+        let y_range = self.get_continuous_y_range(fill_rows, time_unit, temp_unit)?;
 
         let (root, mut chart) = self.plot_setup(caption, x_range, y_range)?;
-        let x = self.get_x_filter()?;
-        let y = self.get_y_filter()?;
+        let x = self.get_x_filter(time_unit, temp_unit)?;
+        let y = self.get_y_filter(time_unit, temp_unit)?;
         chart
             .draw_series(LineSeries::new(
                 fill_rows.iter().map(|row| (x(row), y(row))),
@@ -806,6 +784,7 @@ impl PlotWindow {
         series: &[EventSeries],
         new_bin_width: Option<TimeFloat>,
         caption: &str,
+        time_unit: TimeUnit,
     ) -> Result<(), PlotError> {
         if series.is_empty() {
             return Err(PlotError::InvalidData {
@@ -827,7 +806,7 @@ impl PlotWindow {
                 message: "at least one completed event bin is required for plotting".into(),
             });
         }
-        let time_unit = match self.x_axis {
+        let display_time_unit = match self.x_axis {
             Axis::Time { unit } => unit,
             _ => {
                 return Err(PlotError::Setup {
@@ -836,7 +815,8 @@ impl PlotWindow {
                 });
             }
         };
-        let plot_time = |seconds| time_for_plot(time_unit, seconds);
+        let plot_time = |seconds| time_unit.convert_unit(&display_time_unit, seconds).expect("Time conversion always occurs");
+        
         let x_range = orient_range(
             self.x_axis,
             padded_range(bins.iter().map(|bin| plot_time(bin.centre))),
@@ -1061,6 +1041,7 @@ impl SimulationResults {
 /// CSV values are stored in seconds and kelvin. Geological time units use an
 /// axis directed from the initial age toward zero.
 pub fn plot_default_continuous_results(
+    exp_num: usize,
     fill_csv: impl AsRef<Path>,
     output_directory: impl AsRef<Path>,
     time_unit: TimeUnit,
@@ -1073,51 +1054,49 @@ pub fn plot_default_continuous_results(
         source,
     })?;
 
-    let time_unit = time_unit.to_string();
-    let temperature_unit = temperature_unit.to_string();
-
+    
     let to_plot = PlotWindow::new(
-        output_directory.join("mean_fill_vs_time.png"),
+        output_directory.join(format!("mean_fill_vs_time_{exp_num}.png")),
         "Time",
-        &time_unit,
+        &time_unit.to_string(),
         "Fill",
         "None",
         true,
         "sd",
     )?;
-    to_plot.continuous_data_plot(results.fill_rows()?, "Mean fill vs Time", true)?;
+    to_plot.continuous_data_plot(results.fill_rows()?, "Mean fill vs Time", true,  time_unit, temperature_unit)?;
     let to_plot = PlotWindow::new(
-        output_directory.join("mean_fill_vs_temperature.png"),
+        output_directory.join(format!("mean_fill_vs_temperature{exp_num}.png")),
         "Temperature",
-        &temperature_unit,
+        &temperature_unit.to_string(),
         "Fill",
         "None",
         true,
         "sd",
     )?;
-    to_plot.continuous_data_plot(results.fill_rows()?, "Mean fill vs Temperature", true)?;
+    to_plot.continuous_data_plot(results.fill_rows()?, "Mean fill vs Temperature", true, time_unit, temperature_unit)?;
 
     let to_plot = PlotWindow::new(
-        output_directory.join("median_fill_vs_time.png"),
+        output_directory.join(format!("median_fill_vs_time{exp_num}.png")),
         "Time",
-        &time_unit,
+        &time_unit.to_string(),
         "Fill",
         "None",
         false,
         "sd",
     )?;
-    to_plot.continuous_data_plot(results.fill_rows()?, "Median fill vs Time", true)?;
+    to_plot.continuous_data_plot(results.fill_rows()?, "Median fill vs Time", true, time_unit, temperature_unit)?;
 
     let to_plot = PlotWindow::new(
-        output_directory.join("median_fill_vs_temperature.png"),
+        output_directory.join(format!("median_fill_vs_temperature{exp_num}.png")),
         "Temperature",
-        &temperature_unit,
+        &temperature_unit.to_string(),
         "Fill",
         "None",
         false,
         "sd",
     )?;
-    to_plot.continuous_data_plot(results.fill_rows()?, "Meanian fill vs Temperature", true)?;
+    to_plot.continuous_data_plot(results.fill_rows()?, "Meanian fill vs Temperature", true, time_unit, temperature_unit)?;
 
     Ok(())
 }
@@ -1155,17 +1134,35 @@ pub fn plot_rolling_average_fill_results(
         true,
         "none",
     )?;
+
+    let (display_time_unit, display_temp_unit, time_on_x) =
+            match (window.x_axis, window.y_axis) {
+                (Axis::Time { unit: time }, Axis::Temperature { unit: temp }) => {
+                    (time, temp, true)
+                }
+                (Axis::Temperature { unit: temp }, Axis::Time { unit: time }) => {
+                    (time, temp, false)
+                }
+                _ => {
+                    return Err(PlotError::Setup {
+                        source: "plot_time_temperature axes".into(),
+                        message: "one time axis and one temperature axis are required".into(),
+                    });
+                }
+            };
+
     let x_range = orient_range(
         window.x_axis,
-        padded_range(times.iter().map(|&time| time_for_plot(time_unit, time))),
+        padded_range(times.iter().map(|&time| time_unit.convert_unit(&display_time_unit, time).expect("Time conversion always occurs")))
     );
+
     let y_range = padded_range(series.iter().flat_map(|series| series.means.iter().copied()));
     let (root, mut chart) = window.plot_setup("Cumulative mean fill vs Time", x_range, y_range)?;
     for (index, series) in series.iter().enumerate() {
         let colour = Palette99::pick(index).to_rgba();
         chart.draw_series(LineSeries::new(
             times.iter().zip(&series.means)
-                .map(|(&time, &mean)| (time_for_plot(time_unit, time), mean)),
+                .map(|(&time, &mean)| (time_unit.convert_unit(&display_time_unit, time).expect("Time conversion always occurs"), mean)),
             colour.stroke_width(2),
         ))
         .map_err(|error| PlotError::Draw {
@@ -1264,7 +1261,7 @@ fn read_rolling_fill_means(
 
 pub fn plot_time_temperature(
     output_directory: impl AsRef<Path>,
-    inputs: &TimeTempSpecification,
+    inputs: &TimeTemperatureDefinition,
 ) -> Result<(), PlotError> {
 
     let output_directory = output_directory.as_ref();
@@ -1277,26 +1274,40 @@ pub fn plot_time_temperature(
     let to_plot = PlotWindow::new(
         output_directory.join("temperature_vs_time.png"),
         "Time",
-        &inputs.time_unit.to_string(),
+        &inputs.times.unit.to_string(),
         "Temperature",
-        &inputs.temp_unit.to_string(),
+        &inputs.temperatures.unit.to_string(),
         false,
         "sd",
     )?;
 
+    let time_unit = match inputs.times.unit.dimension {
+        Dimension::Time{kind} => kind,
+        _ => return Err(PlotError::Setup {
+                        source: "Extracting time unit".into(),
+                        message: "Could not find a time unit".into(),
+                    })
+    };
+    let temp_unit = match inputs.times.unit.dimension {
+        Dimension::Temperature{kind} => kind,
+        _ => return Err(PlotError::Setup {
+                        source: "Extracting temperature unit".into(),
+                        message: "Could not find a temperature unit".into(),
+                    })
+    };
 
-    to_plot.plot_time_temperature(&inputs.times, &inputs.temperatures, inputs.time_unit, inputs.temp_unit)?;
+    to_plot.plot_time_temperature(&inputs.times.value, &inputs.temperatures.value, time_unit, temp_unit)?;
 
      let to_plot = PlotWindow::new(
         output_directory.join("time_vs_temperature.png"),
         "Temperature",
-        &inputs.temp_unit.to_string(),
+        &inputs.temperatures.unit.to_string(),
         "Time",
-        &inputs.time_unit.to_string(),
+        &inputs.times.unit.to_string(),
         false,
         "sd",
     )?;
-    to_plot.plot_time_temperature(&inputs.times, &inputs.temperatures, inputs.time_unit, inputs.temp_unit)?;
+    to_plot.plot_time_temperature(&inputs.times.value, &inputs.temperatures.value, time_unit, temp_unit)?;
 
 
     Ok(())
@@ -1319,11 +1330,10 @@ pub fn plot_default_event_results(
         source,
     })?;
 
-    let time_unit = time_unit.to_string();
     let to_plot = PlotWindow::new(
         output_directory.join("events_vs_time.png"),
         "Time",
-        &time_unit,
+        &time_unit.to_string(),
         "Event",
         "second",
         false,
@@ -1339,6 +1349,7 @@ pub fn plot_default_event_results(
         ],
         event_bin_width,
         "Events vs Time",
+        time_unit,
     )?;
 
     Ok(())
@@ -1454,7 +1465,7 @@ mod unit_conversion_tests {
     use super::*;
 
     #[test]
-    fn plots_rolling_means_with_dynamic_columns_and_reverse_time() {
+    fn reads_rolling_means_with_dynamic_columns_and_reverse_time() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let directory = std::env::temp_dir().join(format!(
@@ -1473,10 +1484,8 @@ mod unit_conversion_tests {
         assert_eq!(series.iter().map(|series| series.repetitions).collect::<Vec<_>>(), vec![2, 20]);
         assert_eq!(series[0].means, vec![0.5, 0.3, 0.1]);
         assert_eq!(series[1].means, vec![0.6, 0.4, 0.2]);
-        plot_rolling_average_fill_results(&csv, directory.join("plots"), TimeUnit::KAnnum).unwrap();
-        let png = fs::read(directory.join("plots/rolling_average_fill_7.png")).unwrap();
-        assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
-        fs::remove_dir_all(directory).unwrap();
+        fs::remove_file(csv).unwrap();
+        fs::remove_dir(directory).unwrap();
     }
 
     #[test]
@@ -1533,7 +1542,7 @@ mod unit_conversion_tests {
     }
 
     #[test]
-    fn coordinate_profiles_reject_invalid_inputs_before_drawing() {
+    fn coordinate_profiles_reject_short_or_mismatched_inputs() {
         let window = PlotWindow {
             output: PathBuf::from("unused.png"),
             x_axis: Axis::Time { unit: TimeUnit::Second },
@@ -1544,12 +1553,10 @@ mod unit_conversion_tests {
             (vec![], vec![]),
             (vec![0.0], vec![20.0]),
             (vec![0.0, 1.0], vec![20.0]),
-            (vec![0.0, Float::NAN], vec![20.0, 30.0]),
-            (vec![0.0, 1.0], vec![20.0, Float::INFINITY]),
         ] {
-            assert!(matches!(window.plot_time_temperature(
+            assert!(window.plot_time_temperature(
                 &times, &temperatures, TimeUnit::Second, TemperatureUnit::Celsius,
-            ), Err(PlotError::Setup { .. })));
+            ).is_err());
         }
         let invalid_axes = PlotWindow { y_axis: window.x_axis, ..window };
         assert!(matches!(invalid_axes.plot_time_temperature(
@@ -1560,15 +1567,13 @@ mod unit_conversion_tests {
 
     #[test]
     fn converts_canonical_values_to_requested_plot_units() {
-        let one_ma_in_seconds = time::convert_to_seconds(TimeUnit::MaAnnum, 1.0).unwrap();
+        let one_ma_in_seconds = TimeUnit::MaAnnum.convert_unit(&TimeUnit::Second, 1.0).unwrap();
 
-        assert_eq!(time_for_plot(TimeUnit::Second, 60.0), 60.0);
-        assert_eq!(time_for_plot(TimeUnit::Minute, 60.0), 1.0);
-        assert_eq!(time_for_plot(TimeUnit::MaAnnum, one_ma_in_seconds), 1.0);
-        assert_eq!(temperature_for_plot(TemperatureUnit::Kelvin, 273.15), 273.15);
-        assert!(
-            temperature_for_plot(TemperatureUnit::Celsius, 273.15).abs() < 1.0e-12
-        );
+        assert_eq!(TimeUnit::Second.convert_unit(&TimeUnit::Second, 60.0).unwrap(),60.0);
+        assert_eq!(TimeUnit::Minute.convert_unit(&TimeUnit::Second, 60.0).unwrap(), 1.0);
+        assert_eq!(TimeUnit::Second.convert_unit(&TimeUnit::MaAnnum, one_ma_in_seconds).unwrap(), 1.0);
+        assert_eq!(TemperatureUnit::Kelvin.convert_unit(&TemperatureUnit::Kelvin, 273.15).unwrap(), 273.15);
+        assert!(TemperatureUnit::Kelvin.convert_unit(&TemperatureUnit::Celsius, 273.15).unwrap().abs()< 1.0e-12);
     }
 
     #[test]

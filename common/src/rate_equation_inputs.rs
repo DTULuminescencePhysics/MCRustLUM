@@ -6,7 +6,6 @@
 
 use crate::numeric::{ElementWise, ElementWiseUnary, Float, TimeFloat, PrecisionInput, TimePrecision};
 use crate::rate_equations::ground_excited_state_weights;
-use crate::constants::time::TimeUnit;
 
 /// Identifies the physical pathway associated with a calculated rate.
 ///
@@ -119,14 +118,11 @@ impl FillingTransitionInputs{
     /// `n` is the current occupied-trap count and `total_n` is the total trap
     /// count. An error is returned when `unit` has no supported conversion to
     /// seconds.
-    pub fn get_inputs(d0:Float, rate: Float, n:usize, total_n:usize, unit:TimeUnit) -> Result<Self,String>{
-        let seconds_per_dose_rate_unit =
-            crate::constants::time::unit_multiplier(unit)
-                .ok_or_else(|| format!("unknown filling dose-rate unit: {}", unit))?
-                .get_float_precision();
+    pub fn get_inputs(d0:Float, rate: Float, n:usize, total_n:usize,) -> Result<Self,String>{
+       
         Ok(Self {
             characteristic_dose: d0,
-            dose_rate: rate/seconds_per_dose_rate_unit,
+            dose_rate: rate,
             occupied_population: n as Float,
             total_population: total_n as Float
         })
@@ -182,7 +178,7 @@ impl<E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap, SE, SG,>
     /// stored temperature, then shared by the delocalised,
     /// localised-recombination, and localised-retrapping inputs.
     pub fn update_inputs<ENeg, KT, Ratio, Exp, ExcitationRaw,
-            ExcitationBase, Denominator, SGM, SGOut,>(
+            ExcitationBase, Denominator, SGM, SGOut, NegExcitedWeight>(
         &mut self,
         temp: Float,
         population: N,
@@ -198,7 +194,9 @@ impl<E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap, SE, SG,>
         SGM: PrecisionInput<TimePrecision, Output = SGOut>,
         SGOut: ElementWise<ExcitationBase, Output = Denominator>,  
         SGOut: ElementWise<Denominator, Output= W>,
-        ExcitationBase: ElementWise<Denominator, Output = W>,
+        W: ElementWise<Float, Output = NegExcitedWeight>,
+        NegExcitedWeight: ElementWise<Float, Output = W>,
+
         W: Clone,
     {
         if temp != self.delocalised.temperature {

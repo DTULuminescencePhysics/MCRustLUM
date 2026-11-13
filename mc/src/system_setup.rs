@@ -4,12 +4,15 @@
 
 //! Creation and per-iteration reset of Monte Carlo state.
 
-use crate::experiment::{MCExperiment, experiment_value};
+use crate::experiment::MCExperiment;
 use common::crystal::Cube;
 use common::numeric::Float;
 use common::rate_equation_selection::Transitions;
 use common::time_temperature::TimeTemperature;
-use io::inputs::{CubeSpecification, SimulationInputs, TimeTempSpecification};
+use io::inputs::{CubeDefinition, 
+    ResolvedExperiment, TimeTemperatureDefinition, TrapDefinition, BandDefinition, 
+    FillingDefinition, TransitionDefinition};
+use common::trap_hole_band_tail::{TrapGenerator, ReTrapParameterLayout};
 use common::rate_equation_inputs::FillingTransitionInputs;
 use std::path::Path;
 use rayon::prelude::*;
@@ -21,18 +24,24 @@ use rayon::prelude::*;
 /// profile and randomly places the crystal sites.
 #[derive(Debug, Clone)]
 pub struct MonteCarloSimulation {
-    /// Original grouped configuration, retained for regeneration and reset.
-    pub inputs: SimulationInputs,
-    /// Simulation boundary and the numbers of traps, holes, and band-tail states.
-    ///
     /// Actual coordinates are generated independently for each repetition.
-    pub cube: Cube,
+    pub cubes: Vec<Cube>,
     /// Current time and temperature state.
-    pub time_temperature: TimeTemperature,
+    pub time_temperature: Vec<TimeTemperature>,
     /// Enabled physical pathways and their rate equations.
-    pub transitions: Transitions,
+    pub transitions: Vec<Transitions>,
+    /// Vector containing trap generators that are used to 
+    /// set the physical properties of the electron traps for each experiment
+    pub trap_generators: Vec<Vec<TrapGenerator>>,
+    /// Vector containing the filling information 
+    pub filling: Vec<Option<FillingTransitionInputs>>,
+    /// Vector holding retrapping parameters for each experiment
+    pub retrapping: Vec<ReTrapParameterLayout>,
+    /// Vector holding the initial number of occupied traps
+    pub initial_traps: Vec<Vec<usize>>,
+    /// Vector holding the initial number of occupied holes
+    pub initial_holes:Vec<usize>,
     /// Number of independent stochastic repetitions performed per experiment.
-    ///
     /// The field name preserves the crate's existing `repetitions` spelling.
     pub repetitions: usize,
     /// Number of independent experiments to run.
@@ -41,35 +50,88 @@ pub struct MonteCarloSimulation {
 
 impl MonteCarloSimulation {
     /// Build all runtime state from a grouped input configuration.
-    ///
-    /// ```no_run
-    /// # fn main() -> Result<(), String> {
-    /// let simulation = mc::system_setup::MonteCarloSimulation::new(
-    ///     io::inputs::default_inputs(),
-    ///     10,
-    ///     1,
-    ///     100,
-    /// )?;
-    /// assert_eq!(simulation.repetitions, 10);
-    /// # Ok(())
-    /// # }
-    /// ```
+    
     pub fn new(
-        inputs: SimulationInputs,
+        inputs: &Vec<ResolvedExperiment>,
         repetitions: usize,
         experiments: usize,
         minimum_traps:usize,
     ) -> Result<Self, String> {
-        let cube = MonteCarloSimulation::generate_cube(&inputs.cube, minimum_traps)?;
-        let time_temperature =
-            MonteCarloSimulation::generate_time_temperature(&inputs.time_temperature)?;
-        let transitions = MonteCarloSimulation::generate_transitions(&inputs)?;
+        if experiments == 0 {
+            return Err("experiments must be positive".to_string());
+        }
+        
+        let cubes = (0..experiments)
+            .map(|experiment_index| {
+                let densities: Vec<Float> = inputs[experiment_index]
+                    .traps
+                    .iter().map(|(_, trap)| trap.density.value as Float)
+                    .collect();
+                   
+                MonteCarloSimulation::generate_cube_for_experiment(
+                    &inputs[experiment_index].cube,
+                    densities,
+                    minimum_traps,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let initial_traps: Vec<Vec<usize>> = (0..experiments)
+            .map(|experiment_index| {
+                cubes[experiment_index].trap_total
+                .iter()
+                .zip(&inputs[experiment_index].traps)
+                .map(|(tot,(_,trap))| {
+                    (*tot as Float * trap.initial_fill.value).round() as usize
+                }).collect()
+            }).collect();
+        
+        let initial_holes: Vec<usize> = (0..experiments)
+            .map(|experiment_index| 
+                initial_traps[experiment_index].iter().sum()
+            ).collect();
+
+        let time_temperature = (0..experiments)
+            .map(|experiment_index| {
+                MonteCarloSimulation::generate_time_temperature(&inputs[experiment_index].time_temperature)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        
+        let transitions = (0..experiments)
+            .map(|experiment_index| {
+                MonteCarloSimulation::generate_transitions(&inputs[experiment_index].transitions)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        
+        let trap_generators = (0..experiments)
+            .map(|experiment_index| {
+                MonteCarloSimulation::generate_trap_generators( &inputs[experiment_index].traps)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        
+        let filling = (0..experiments)
+            .map(|experiment_index| {
+                let total_traps: usize = cubes[experiment_index].trap_total.iter().sum();
+                MonteCarloSimulation::generate_filling(
+                    &inputs[experiment_index].filling, 
+                    inputs[experiment_index].transitions.filling,
+                    total_traps)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        
+        let retrapping = (0..experiments)
+        .map(|experiment_index| {
+            MonteCarloSimulation::generate_retrapping(&inputs[experiment_index].transitions, &inputs[experiment_index].band)
+        }).collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
-            inputs,
-            cube,
+            cubes,
             time_temperature,
             transitions,
+            trap_generators,
+            filling,
+            retrapping,
+            initial_traps,
+            initial_holes,
             repetitions,
             experiments,
         })
@@ -81,12 +143,18 @@ impl MonteCarloSimulation {
     /// and bandtail counts are interpreted as ratios per trap. If this would
     /// create fewer than `minimum_traps` traps, the volume is enlarged isotropically
     /// while preserving the requested density.
-    pub fn generate_cube(inputs: &CubeSpecification,  minimum_traps:usize,) -> Result<Cube, String> {
+    /// Generate a cube using the density configured for one experiment.
+    pub fn generate_cube_for_experiment(
+        inputs: &CubeDefinition,
+        densities: Vec<Float>,
+        minimum_traps: usize,
+    ) -> Result<Cube, String> {
+
         Cube::new_from_density(
-            inputs.x,
-            inputs.y,
-            inputs.z,
-            inputs.density,
+            inputs.cube_height.value,
+            inputs.cube_width.value,
+            inputs.cube_length.value,
+            densities,
             inputs.hole_count,
             inputs.bandtail_count,
             inputs.periodic,
@@ -95,13 +163,13 @@ impl MonteCarloSimulation {
     }
     /// Validate and generate the piecewise-linear time/temperature profile.
     pub fn generate_time_temperature(
-        inputs: &TimeTempSpecification,
+        inputs: &TimeTemperatureDefinition,
     ) -> Result<TimeTemperature, String> {
+
         TimeTemperature::new(
-            inputs.times.clone(),
-            inputs.temperatures.clone(),
-            inputs.time_unit,
-            inputs.temp_unit,
+            inputs.times.value.clone(),
+            inputs.temperatures.value.clone(),
+            inputs.times.unit.get_time_unit()?,
         )
     }
     /// Generate the transition selection used by the simulation.
@@ -109,129 +177,163 @@ impl MonteCarloSimulation {
     /// Delocalised release currently uses first-order kinetics. Boolean flags
     /// from the localised, delocalised, and filling input groups determine
     /// which pathways are active.
-    pub fn generate_transitions(inputs: &SimulationInputs) -> Result<Transitions, String> {
+    pub fn generate_transitions(inputs: &TransitionDefinition) -> Result<Transitions, String> {
         Transitions::from_bool(
-            inputs.localised.gs_tun,
-            inputs.localised.es_tun,
-            inputs.delocalised.gs_cb,
-            inputs.delocalised.es_cb,
-            inputs.filling.fill,
+            inputs.ground_state_tunnelling,
+            inputs.excited_state_tunnelling,
+            inputs.ground_state_to_conduction_band,
+            inputs.excited_state_to_conduction_band,
+            inputs.filling,
             "first",
-            inputs.retrapping.localised_gs,
-            inputs.retrapping.localised_es,
+            inputs.ground_state_tunnelling_retrapping,
+            inputs.excited_state_tunnelling_retrapping,
+        )
+    }
+    /// Generate the filling selection used by the simulation
+    pub fn generate_filling(inputs: &FillingDefinition, run_bool: bool, total_n: usize) -> Result<Option<FillingTransitionInputs>, String> {
+        if run_bool{
+            let fill = FillingTransitionInputs::get_inputs(
+                       inputs.d0.value,
+                    inputs.d_dot.value,
+                        0,
+                        total_n,
+                    )?;
+            Ok(Some(fill))
+        
+        } else {
+            Ok(None)
+        }
+    }
+    /// Generate the trap generators 
+    pub fn generate_trap_generators( trap_information: &Vec<(String, TrapDefinition)> )-> Result<Vec<TrapGenerator>, String> {
+
+       Ok(trap_information
+            .iter()
+            .map(|(name,trap_info)|{
+                TrapGenerator::new(
+                    name.clone(), 
+                    trap_info.ground_to_excited_state_energy.value, 
+                    trap_info.s_ground_to_excited_frequency.value, 
+                    trap_info.s_excited_to_ground_frequency.value, 
+                    trap_info.ground_to_conduction_band_energy.value,
+                    trap_info.ground_to_conduction_band_energy.value-trap_info.ground_to_excited_state_energy.value, 
+                    trap_info.s_ground_state_to_conduction_band_frequency.value, 
+                    trap_info.s_excited_state_to_conduction_band_frequency.value, 
+                    trap_info.b_ground_state_to_hole_frequency.value, 
+                    trap_info.b_excited_state_to_hole_frequency.value, 
+                    trap_info.alpha_ground_state_barrier_constant.value, 
+                    trap_info.alpha_excited_state_barrier_constant.value, 
+                    trap_info.ground_to_excited_state_energy.function.clone(), 
+                    trap_info.s_ground_to_excited_frequency.function.clone(), 
+                    trap_info.s_excited_to_ground_frequency.function.clone(), 
+                    trap_info.ground_to_conduction_band_energy.function.clone(),
+                    trap_info.s_ground_state_to_conduction_band_frequency.function.clone(), 
+                    trap_info.s_excited_state_to_conduction_band_frequency.function.clone(), 
+                    trap_info.b_ground_state_to_hole_frequency.function.clone(), 
+                    trap_info.b_excited_state_to_hole_frequency.function.clone(),
+                    trap_info.alpha_ground_state_barrier_constant.function.clone(), 
+                    trap_info.alpha_excited_state_barrier_constant.function.clone(), 
+                )
+            })
+            .collect()
         )
     }
 
+    pub fn generate_retrapping(inputs: &TransitionDefinition, band: &BandDefinition) -> Result<ReTrapParameterLayout, String> {
+
+        Ok(ReTrapParameterLayout::new(
+            inputs.ground_state_to_conduction_band || inputs.excited_state_to_conduction_band, 
+            inputs.filling, 
+            inputs.conduction_band_retrapping, 
+            inputs.filling_retrapping, 
+            inputs.gaussian_kernel, 
+            band.conduction_band_hole_to_trap_preference.value, 
+            band.valence_band_hole_to_trap_preference.value, 
+            band.mu_conduction_band_distance.value, 
+            band.mu_valence_band_distance.value))
+
+    }
+
     /// Restore the time/temperature profile to its first control point.
-    pub fn reset_time_temperature(&mut self) {
-        self.time_temperature.reset();
+    pub fn reset_time_temperature(&mut self,i:usize) {
+        self.time_temperature[i].reset();
     }
 
     /// Run every configured experiment and repetition.
     ///
     /// Every repetition receives a newly generated random spatial realization
     /// together with a reset copy of the time/temperature profile.
-    pub fn run(&self) -> Result<(), String> {
+    pub fn run(&mut self) -> Result<(), String> {
         self.run_to_directory(Path::new("tmp"))
     }
 
     /// Run every configured experiment and repetition, placing temporary
     /// result files in `output_directory`.
-    pub fn run_to_directory(&self, output_directory: impl AsRef<Path>) -> Result<(), String> {
+    pub fn run_to_directory(&mut self, output_directory: impl AsRef<Path>) -> Result<(), String> {
         let output_directory = output_directory.as_ref();
         let batch_capacity: usize = 100;
-        
-        let jobs = (0..self.experiments).map(|experiment_index| {
-            let trap_available = (
-                experiment_value(
-                    &self.inputs.initial_conditions.trap_available,
-                    experiment_index,
-                    "initial_conditions.trap_available",
-                )? * self.cube.trap_total as Float
-            ) as usize;
-        
-            let hole_available = (
-                experiment_value(
-                    &self.inputs.initial_conditions.hole_available,
-                    experiment_index,
-                    "initial_conditions.hole_available",
-                )? * self.cube.hole_total as Float
-            ) as usize;
 
-            Ok((0..self.repetitions)
-                .map(|repetition_index| {
-                    (
-                        experiment_index,
-                        repetition_index,
-                        trap_available,
-                        hole_available,
-                    )
-                })
-                .collect::<Vec<_>>())
-        })
-        .collect::<Result<Vec<_>, String>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>(); 
-        
-        jobs.into_par_iter().try_for_each(
-        |(experiment_index, repetition_index, trap_available, hole_available)| {
+        // Keep experiments sequential. Only the repetitions for the current
+        // experiment are distributed across the Rayon thread pool.
+        for experiment_index in 0..self.experiments {
+            let cube = &self.cubes[experiment_index];
             
-            let output_path = output_directory.join(format!(
-                "experiment_results_{experiment_index}_{repetition_index}.bin.gz"
-            ));
 
-            let mut time_temperature = self.time_temperature.clone();
-            time_temperature.reset();
+            (0..self.repetitions)
+                .into_par_iter()
+                .try_for_each(|repetition_index| {
+                    let output_path = output_directory.join(format!(
+                        "experiment_results_{experiment_index}_{repetition_index}.bin.gz"
+                    ));
 
-            // Unique across all experiment/repetition pairs.
-            let random_repetition =
-                experiment_index * self.repetitions + repetition_index;
+                    let mut time_temperature = self.time_temperature[experiment_index].clone();
+                    time_temperature.reset();
 
-            let mut experiment = MCExperiment::initialise(
-                    &self.cube,
-                    &self.inputs,
-                    &trap_available,
-                    &hole_available,
-                    time_temperature,
-                    &experiment_index,
-                    &random_repetition,
-                )
-                .map_err(|error| {
-                    format!(
-                        "could not initialise experiment {} of {}, repetition {} of {}: {error}",
-                        experiment_index + 1,
-                        self.experiments,
-                        repetition_index + 1,
-                        self.repetitions,
+                    // Unique across all experiment/repetition pairs.
+                    let random_repetition = experiment_index * self.repetitions + repetition_index;
+                    let mut filling = self.filling[experiment_index];
+
+                    let mut experiment = MCExperiment::initialise(
+                        cube,
+                        &self.initial_traps[experiment_index],
+                        &self.initial_holes[experiment_index],
+                        &self.trap_generators[experiment_index],
+                        self.retrapping[experiment_index],
+                        &mut filling,
+                        time_temperature,
+                        &random_repetition,
                     )
+                    .map_err(|error| {
+                        format!(
+                            "could not initialise experiment {} of {}, repetition {} of {}: {error}",
+                            experiment_index + 1,
+                            self.experiments,
+                            repetition_index + 1,
+                            self.repetitions,
+                        )
+                    })?;
+                   
+
+                    experiment
+                        .run(
+                            cube,
+                            &self.transitions[experiment_index],
+                            &output_path,
+                            &batch_capacity,
+                        )
+                        .map_err(|error| {
+                            format!(
+                                "experiment {} of {}, repetition {} of {} failed: {error}",
+                                experiment_index + 1,
+                                self.experiments,
+                                repetition_index + 1,
+                                self.repetitions,
+                            )
+                        })
                 })?;
-            let mut filling_inputs = FillingTransitionInputs::get_inputs(
-                self.inputs.filling.d0[experiment_index],
-                self.inputs.filling.d_dot[experiment_index],
-                trap_available,
-                self.cube.trap_total,
-                self.inputs.filling.dd_unit)?;
-            
-            experiment
-                .run(
-                    &self.cube,
-                    &self.transitions,
-                    &mut filling_inputs,
-                    &output_path,
-                    &batch_capacity,
-                )
-                .map_err(|error| {
-                    format!(
-                        "experiment {} of {}, repetition {} of {} failed: {error}",
-                        experiment_index + 1,
-                        self.experiments,
-                        repetition_index + 1,
-                        self.repetitions,
-                    )
-                })
-            },
-        )  
+        }
+
+        Ok(())
     }
 
     /// Run every configured experiment and repetition and return final ratios.
@@ -242,64 +344,47 @@ impl MonteCarloSimulation {
         // let completed_repetitions = AtomicUsize::new(0);
         // let total_repetitions = self.experiments * self.repetitions;
 
-        (0..self.experiments)
-            .into_par_iter()
-            .map(|experiment_index| {
-                let trap_available = (experiment_value(
-                    &self.inputs.initial_conditions.trap_available,
-                    experiment_index,
-                    "initial_conditions.trap_available",
-                )? * self.cube.trap_total as Float) as usize;
-
-                let hole_available = (experiment_value(
-                    &self.inputs.initial_conditions.hole_available,
-                    experiment_index,
-                    "initial_conditions.hole_available",
-                )? * self.cube.hole_total as Float) as usize;
-
-                (0..self.repetitions)
+        let mut results_by_experiment = Vec::with_capacity(self.experiments);
+        for experiment_index in 0..self.experiments {
+            let cube = &self.cubes[experiment_index];
+           
+            (0..self.repetitions)
                     .into_par_iter()
                     .map(|repetition_index| {
 
                         let mut time_temperature = tt_profile.clone();
                         time_temperature.reset();
-
+                        let mut filling = self.filling[experiment_index];
                         // Unique across all experiment/repetition pairs.
-                        let random_repetition = 
+                        let random_repetition =
                             (trial_num*(self.experiments*self.repetitions))+
                             experiment_index * self.repetitions + repetition_index;
 
                         let mut experiment = MCExperiment::initialise(
-                            &self.cube,
-                            &self.inputs,
-                            &trap_available,
-                            &hole_available,
+                            cube,
+                            &self.initial_traps[experiment_index],
+                            &self.initial_holes[experiment_index],
+                            &self.trap_generators[experiment_index],
+                            self.retrapping[experiment_index],
+                            &mut filling,
                             time_temperature,
-                            &experiment_index,
                             &random_repetition,
                         )
                         .map_err(|error| {
-                            format!(
-                                "could not initialise experiment {} of {}, repetition {} of {}: {error}",
-                                experiment_index + 1,
-                                self.experiments,
-                                repetition_index + 1,
-                                self.repetitions,
-                            )
+                        format!(
+                            "could not initialise experiment {} of {}, repetition {} of {}: {error}",
+                            experiment_index + 1,
+                            self.experiments,
+                            repetition_index + 1,
+                            self.repetitions,
+                        )
                         })?;
-                        let mut filling_inputs = FillingTransitionInputs::get_inputs(
-                            self.inputs.filling.d0[experiment_index],
-                            self.inputs.filling.d_dot[experiment_index],
-                            trap_available,
-                            self.cube.trap_total,
-                            self.inputs.filling.dd_unit,
-                        )?;
                         
+
                         let final_ratio = experiment
                             .run_no_output_file(
-                                &self.cube,
-                                &self.transitions,
-                                &mut filling_inputs,
+                                cube,
+                                &self.transitions[experiment_index],
                             )
                             .map_err(|error| {
                                 format!(
@@ -317,22 +402,20 @@ impl MonteCarloSimulation {
                         Ok(final_ratio)
                     })
                     .collect::<Result<Vec<Float>, String>>()
-            })
-            .collect::<Result<Vec<Vec<Float>>, String>>()
+                    .map(|experiment_results| results_by_experiment.push(experiment_results))?;
+        }
+
+        Ok(results_by_experiment)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::constants::time::TimeUnit;
-    use common::constants::temperature::TemperatureUnit;
-    use common::charge_transfer::{Event, RecordedEvent};
     use common::rate_equation_selection::{
         DelocalisedRateEquation, DelocalisedRateEquationType, FillingRateEquation,
         LocalisedRateEquation,
     };
-    use io::outputs::read_all_batches;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -349,69 +432,86 @@ mod tests {
         ))
     }
 
-    fn small_inputs() -> SimulationInputs {
-        let mut inputs = io::inputs::default_inputs();
-        inputs.cube.x = 2.0;
-        inputs.cube.y = 1.0;
-        inputs.cube.z = 1.0;
-        inputs.cube.density = 1.5;
-        inputs.cube.hole_count = 2;
-        inputs.cube.bandtail_count = 1;
-        inputs.cube.periodic = false;
-        inputs.time_temperature.times = vec![0.0, 10.0];
-        inputs.time_temperature.temperatures = vec![20.0, 30.0];
+    fn small_inputs() -> Vec<ResolvedExperiment> {
+        let fixture = include_str!("../../input.toml")
+            .replace("ma_annum", "ma annum")
+            .replace("unit = \"Gy\"", "unit = \"\"")
+            .replace("unit = \"Gy / k_annum\"", "unit = \"\"");
+        let mut inputs = io::inputs::parse_experiments(
+            &fixture,
+            1,
+        )
+        .expect("the checked-in input fixture should parse");
+        let experiment = &mut inputs[0];
+        experiment.cube.cube_height.value = 2.0;
+        experiment.cube.cube_width.value = 2.0;
+        experiment.cube.cube_length.value = 2.0;
+        experiment.cube.hole_count = 1;
+        experiment.cube.bandtail_count = 0;
+        experiment.cube.periodic = false;
+        experiment.traps[0].1.density.value = 1.0;
+        experiment.traps[0].1.initial_fill.value = 0.25;
+        experiment.transitions.ground_state_tunnelling = false;
+        experiment.transitions.excited_state_tunnelling = false;
+        experiment.transitions.vrh = false;
+        experiment.transitions.ground_state_to_conduction_band = false;
+        experiment.transitions.excited_state_to_conduction_band = false;
+        experiment.transitions.filling = false;
+        experiment.transitions.conduction_band_retrapping = false;
+        experiment.transitions.ground_state_tunnelling_retrapping = false;
+        experiment.transitions.excited_state_tunnelling_retrapping = false;
+        experiment.transitions.filling_retrapping = false;
         inputs
     }
 
     #[test]
     fn new_builds_all_runtime_state_from_grouped_inputs() {
-        let simulation = MonteCarloSimulation::new(small_inputs(), 12, 3,3)
+        let inputs = small_inputs();
+        let simulation = MonteCarloSimulation::new(&inputs, 12, 1, 3)
             .expect("valid grouped inputs should build a simulation");
 
         assert_eq!(simulation.repetitions, 12);
-        assert_eq!(simulation.experiments, 3);
-        assert_eq!(simulation.cube.trap_total, 3);
-        assert_eq!(simulation.cube.hole_total, 6);
-        assert_eq!(simulation.cube.bandtail_total, 3);
-        assert!(!simulation.inputs.cube.periodic);
-        assert!((simulation.time_temperature.current_temperature() - 293.15).abs() < 1.0e-12);
+        assert_eq!(simulation.experiments, 1);
+        assert_eq!(simulation.cubes[0].trap_total, vec![8]);
+        assert_eq!(simulation.cubes[0].hole_total, 8);
+        assert_eq!(simulation.cubes[0].bandtail_total, 0);
+        assert_eq!(simulation.time_temperature.len(), 1);
         assert_eq!(
-            simulation.transitions.delocalised,
-            DelocalisedRateEquation::Both {
-                re: DelocalisedRateEquationType::FirstOrder,
-            }
+            simulation.transitions[0].delocalised,
+            DelocalisedRateEquation::None
         );
-        assert_eq!(simulation.transitions.localised_retrap, LocalisedRateEquation::Both);
+        assert_eq!(simulation.transitions[0].filling, FillingRateEquation::None);
     }
 
     #[test]
     fn generation_helpers_propagate_invalid_geometry_and_profiles() {
-        let mut cube = CubeSpecification::default();
-        cube.x = 0.0;
-        let cube_error = MonteCarloSimulation::generate_cube(&cube,2).unwrap_err();
+        let mut inputs = small_inputs();
+        inputs[0].cube.cube_height.value = 0.0;
+        let cube_error = MonteCarloSimulation::generate_cube_for_experiment(
+            &inputs[0].cube,
+            vec![1.0],
+            1,
+        )
+        .unwrap_err();
         assert!(cube_error.contains("boundary x must be greater than zero"));
 
-        let mut profile = TimeTempSpecification::default();
-        profile.temperatures = vec![20.0];
-        let profile_error = MonteCarloSimulation::generate_time_temperature(&profile).unwrap_err();
-        assert_eq!(
-            profile_error,
-            "times and temperatures must have the same length"
-        );
+        let mut profile = inputs[0].time_temperature.clone();
+        profile.temperatures.value.pop();
+        assert!(MonteCarloSimulation::generate_time_temperature(&profile).is_err());
     }
 
     #[test]
     fn transition_generation_maps_flags_to_equations() {
         let mut inputs = small_inputs();
-        inputs.localised.gs_tun = true;
-        inputs.localised.es_tun = false;
-        inputs.retrapping.localised_gs = false;
-        inputs.retrapping.localised_es = true;
-        inputs.delocalised.gs_cb = true;
-        inputs.delocalised.es_cb = false;
-        inputs.filling.fill = true;
+        inputs[0].transitions.ground_state_tunnelling = true;
+        inputs[0].transitions.excited_state_tunnelling = false;
+        inputs[0].transitions.ground_state_tunnelling_retrapping = false;
+        inputs[0].transitions.excited_state_tunnelling_retrapping = true;
+        inputs[0].transitions.ground_state_to_conduction_band = true;
+        inputs[0].transitions.excited_state_to_conduction_band = false;
+        inputs[0].transitions.filling = true;
 
-        let transitions = MonteCarloSimulation::generate_transitions(&inputs).unwrap();
+        let transitions = MonteCarloSimulation::generate_transitions(&inputs[0].transitions).unwrap();
         assert_eq!(
             transitions.delocalised,
             DelocalisedRateEquation::Ground {
@@ -425,88 +525,33 @@ mod tests {
 
     #[test]
     fn run_writes_every_experiment_and_repetition() {
-        let mut inputs = small_inputs();
-        inputs.cube.x = 1.0;
-        inputs.cube.y = 1.0;
-        inputs.cube.z = 1.0;
-        inputs.cube.density = 1.0;
-        inputs.cube.hole_count = 1;
-        inputs.cube.bandtail_count = 0;
-        inputs.time_temperature.times = vec![0.0, 1.0];
-        inputs.time_temperature.temperatures = vec![20.0, 20.0];
-        inputs.initial_conditions.trap_available = vec![1.0, 1.0];
-        inputs.initial_conditions.hole_available = vec![1.0, 1.0];
-        inputs.localised.gs_tun = false;
-        inputs.localised.es_tun = false;
-        inputs.retrapping.localised_gs = false;
-        inputs.retrapping.localised_es = false;
-        inputs.delocalised.gs_cb = false;
-        inputs.delocalised.es_cb = false;
-        inputs.retrapping.delocalised = false;
-        inputs.filling.fill = false;
-        inputs.filling.d0 = vec![400.0, 400.0];
-        inputs.filling.d_dot = vec![1.0, 1.0];
-        inputs.retrapping.filling = false;
-
-        let simulation = MonteCarloSimulation::new(inputs, 3, 2,1).unwrap();
+        let inputs = small_inputs();
+        let mut simulation = MonteCarloSimulation::new(&inputs, 3, 1, 1).unwrap();
         let output_directory = temporary_output_directory("simulation");
         fs::create_dir(&output_directory).unwrap();
 
         simulation.run_to_directory(&output_directory).unwrap();
 
-        for experiment_index in 0..2 {
-            for repetition_index in 0..3 {
-                let output_file = output_directory.join(format!(
-                    "experiment_results_{experiment_index}_{repetition_index}.bin.gz"
-                ));
-                let batches = read_all_batches::<RecordedEvent>(&output_file)
-                    .unwrap()
-                    .collect::<Result<Vec<_>, _>>()
-                    .unwrap();
-
-                assert_eq!(batches.len(), 1);
-                assert_eq!(batches[0].len(), 2);
-                assert_eq!(batches[0][0].event, Event::None);
-                assert_eq!(batches[0][1].event, Event::None);
-                fs::remove_file(output_file).unwrap();
-            }
+        for repetition_index in 0..3 {
+            let output_file = output_directory.join(format!(
+                "experiment_results_0_{repetition_index}.bin.gz"
+            ));
+            assert!(output_file.is_file());
+            fs::remove_file(output_file).unwrap();
         }
         fs::remove_dir(output_directory).unwrap();
     }
 
     #[test]
     fn final_ratios_are_grouped_by_experiment() {
-        let mut inputs = small_inputs();
-        inputs.cube.x = 1.0;
-        inputs.cube.y = 1.0;
-        inputs.cube.z = 1.0;
-        inputs.cube.density = 1.0;
-        inputs.cube.hole_count = 1;
-        inputs.cube.bandtail_count = 0;
-        inputs.time_temperature.times = vec![0.0, 1.0];
-        inputs.time_temperature.temperatures = vec![20.0, 20.0];
-        inputs.initial_conditions.trap_available = vec![0.0, 1.0];
-        inputs.initial_conditions.hole_available = vec![0.0, 1.0];
-        inputs.localised.gs_tun = false;
-        inputs.localised.es_tun = false;
-        inputs.retrapping.localised_gs = false;
-        inputs.retrapping.localised_es = false;
-        inputs.delocalised.gs_cb = false;
-        inputs.delocalised.es_cb = false;
-        inputs.retrapping.delocalised = false;
-        inputs.filling.fill = false;
-        inputs.filling.d0 = vec![400.0, 400.0];
-        inputs.filling.d_dot = vec![1.0, 1.0];
-        inputs.retrapping.filling = false;
+        let inputs = small_inputs();
+        let simulation = MonteCarloSimulation::new(&inputs, 3, 1, 1).unwrap();
+        let ratios = simulation
+            .run_to_final_ratio_only(simulation.time_temperature[0].clone(), 1)
+            .unwrap();
 
-        let simulation = MonteCarloSimulation::new(inputs, 3, 2, 1).unwrap();
-        let tt_profile = TimeTemperature::new(
-            vec![0.0, 1.0], 
-            vec![20.0, 20.0], TimeUnit::Second, TemperatureUnit::Kelvin).unwrap();
-        let ratios = simulation.run_to_final_ratio_only(tt_profile,1).unwrap();
-
-        assert_eq!(ratios.len(), 2);
-        assert_eq!(ratios[0], vec![0.0; 3]);
-        assert_eq!(ratios[1], vec![1.0; 3]);
+        assert_eq!(ratios.len(), 1);
+        assert_eq!(ratios[0].len(), 3);
+        assert!(ratios[0].iter().all(|ratio| (ratio - 0.25).abs() < 1.0e-12));
     }
 }

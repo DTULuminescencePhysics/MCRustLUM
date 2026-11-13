@@ -28,7 +28,7 @@ use crate::system_setup::MonteCarloSimulation;
 use crate::average::{average_fill,rolling_average_fill,average_events};
 use common::numeric::TimeFloat;
 
-use io::inputs::{read_inputs, SimulationInputs};
+use io::inputs::{read_inputs, ResolvedExperiment};
 use io::plotting::{plot_time_temperature, plot_default_continuous_results,plot_rolling_average_fill_results, plot_default_event_results};
 
 /// Main call function to run the required Monte Carlo experiments
@@ -36,7 +36,7 @@ use io::plotting::{plot_time_temperature, plot_default_continuous_results,plot_r
 pub fn monte_carlo_run(repetitions: usize, experiments: usize, minimum_traps: usize, event_bin_width: Option<TimeFloat>) -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
-    let inputs = read_inputs("input.toml")?;
+    let inputs = read_inputs("input.toml", experiments)?;
     eprintln!("read inputs:       {:?}", start.elapsed());
 
     monte_carlo_experiment(&inputs, repetitions, experiments, minimum_traps)?;
@@ -47,11 +47,11 @@ pub fn monte_carlo_run(repetitions: usize, experiments: usize, minimum_traps: us
 }
 
 /// Main call function to run the required Monte Carlo experiments
-fn monte_carlo_experiment(inputs: &SimulationInputs, repetitions: usize, experiments: usize, minimum_traps: usize) -> Result<(), Box<dyn Error>> {
+fn monte_carlo_experiment(inputs: &Vec<ResolvedExperiment>, repetitions: usize, experiments: usize, minimum_traps: usize) -> Result<(), Box<dyn Error>> {
 
 
     let start = Instant::now();
-    let monte_carlo = MonteCarloSimulation::new(inputs.clone(), repetitions, experiments, minimum_traps)?;
+    let mut monte_carlo = MonteCarloSimulation::new(&inputs, repetitions, experiments, minimum_traps)?;
     eprintln!("system setup:      {:?}", start.elapsed());
 
     let start = Instant::now();
@@ -62,15 +62,17 @@ fn monte_carlo_experiment(inputs: &SimulationInputs, repetitions: usize, experim
 }
 
 /// Function that creates the default set of results for the Monte Carlo experiments
-fn monte_carlo_result(inputs: &SimulationInputs, experiments: usize, event_bin_width: Option<TimeFloat>) -> Result<(), Box<dyn Error>>{
+fn monte_carlo_result(inputs: &Vec<ResolvedExperiment>, experiments: usize, event_bin_width: Option<TimeFloat>) -> Result<(), Box<dyn Error>>{
     
     let start = Instant::now();
     let output_directory = ".";
     
-    plot_time_temperature(
+    for input in inputs {
+        plot_time_temperature(
         output_directory,
-        &inputs.time_temperature
-    )?;
+        &input.time_temperature
+    )?;}
+    
 
     average_fill()?;
     eprintln!("Average fill calculation:      {:?}", start.elapsed());
@@ -92,17 +94,20 @@ fn monte_carlo_result(inputs: &SimulationInputs, experiments: usize, event_bin_w
         let av_fill_csv = format!("rolling_average_fill_{}.csv", exp);
         let event_csv = format!("average_event_{}.csv", exp); 
         
+        let time_unit = inputs[exp].time_temperature.times.unit.get_time_unit()?;
+        let temp_unit = inputs[exp].time_temperature.temperatures.unit.get_temperature_unit()?;
         plot_default_continuous_results(
+            exp,
             fill_csv,
             output_directory,
-            inputs.time_temperature.time_unit,
-            inputs.time_temperature.temp_unit,
+            time_unit,           
+            temp_unit,
         )?;
 
         plot_rolling_average_fill_results(
             av_fill_csv,
             output_directory,
-            inputs.time_temperature.time_unit,
+            time_unit,
 
         )?;
         
@@ -110,7 +115,7 @@ fn monte_carlo_result(inputs: &SimulationInputs, experiments: usize, event_bin_w
             event_csv,
             output_directory,
             event_bin_width,
-            inputs.time_temperature.time_unit,
+            time_unit,
         )?;
     }   
     

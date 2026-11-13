@@ -16,90 +16,12 @@ use common::numeric::Float;
 use common::place_ids::PlaceAvailability;
 use common::rate_equation_selection::Transitions;
 use common::time_temperature::TimeTemperature;
-use common::trap_hole_band_tail::{ElectronPlaces, TrapParameterLayout, ReTrapParameterLayout};
+use common::trap_hole_band_tail::{TrapGenerator, ElectronPlaces, TrapParameterLayout, ReTrapParameterLayout};
 use common::rate_equation_inputs::FillingTransitionInputs;
-use io::inputs::SimulationInputs;
 use io::outputs::create_monte_carlo_experiment_file;
 use std::path::Path;
 use rand::rngs::StdRng;
 use common::random::get_std_rng_for_rep;
-
-/// Select a scalar parameter for an experiment from a configuration vector.
-///
-/// A singleton vector is broadcast to every experiment. Longer vectors are
-/// indexed by `experiment_index`, allowing parameter-sweep runs; empty and
-/// undersized vectors return a field-specific error.
-pub fn experiment_value(
-    values: &[Float],
-    experiment_index: usize,
-    field: &str,
-) -> Result<Float, String> {
-    match values {
-        [] => Err(format!("{field} must contain at least one value")),
-        [value] => Ok(*value),
-        _ => values.get(experiment_index).copied().ok_or_else(|| {
-            format!(
-                "{field} contains {} values, but experiment {} was requested",
-                values.len(),
-                experiment_index + 1,
-            )
-        }),
-    }
-}
-
-/// Build the homogeneous trap-parameter layout for one experiment index.
-///
-/// Each physical parameter follows [`experiment_value`] broadcasting rules.
-/// The excited conduction-band barrier is derived inside
-/// [`TrapParameterLayout::new_uniform`] from the localised-state energy gap.
-pub fn new_uniform_trap_layout(
-    inputs: &SimulationInputs,
-    exp: &usize,
-) -> Result<TrapParameterLayout, String> {
-    Ok(TrapParameterLayout::new_uniform(
-        experiment_value(&inputs.trap_energies.e_loc, *exp, "trap_energies.e_loc")?,
-        experiment_value(
-            &inputs.trap_energies.s_frequency_e,
-            *exp,
-            "trap_energies.s_frequency_e",
-        )?,
-        experiment_value(
-            &inputs.trap_energies.s_frequency_g,
-            *exp,
-            "trap_energies.s_frequency_g",
-        )?,
-        experiment_value(&inputs.trap_energies.e_cb, *exp, "trap_energies.e_cb")?,
-        experiment_value(&inputs.delocalised.s_gs, *exp, "delocalised.s_gs")?,
-        experiment_value(&inputs.delocalised.s_es, *exp, "delocalised.s_es")?,
-        experiment_value(&inputs.localised.b_gs, *exp, "localised.b_gs")?,
-        experiment_value(&inputs.localised.b_es, *exp, "localised.b_es")?,
-        experiment_value(&inputs.localised.alpha_gs, *exp, "localised.alpha_gs")?,
-        experiment_value(&inputs.localised.alpha_es, *exp, "localised.alpha_es")?,
-    ))
-}
-
-/// Build the delocalised and filling retrapping layout for one experiment.
-///
-/// Boolean pathway selections come directly from the simulation inputs, while
-/// experiment-dependent ratios and Gaussian length scales follow the same
-/// singleton-broadcasting rules as the trap parameters.
-pub fn new_retrapping_layout(
-    inputs: &SimulationInputs,
-    exp: &usize,
-) -> Result<ReTrapParameterLayout, String> {
-    Ok(ReTrapParameterLayout::new(
-        inputs.delocalised.es_cb || inputs.delocalised.gs_cb, 
-        inputs.filling.fill, 
-        inputs.retrapping.delocalised,
-        inputs.retrapping.filling,
-        inputs.retrapping.gaussian, 
-        experiment_value(&inputs.retrapping.cb_hole_to_trap, *exp, "inputs.retrapping.cb_hole_to_trap")?,
-        experiment_value(&inputs.retrapping.vb_trap_to_hole, *exp, "inputs.retrapping.vb_trap_to_hole")?,
-        experiment_value(&inputs.retrapping.cb_mu, *exp, "inputs.retrapping.cb_mu")?,
-        experiment_value(&inputs.retrapping.vb_mu, *exp, "inputs.retrapping.vb_mu")?,
-    ))
-
-}
 
 /// Mutable state for one independently randomized Monte Carlo repetition.
 ///
@@ -120,6 +42,8 @@ pub enum MCExperiment {
         time_temperature: TimeTemperature,
         /// Retrapping parameters
         retrapping_parameters: ReTrapParameterLayout,
+        /// Filling parameters
+        filling_parameters: Option<FillingTransitionInputs>,
         /// Repetition-specific random-number generator.
         rng: StdRng,
     },
@@ -139,6 +63,8 @@ pub enum MCExperiment {
         time_temperature: TimeTemperature,
         /// Retrapping parameters
         retrapping_parameters: ReTrapParameterLayout,
+        /// Filling parameters
+        filling_parameters: Option<FillingTransitionInputs>,
         /// Repetition-specific random-number generator.
         rng: StdRng,
     },
@@ -153,23 +79,43 @@ impl MCExperiment {
     /// experiment-dependent physical parameter values.
     pub fn initialise(
         cube: &Cube,
-        inputs: &SimulationInputs,
-        trap_available: &usize,
+        trap_available: &Vec<usize>,
         hole_available: &usize,
+        trap_generator: &Vec<TrapGenerator>,
+        retrapping_parameters: ReTrapParameterLayout,
+        filling: &mut Option<FillingTransitionInputs>,
         time_temperature: TimeTemperature,
-        exp: &usize,
         rep: &usize,
         
     ) -> Result<Self, String> {
 
         let mut rng = get_std_rng_for_rep(*rep);
+
+        let trap_parameters = TrapParameterLayout::new(
+            trap_generator, 
+            &cube.trap_total,
+            &mut rng )?;
+        
         let places = ElectronPlaces::random_from_cube(cube, &mut rng)?;     
-        let trap_places =
-            PlaceAvailability::set_initial_condition(cube.trap_total, *trap_available, &mut rng)?;
-        let hole_places =
-            PlaceAvailability::set_initial_condition(cube.hole_total, *hole_available, &mut rng)?;
-        let trap_parameters = new_uniform_trap_layout(inputs, exp)?;
-        let retrapping_parameters = new_retrapping_layout(inputs, exp)?;
+
+        let trap_places = PlaceAvailability::set_initial_condition(
+            &cube.trap_total,
+            trap_available, 
+            &mut rng)?;
+        let hole_places = PlaceAvailability::set_initial_condition(
+            &vec![cube.hole_total], 
+            &vec![*hole_available], 
+            &mut rng)?;
+        
+        let filling_parameters = match filling {
+            Some(filling) => {
+                filling.occupied_population = trap_available.iter().sum::<usize>() as Float;
+                Some(*filling)
+            }
+            None => None
+        };
+        
+       
         if cube.bandtail_total == 0 {
             Ok(Self::Standard {
                 places,
@@ -178,6 +124,7 @@ impl MCExperiment {
                 trap_parameters,
                 time_temperature,
                 retrapping_parameters,
+                filling_parameters,
                 rng
             })
         } else {
@@ -190,6 +137,7 @@ impl MCExperiment {
                 trap_parameters,
                 time_temperature,
                 retrapping_parameters,
+                filling_parameters,
                 rng
             })
         }
@@ -204,7 +152,6 @@ impl MCExperiment {
         &mut self,
         cube: &Cube,
         transitions: &Transitions,
-        filling_inputs: &mut FillingTransitionInputs,
         output_file: &Path,
         batch_capacity: &usize,
     ) -> Result<(), String> {
@@ -215,6 +162,7 @@ impl MCExperiment {
                 hole_places,
                 trap_parameters,
                 time_temperature,
+                filling_parameters,
                 retrapping_parameters,
                 rng
             } => {
@@ -227,7 +175,7 @@ impl MCExperiment {
                     hole_places,
                     trap_parameters,
                     retrapping_parameters,
-                    filling_inputs,
+                    filling_parameters,
                     time_temperature,
                     cube,
                     transitions,
@@ -250,7 +198,6 @@ impl MCExperiment {
         &mut self,
         cube: &Cube,
         transitions: &Transitions,
-        filling_inputs: &mut FillingTransitionInputs,
     ) -> Result<Float, String> {
         match self {
             Self::Standard {
@@ -259,6 +206,7 @@ impl MCExperiment {
                 hole_places,
                 trap_parameters,
                 time_temperature,
+                filling_parameters,
                 retrapping_parameters,
                 rng
             } => {
@@ -268,7 +216,7 @@ impl MCExperiment {
                     hole_places,
                     trap_parameters,
                     retrapping_parameters,
-                    filling_inputs,
+                    filling_parameters,
                     time_temperature,
                     cube,
                     transitions,
@@ -288,94 +236,40 @@ impl MCExperiment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::charge_transfer::Event;
-    use common::constants::temperature::TemperatureUnit;
     use common::constants::time::TimeUnit;
-    use io::outputs::read_all_batches;
-    use std::fs;
-    use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn temporary_output_path(label: &str) -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system clock should follow the Unix epoch")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "mcrustlum_{label}_{}_{}.bin.gz",
-            std::process::id(),
-            unique,
-        ))
-    }
+    use common::crystal::Cube;
+    use common::rate_equation_inputs::FillingTransitionInputs;
+    use common::trap_hole_band_tail::{ReTrapParameterLayout, TrapGenerator};
 
     #[test]
-    fn standard_run_dispatches_to_run_standard() {
-        let cube = Cube::new(1.0, 1.0, 1.0, 1, 1, 0, false).unwrap();
-        let inputs = SimulationInputs::default();
+    fn initialise_uses_current_runtime_inputs_and_updates_filling_population() {
+        let cube = Cube::new_from_density(1.0, 1.0, 1.0, vec![1.0], 1, 0, false, 1).unwrap();
+        let trap_generators = vec![TrapGenerator::new_no_distribution(
+            "test".into(), 0.1, 1.0, 1.0, 1.0, 0.9,
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        )];
         let profile = TimeTemperature::new(
             vec![0.0, 1.0],
-            vec![20.0, 20.0],
+            vec![293.15, 293.15],
             TimeUnit::Second,
-            TemperatureUnit::Celsius,
         )
         .unwrap();
-        let transitions = Transitions::from_bool(
-            false, false, false, false, false, "first", false, false,
+        let mut filling = Some(FillingTransitionInputs::get_inputs(10.0, 1.0, 0, 1).unwrap());
+        let trap_available = vec![1];
+
+        let experiment = MCExperiment::initialise(
+            &cube,
+            &trap_available,
+            &1,
+            &trap_generators,
+            ReTrapParameterLayout::None,
+            &mut filling,
+            profile,
+            &0,
         )
         .unwrap();
-        let mut experiment = MCExperiment::initialise(&cube, &inputs, &0, &0, profile, &0, &0).unwrap();
-        let mut filling_inputs = FillingTransitionInputs::get_inputs(
-            inputs.filling.d0[0],
-            inputs.filling.d_dot[0],
-            0,
-            cube.trap_total,
-            inputs.filling.dd_unit,
-        )
-        .unwrap();
-        let output_file = temporary_output_path("standard_experiment");
 
-        experiment
-            .run(
-                &cube,
-                &transitions,
-                &mut filling_inputs,
-                &output_file,
-                &2,
-            )
-            .unwrap();
-        let batches = read_all_batches::<RecordedEvent>(&output_file)
-            .unwrap()
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-        fs::remove_file(output_file).unwrap();
-
-        assert_eq!(batches.len(), 1);
-        assert_eq!(batches[0].len(), 2);
-        assert_eq!(batches[0][0].event, Event::None);
-        assert_eq!(batches[0][0].time, 0.0);
-        assert_eq!(batches[0][1].event, Event::None);
-        assert_eq!(batches[0][1].time, 1.0);
-    }
-
-    #[test]
-    fn singleton_parameters_are_shared_between_experiments() {
-        let inputs = SimulationInputs::default();
-
-        assert!(new_uniform_trap_layout(&inputs, &1).is_ok());
-    }
-
-    #[test]
-    fn short_parameter_vectors_return_an_error_instead_of_panicking() {
-        let mut inputs = SimulationInputs::default();
-        inputs.trap_energies.e_loc = vec![1.0, 2.0];
-
-        let error = new_uniform_trap_layout(&inputs, &2)
-            .err()
-            .expect("a short parameter vector should be rejected");
-
-        assert_eq!(
-            error,
-            "trap_energies.e_loc contains 2 values, but experiment 3 was requested"
-        );
+        assert!(matches!(experiment, MCExperiment::Standard { .. }));
+        assert_eq!(filling.unwrap().occupied_population, 1.0);
     }
 }

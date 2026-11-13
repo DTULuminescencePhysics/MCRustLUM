@@ -51,33 +51,6 @@ pub fn get_std_rng_for_rep(rep: usize) -> StdRng  {
 
 }
 
-/// Draw a unit-rate exponentially distributed random value from `rng`.
-///
-/// The returned sample is suitable for inverse-rate lifetime calculations and
-/// is always finite and non-negative for a valid random-number generator.
-pub fn generate_exponential_random(rng: &mut impl Rng) -> f64 {
-    Exp1.sample(rng)
-}
-
-/// Draw a normally distributed random value from `rng` with standard deviation s.
-pub fn generate_scaled_normal_random(rng: &mut impl Rng, s: f64) -> f64 {
-    let normal = Normal::new(0.0, s)
-        .expect("sigma must be finite and positive");
-
-    normal.sample(rng)
-}
-
-/// Draw a normally distributed random value from `rng` with standard deviation 1.0.
-pub fn generate_normal_random(rng: &mut impl Rng,) -> f64 {
-    StandardNormal.sample(rng)
-}
-
-/// Draws an index from a weighted distribution in input vector weights.
-pub fn generate_weighted_index_random(weights: &[f64], rng: &mut impl Rng,) -> usize {
-    let dist = WeightedIndex::new(weights).unwrap();
-    dist.sample(rng)
-}
-
 /// Open sample (a,b)
 pub trait OpenRandom: Sized{
     /// Creates the actual OpenRandom, Sample (a, b).
@@ -98,6 +71,13 @@ pub trait HalfClosedRandom: Sized{
     /// Creates the actual HalfClosedRandom Sample (a, b\].
     fn sample_half_closed(a: Self, b: Self, rng: &mut impl Rng,) -> Self;
 }
+pub trait BoundedExponentialRandom: Sized {
+    fn sample_bounded_exponential(min: Self, max: Self, scale: Self, rng: &mut impl Rng,) -> Self;
+}
+pub trait GaussianRandom: Sized {
+    fn sample_gaussian(mean: Self, sigma: Self, rng: &mut impl Rng,) -> Self;
+}
+
 /// Generates open random number on open interval (a, b)
 pub fn generate_open_random<T: OpenRandom>(a: T, b: T, rng: &mut impl Rng,) -> T {
     T::sample_open(a, b, rng)
@@ -113,6 +93,14 @@ pub fn generate_half_open_random<T: HalfOpenRandom>(a: T, b: T, rng: &mut impl R
 /// Generates half closed random number on closed on right side open on left (a,b\]
 pub fn generate_half_closed_random<T: HalfClosedRandom>(a: T, b: T, rng: &mut impl Rng,) -> T {
     T::sample_half_closed(a, b, rng)
+}
+
+pub fn generate_bounded_exponential_random<T: BoundedExponentialRandom>(min: T, max: T, scale: T, rng: &mut impl Rng,) -> T{
+    T::sample_bounded_exponential(min, max, scale, rng)
+}
+
+pub fn generate_gaussian_random<T: GaussianRandom>(mean: T, sigma: T, rng: &mut impl Rng,) -> T{
+    T::sample_gaussian(mean, sigma, rng)
 }
 
 /// Rules for integers
@@ -144,6 +132,7 @@ macro_rules! impl_integer {
                     rng.random_range(start..=b)
                 }
             }
+            
 
         )*
     };
@@ -228,14 +217,53 @@ macro_rules! impl_float {
                     }
                 }
             }
+            impl BoundedExponentialRandom for $ty {
+                fn sample_bounded_exponential(min: Self, max: Self, scale: Self, rng: &mut impl Rng,) -> Self{
+                    
+                    assert!(min.is_finite() && max.is_finite() && min <= max,
+                    "bounds must be finite and min < max");
+        
+                    assert!(scale.is_finite() && scale >= 0.0, 
+                        "scale must be finite and positive");
+        
+
+                    let width = max - min;
+                    assert!(width.is_finite(),
+                        "range is too large");
+        
+
+                    let midpoint = min + width / 2.0;
+                    let half_width = width / 2.0;
+
+                    // Inverse-CDF sample from a Laplace distribution truncated to the bounds.
+                    let u = generate_open_random(0.0, 1.0, rng);
+                    let edge = (-half_width / scale).exp();
+                    let retained_mass = -(-half_width / scale).exp_m1();
+
+                    let offset = if u <= 0.5 {
+                        scale * (edge + 2.0 * u * retained_mass).ln()
+                    } else {
+                        -scale * (edge + 2.0 * (1.0 - u) * retained_mass).ln()
+                    };
+
+                    (midpoint + offset).clamp(min, max)
+                            
+                }
+            }
+            impl GaussianRandom for $ty {
+                fn sample_gaussian(mean: Self, sigma: Self, rng: &mut impl Rng,) -> Self{
+                    
+                    let distribution = Normal::new(mean, sigma)
+                    .expect("sigma must be finite and positive");
+                    
+                    distribution.sample(rng)
+                }
+            }
         )*
     };
 }
 
 impl_float!(f32, f64);
-
-
-
 
 /// Generates a log of uniform random number in the closed interval (0, 1).
 pub fn generate_log_open_uniform_random(rng: &mut impl Rng,) -> f64 {
@@ -243,3 +271,29 @@ pub fn generate_log_open_uniform_random(rng: &mut impl Rng,) -> f64 {
      a.ln()
 }
 
+/// Draw a unit-rate exponentially distributed random value from `rng`.
+///
+/// The returned sample is suitable for inverse-rate lifetime calculations and
+/// is always finite and non-negative for a valid random-number generator.
+pub fn generate_exponential_random(rng: &mut impl Rng) -> f64 {
+    Exp1.sample(rng)
+}
+
+/// Draw a normally distributed random value from `rng` with standard deviation s.
+pub fn generate_scaled_normal_random(rng: &mut impl Rng, s: f64) -> f64 {
+    let normal = Normal::new(0.0, s)
+        .expect("sigma must be finite and positive");
+
+    normal.sample(rng)
+}
+
+/// Draw a normally distributed random value from `rng` with standard deviation 1.0.
+pub fn generate_normal_random(rng: &mut impl Rng,) -> f64 {
+    StandardNormal.sample(rng)
+}
+
+/// Draws an index from a weighted distribution in input vector weights.
+pub fn generate_weighted_index_random(weights: &[f64], rng: &mut impl Rng,) -> usize {
+    let dist = WeightedIndex::new(weights).unwrap();
+    dist.sample(rng)
+}

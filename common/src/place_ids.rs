@@ -78,17 +78,58 @@ impl PlaceAvailability {
     }
 
     /// Randomly selects Ids to make them available at the beginning of an experiment
-    pub fn set_initial_condition(count: usize, available_count: usize, rng: &mut impl Rng) -> Result<Self, String> {
-        let mut places = PlaceAvailability::new(count)?;
-        if available_count == 0 {
-            return Ok(places);
-        } else if available_count == count {
-            places.mark_all_available();
-            return Ok(places);
-        } else {
-            places.randomly_make_available(available_count, rng)?;
-            return Ok(places);
+    pub fn set_initial_condition(count: &Vec<usize>, available_count: &Vec<usize>, rng: &mut impl Rng) -> Result<Self, String> {
+        if count.len() != available_count.len() {
+            return Err("count and available_count must have equal lengths".into());
         }
+
+        for (group, (&size, &available)) in
+            count.iter().zip(available_count).enumerate()
+        {
+            if available > size {
+                return Err(format!(
+                    "group {group}: requested {available} available places \
+                    but only {size} exist"
+                ));
+            }
+        }
+
+        let total_count = count.iter().try_fold(0usize, |total, &size| {
+            total
+                .checked_add(size)
+                .ok_or_else(|| "total count overflowed usize".to_string())
+        })?;
+
+        let mut places = Self::new(total_count)?;
+        let mut start = 0;
+
+        for (&size, &available) in count.iter().zip(available_count) {
+            let end = start + size;
+
+            if available == size {
+                for index in start..end {
+                    places.make_available(PlaceId::new(index)?);
+                }
+            } else if available > 0 {
+                // Partial Fisher–Yates shuffle: sample without replacement.
+                // Keep candidates separate because make_available rearranges ids.
+                let mut candidates: Vec<usize> = (start..end).collect();
+
+                for destination in 0..available {
+                    let selected = rng.random_range(destination..size);
+                    candidates.swap(destination, selected);
+
+                    places.make_available(PlaceId::new(
+                        candidates[destination],
+                    )?);
+                }
+            }
+
+            start = end;
+        }
+
+        Ok(places)
+
     }
     /// Uniformly sample `n` currently unavailable sites without replacement.
     ///

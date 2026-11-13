@@ -19,7 +19,7 @@ use crate::system_setup::ChronologyExperiment;
 use std::error::Error;
 use io::errors::PlotError;
 use io::chrono_plotting::ProfileHeatmapOptions;
-use io::inputs::{SimulationInputs, read_inputs};
+use io::inputs::{read_inputs, ResolvedExperiment};
 use io::chrono_inputs::{ChronologyInputs,read_chrono_inputs};
 use io::chrono_outputs::write_profile_grid_csv;
 use std::path::Path;
@@ -34,14 +34,14 @@ pub fn thermo_chronology_experiment(
 {
     let start = Instant::now();
 
-    let mc_inputs = read_inputs("input.toml")?;
+    let mc_inputs = read_inputs("input.toml", experiments)?;
     let chron_inputs = read_chrono_inputs("chron_input.toml")?;
     eprintln!("read inputs:       {:?}", start.elapsed());
     
     
     thermo_chronology_setup_run(&chron_inputs, &mc_inputs,repetitions,experiments,minimum_traps,trial_num)?;
     let profile: Option<TimeTempProfile> = if use_real_profile {
-        Some( TimeTempProfile {times: mc_inputs.time_temperature.times, temps: mc_inputs.time_temperature.temperatures  })
+        Some( TimeTempProfile {times: mc_inputs[0].time_temperature.times.value.clone(), temps: mc_inputs[0].time_temperature.temperatures.value.clone()  })
     } else{
        None
     };
@@ -54,7 +54,7 @@ pub fn thermo_chronology_experiment(
 
 fn thermo_chronology_setup_run(
     chron_inputs: &ChronologyInputs,
-    mc_inputs: &SimulationInputs,
+    mc_inputs: &Vec<ResolvedExperiment>,
     repetitions: usize, 
     experiments: usize, 
     minimum_traps: usize,

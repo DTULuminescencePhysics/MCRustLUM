@@ -6,7 +6,7 @@ use crate::profiles::{ProfileType, TimeTempProfile,MoveKind};
 use crate::acceptance::{AcceptanceConstructor, AcceptorType};
 use crate::burn_in::BurnInApparatus;
 use io::chrono_inputs::ChronologyInputs;
-use io::inputs::SimulationInputs;
+use io::inputs::ResolvedExperiment;
 use mc::system_setup::MonteCarloSimulation;
 use common::constants::temperature::TemperatureUnit;
 use common::constants::time::TimeUnit;
@@ -26,7 +26,7 @@ pub struct ChronologyExperiment{
 impl ChronologyExperiment {
 
     pub fn setup( profile_inputs: &ChronologyInputs, 
-                  inputs: &SimulationInputs, 
+                  inputs: &Vec<ResolvedExperiment>, 
                   repetitions: usize, 
                   experiments: usize, 
                   minimum_traps:usize) 
@@ -35,7 +35,8 @@ impl ChronologyExperiment {
         
         let generator = ProfileType::new(profile_inputs)?;
         let acceptor= AcceptanceConstructor::new(profile_inputs)?;
-        let monte_carlo = MonteCarloSimulation::new(inputs.clone(), repetitions, experiments, minimum_traps)?;
+        let monte_carlo = MonteCarloSimulation::new(inputs, repetitions, experiments, minimum_traps)?;
+
         
         Ok(Self{
             generator,
@@ -68,7 +69,7 @@ impl ChronologyExperiment {
                         continue
                         },
                 Some(trial_profile) =>{
-                    let profile = trial_profile.generate_profile(self.time_unit,self.temp_unit)?;
+                    let profile = trial_profile.generate_profile(self.time_unit)?;
                     let result = self.monte_carlo.run_to_final_ratio_only(profile, num)?;
                     acct_cnt += self.acceptor.accept_reject_profile(
                                                 trial_profile,
@@ -113,7 +114,7 @@ impl ChronologyExperiment {
         match trial_profile {
             None =>  return Err("Burn-in failed unable to generate a starting profile".to_string()),
             Some(trial_profile) => {
-                let profile= trial_profile.generate_profile(self.time_unit,self.temp_unit)?;
+                let profile= trial_profile.generate_profile(self.time_unit)?;
                 let result = self.monte_carlo.run_to_final_ratio_only(profile, 0)?;
                 let _ = self.acceptor.accept_reject_profile(
                         trial_profile,
@@ -141,7 +142,7 @@ impl ChronologyExperiment {
                     continue
                 }
                 
-                let profile = trial_profile.generate_profile(self.time_unit,self.temp_unit)?;
+                let profile = trial_profile.generate_profile(self.time_unit)?;
                 let result = self.monte_carlo.run_to_final_ratio_only(profile, mc_trial_num)?;
              
 

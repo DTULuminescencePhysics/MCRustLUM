@@ -59,7 +59,7 @@ cargo run --release -p luminescence -- [Options]
 ```
 ### Options:
 | Short Flag | Long Flag | Input | Purpose | Default |
-| --- | ---| --- | --- | --- |
+| --- | --- | --- | --- | --- |
 | -f | --folder |  NAME   | Experiment folder | automatic numbering |
 | -r | --repetitions | NUMBER  | Repetitions | 1000 |
 | -e | --experiments | NUMBER  | Experiments | 1 |

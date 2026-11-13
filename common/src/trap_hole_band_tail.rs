@@ -10,6 +10,7 @@
 //! Constructors validate geometry before allocating or randomly generating
 //! site coordinates.
 use crate::numeric::{Float, TimeFloat, Numeric};
+use crate::constants::quantities::Distribution;
 use crate::place_ids::{PlaceId, PlaceAvailability};
 use crate::rate_equation_inputs::{DelocalisedTransitionInputs, LocalisedTransitionInputs,};
 use crate::rate_equations::ground_excited_state_weights;
@@ -263,7 +264,7 @@ impl ElectronPlaces {
         let x = cube.boundary.x;
         let y = cube.boundary.y;
         let z = cube.boundary.z;
-        let t_no = cube.trap_total;
+        let t_no = cube.trap_total.iter().sum();
         let h_no = cube.hole_total;
         let b_no = cube.bandtail_total;
 
@@ -432,8 +433,10 @@ impl ElectronPlaces {
 /// decay constant. All energies are in electronvolts, frequencies and rates
 /// are in inverse seconds, and inverse-length parameters must use units
 /// reciprocal to the coordinate units.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone,)]
 pub struct TrapParameters {
+    /// Integer to keep track of what the trap type is
+    pub trap_type: String,
     /// Energy separation between the localised ground and excited states, in eV.
     pub excited_energy_gap: Float,
     /// Attempt frequency for thermal excitation from ground to excited state, in s⁻¹.
@@ -457,12 +460,137 @@ pub struct TrapParameters {
     /// Excited-state tunnelling decay constant in inverse coordinate units.
     pub alpha_excited: Float,
 }
+
 impl TrapParameters {
     /// Construct a complete trap-family parameter record without validation.
     ///
     /// The caller must keep energies, frequencies, and length scales in the
     /// units described by [`TrapParameters`] and ensure they are physically valid.
     pub fn new(
+        trap_type: String,
+        excited_energy_gap: Float,
+        s_frequency_e: Float,
+        s_frequency_g: Float,
+        e_cb_ground: Float,
+        e_cb_excited: Float,
+        de_frequency_ground: Float,
+        de_frequency_excited: Float,
+        lo_frequency_ground: Float,
+        lo_frequency_excited: Float,
+        alpha_ground: Float,
+        alpha_excited: Float) -> Self {
+
+            Self {
+                trap_type,
+                excited_energy_gap,
+                s_frequency_e,
+                s_frequency_g,
+                e_cb_ground,
+                e_cb_excited,
+                de_frequency_ground,
+                de_frequency_excited,
+                lo_frequency_ground,
+                lo_frequency_excited,
+                alpha_ground,
+                alpha_excited,
+        }
+    }
+
+
+}
+#[derive(Debug, Clone,)]
+pub struct TrapDistributions {
+    /// Distribution for Energy separation between the localised ground and excited states, in eV.
+    pub excited_energy_gap_distribution: Option<Distribution>,
+    /// Distribution for Attempt frequency for thermal excitation from ground to excited state, in s⁻¹.
+    pub s_frequency_e_distribution: Option<Distribution>,
+    ///Distribution for  Relaxation frequency from excited to ground state, in s⁻¹.
+    pub s_frequency_g_distribution: Option<Distribution>,
+    /// Distribution for Ground-state activation energy for release to the conduction band, in eV.
+    pub e_cb_ground_distribution: Option<Distribution>,
+    /// Distribution for Ground-state delocalised-release attempt frequency, in s⁻¹.
+    pub de_frequency_ground_distribution: Option<Distribution>,
+    /// Distribution for Excited-state delocalised-release attempt frequency, in s⁻¹.
+    pub de_frequency_excited_distribution: Option<Distribution>,
+    /// Distribution for Ground-state localised-tunnelling prefactor, in s⁻¹.
+    pub lo_frequency_ground_distribution: Option<Distribution>,
+    /// Distribution for Excited-state localised-tunnelling prefactor, in s⁻¹.
+    pub lo_frequency_excited_distribution: Option<Distribution>,
+    /// Distribution for Ground-state tunnelling decay constant in inverse coordinate units.
+    pub alpha_ground_distribution: Option<Distribution>,
+    /// Distribution for Excited-state tunnelling decay constant in inverse coordinate units.
+    pub alpha_excited_distribution: Option<Distribution>,
+}
+impl TrapDistributions {
+
+    pub fn new( excited_energy_gap_distribution: Option<Distribution>,
+        s_frequency_e_distribution: Option<Distribution>,
+        s_frequency_g_distribution: Option<Distribution>,
+        e_cb_ground_distribution: Option<Distribution>,
+        de_frequency_ground_distribution: Option<Distribution>,
+        de_frequency_excited_distribution: Option<Distribution>,
+        lo_frequency_ground_distribution: Option<Distribution>,
+        lo_frequency_excited_distribution: Option<Distribution>,
+        alpha_ground_distribution: Option<Distribution>,
+        alpha_excited_distribution: Option<Distribution>,) -> Self{
+
+            Self { excited_energy_gap_distribution, 
+                s_frequency_e_distribution, 
+                s_frequency_g_distribution, 
+                e_cb_ground_distribution, 
+                de_frequency_ground_distribution, 
+                de_frequency_excited_distribution, 
+                lo_frequency_ground_distribution, 
+                lo_frequency_excited_distribution, 
+                alpha_ground_distribution, 
+                alpha_excited_distribution 
+            }
+
+    }
+    pub fn new_all_none() -> Self {
+        Self{
+            excited_energy_gap_distribution: None,
+            s_frequency_e_distribution: None,
+            s_frequency_g_distribution: None,
+            e_cb_ground_distribution: None,
+            de_frequency_ground_distribution: None,
+            de_frequency_excited_distribution: None,
+            lo_frequency_ground_distribution: None,
+            lo_frequency_excited_distribution: None,
+            alpha_ground_distribution: None,
+            alpha_excited_distribution: None,
+        }
+    }
+    pub fn all_none(&self) -> bool {
+        [
+            &self.excited_energy_gap_distribution,
+            &self.s_frequency_e_distribution,
+            &self.s_frequency_g_distribution,
+            &self.e_cb_ground_distribution,
+            &self.de_frequency_ground_distribution,
+            &self.de_frequency_excited_distribution,
+            &self.lo_frequency_ground_distribution,
+            &self.lo_frequency_excited_distribution,
+            &self.alpha_ground_distribution,
+            &self.alpha_excited_distribution,
+        ]
+        .iter()
+        .all(|distribution| distribution.is_none())
+    }
+    
+}
+
+
+#[derive(Debug, Clone,)]
+pub struct TrapGenerator {
+    parameters: TrapParameters, 
+    distributions:TrapDistributions,
+}
+
+impl TrapGenerator {
+
+    pub fn new( 
+        trap_type: String,
         excited_energy_gap: Float,
         s_frequency_e: Float,
         s_frequency_g: Float,
@@ -474,22 +602,168 @@ impl TrapParameters {
         lo_frequency_excited: Float,
         alpha_ground: Float,
         alpha_excited: Float,
-    ) -> Self {
-        Self {
-            excited_energy_gap,
-            s_frequency_e,
-            s_frequency_g,
-            e_cb_ground,
-            e_cb_excited,
-            de_frequency_ground,
-            de_frequency_excited,
-            lo_frequency_ground,
-            lo_frequency_excited,
-            alpha_ground,
-            alpha_excited,
+        excited_energy_gap_distribution: Option<Distribution>,
+        s_frequency_e_distribution: Option<Distribution>,
+        s_frequency_g_distribution: Option<Distribution>,
+        e_cb_ground_distribution: Option<Distribution>,
+        de_frequency_ground_distribution: Option<Distribution>,
+        de_frequency_excited_distribution: Option<Distribution>,
+        lo_frequency_ground_distribution: Option<Distribution>,
+        lo_frequency_excited_distribution: Option<Distribution>,
+        alpha_ground_distribution: Option<Distribution>,
+        alpha_excited_distribution: Option<Distribution>,) -> Self{
+
+            Self { parameters: TrapParameters{
+                    trap_type, 
+                    excited_energy_gap, 
+                    s_frequency_e, 
+                    s_frequency_g, 
+                    e_cb_ground, 
+                    e_cb_excited, 
+                    de_frequency_ground, 
+                    de_frequency_excited, 
+                    lo_frequency_ground, 
+                    lo_frequency_excited, 
+                    alpha_ground, 
+                    alpha_excited }, 
+                distributions: TrapDistributions { 
+                    excited_energy_gap_distribution,
+                     s_frequency_e_distribution, 
+                     s_frequency_g_distribution, 
+                     e_cb_ground_distribution, 
+                     de_frequency_ground_distribution, 
+                     de_frequency_excited_distribution, 
+                     lo_frequency_ground_distribution, 
+                     lo_frequency_excited_distribution, 
+                     alpha_ground_distribution, 
+                     alpha_excited_distribution } 
+            }
+
+    }
+    pub fn new_no_distribution( 
+        trap_type: String,
+        excited_energy_gap: Float,
+        s_frequency_e: Float,
+        s_frequency_g: Float,
+        e_cb_ground: Float,
+        e_cb_excited: Float,
+        de_frequency_ground: Float,
+        de_frequency_excited: Float,
+        lo_frequency_ground: Float,
+        lo_frequency_excited: Float,
+        alpha_ground: Float,
+        alpha_excited: Float,
+     ) -> Self{
+
+            Self { parameters: TrapParameters{ 
+                    trap_type,
+                    excited_energy_gap, 
+                    s_frequency_e, 
+                    s_frequency_g, 
+                    e_cb_ground, 
+                    e_cb_excited, 
+                    de_frequency_ground, 
+                    de_frequency_excited, 
+                    lo_frequency_ground, 
+                    lo_frequency_excited, 
+                    alpha_ground, 
+                    alpha_excited }, 
+                distributions: TrapDistributions::new_all_none()
+            }
+    } 
+
+    pub fn get_parameters(&self, rng: &mut impl Rng) -> TrapParameters {
+        let p = &self.parameters;
+        let d = &self.distributions;
+
+        let excited_energy_gap = resolve_parameter(
+                p.excited_energy_gap,
+                &d.excited_energy_gap_distribution,
+                rng,
+            );
+        let ground_to_conduction_gap = resolve_parameter(
+                p.e_cb_ground,
+                &d.e_cb_ground_distribution,
+                rng,
+            );
+        let e_cb_excited = ground_to_conduction_gap - excited_energy_gap;
+
+
+        TrapParameters {
+            trap_type: p.trap_type.clone(),
+            excited_energy_gap: excited_energy_gap,
+            s_frequency_e: resolve_parameter(
+                p.s_frequency_e,
+                &d.s_frequency_e_distribution,
+                rng,
+            ),
+            s_frequency_g: resolve_parameter(
+                p.s_frequency_g,
+                &d.s_frequency_g_distribution,
+                rng,
+            ),
+            e_cb_ground: ground_to_conduction_gap,
+            e_cb_excited: e_cb_excited,
+            de_frequency_ground: resolve_parameter(
+                p.de_frequency_ground,
+                &d.de_frequency_ground_distribution,
+                rng,
+            ),
+            de_frequency_excited: resolve_parameter(
+                p.de_frequency_excited,
+                &d.de_frequency_excited_distribution,
+                rng,
+            ),
+            lo_frequency_ground: resolve_parameter(
+                p.lo_frequency_ground,
+                &d.lo_frequency_ground_distribution,
+                rng,
+            ),
+            lo_frequency_excited: resolve_parameter(
+                p.lo_frequency_excited,
+                &d.lo_frequency_excited_distribution,
+                rng,
+            ),
+            alpha_ground: resolve_parameter(
+                p.alpha_ground,
+                &d.alpha_ground_distribution,
+                rng,
+            ),
+            alpha_excited: resolve_parameter(
+                p.alpha_excited,
+                &d.alpha_excited_distribution,
+                rng,
+            ),
+        }
+    }
+
+    pub fn generate_multiple_parameters(&self, number:usize, rng: &mut impl Rng) -> Vec<TrapParameters> {
+
+        (0..number)
+            .map(|_| {
+                self.get_parameters(rng)
+            })
+            .collect( )
+
+
+    }
+
+}
+fn resolve_parameter(
+    value: Float,
+    distribution: &Option<Distribution>,
+    rng: &mut impl Rng,
+) -> Float {
+    match distribution {
+        None => value,
+        Some(distribution) => {
+            // Replace this with your sampling code later.
+            distribution.generate_value(&value, rng)
         }
     }
 }
+
+
 
 /// Maps spatial trap identifiers to their physical parameter records.
 ///
@@ -497,12 +771,12 @@ impl TrapParameters {
 /// while direct and indexed layouts support heterogeneous trap populations.
 pub enum TrapParameterLayout {
     /// Every trap uses exactly the same parameters.
-    Uniform(TrapParameters),
+    Uniform{parameters: TrapParameters},
 
     /// Every trap has its own parameters.
     ///
     /// `parameters[trap_id]`
-    Direct(Box<[TrapParameters]>),
+    Direct{parameters: Box<[TrapParameters]>},
 
     /// Traps reference a table of shared parameter records.
     ///
@@ -516,36 +790,89 @@ pub enum TrapParameterLayout {
 }
 
 impl TrapParameterLayout {
+    /// Creates a new trap information to be used by a monte carlo experiment
+    pub fn new(
+        generators: &Vec<TrapGenerator>,
+        trap_counts: &Vec<usize>,
+        rng: &mut impl Rng,
+    ) -> Result<Self, String> {
+        if generators.is_empty() {
+            return Err("at least one trap generator is required".into());
+        }
+
+        if generators.len() != trap_counts.len() {
+            return Err("each trap generator must have a trap count".into());
+        }
+
+        let total_traps = trap_counts.iter().try_fold(0usize, |total, &count| {
+            total
+                .checked_add(count)
+                .ok_or_else(|| "total trap count overflowed usize".to_string())
+        })?;
+
+        // One fixed type: every trap shares the same parameters.
+        if generators.len() == 1 && generators[0].distributions.all_none() {
+            let generator = generators.into_iter().next().unwrap();
+            return Ok(Self::new_uniform(generator, rng));
+        }
+
+        // Every type has distributions: generate one record per trap.
+        if generators
+            .iter()
+            .all(|generator| !generator.distributions.all_none())
+        {
+            let mut parameters = Vec::with_capacity(total_traps);
+
+            for (generator, count) in generators.iter().zip(trap_counts) {
+                parameters.extend(generator.generate_multiple_parameters(*count, rng));
+            }
+
+            return Self::direct(parameters, total_traps);
+        }
+
+        // Multiple fixed types, or a mixture of fixed and distributed types.
+        let mut records = Vec::new();
+        let mut assignments = Vec::with_capacity(total_traps);
+
+        for (generator, count) in generators.iter().zip(trap_counts) {
+            if *count == 0 {
+                continue;
+            }
+
+            if generator.distributions.all_none() {
+                // All traps of this type reference one shared record.
+                let record_id = PlaceId::new(records.len())?;
+                records.push(generator.get_parameters(rng));
+
+                assignments.extend(std::iter::repeat(record_id).take(*count));
+            } else {
+                // Each trap of this type references its own generated record.
+                for _ in 0..*count {
+                    let record_id = PlaceId::new(records.len())?;
+                    records.push(generator.get_parameters(rng));
+                    assignments.push(record_id);
+                }
+            }
+        }
+
+        // indexed() requires at least one record, even for zero traps.
+        if records.is_empty() {
+            records.push(generators[0].get_parameters(rng));
+        }
+
+        Self::indexed(records, assignments, total_traps)
+    }
+        
     /// Build a homogeneous layout from the individual model parameters.
     ///
+    /// Assign one parameter record to every trap identifier.
     /// The excited-state conduction-band barrier is derived as
     /// `e_cb - excited_energy_gap`; every trap subsequently borrows the same
     /// resulting [`TrapParameters`] record.
-    pub fn new_uniform(excited_energy_gap: Float, s_frequency_e: Float, 
-                       s_frequency_g: Float, e_cb: Float, 
-                       s_gs: Float, s_es: Float, 
-                       b_gs: Float, b_es: Float, 
-                       alpha_gs: Float, alpha_es: Float,) -> Self {
-
-        let parameters = TrapParameters::new(excited_energy_gap,
-                                                             s_frequency_e,
-                                                             s_frequency_g,
-                                                             e_cb,
-                                                             e_cb - excited_energy_gap,
-                                                             s_gs,
-                                                             s_es,
-                                                             b_gs,
-                                                             b_es,
-                                                             alpha_gs,
-                                                             alpha_es,);
-        TrapParameterLayout::uniform(parameters)
+    pub fn new_uniform(generator: &TrapGenerator, rng: &mut impl Rng) -> Self {
+        let parameters = generator.get_parameters(rng);
+        Self::Uniform{parameters}
     }
-
-    /// Assign one parameter record to every trap identifier.
-    pub fn uniform(parameters: TrapParameters) -> Self {
-        Self::Uniform(parameters)
-    }
-
     /// Assign one parameter record per trap in identifier order.
     ///
     /// Returns an error unless `parameters.len()` equals `trap_count`.
@@ -557,9 +884,8 @@ impl TrapParameterLayout {
             ));
         }
 
-        Ok(Self::Direct(parameters.into_boxed_slice()))
+        Ok(Self::Direct{parameters: parameters.into_boxed_slice()})
     }
-
     /// Assign traps to a shared table of parameter records.
     ///
     /// `assignments[trap.index()]` identifies the entry in `records`. The
@@ -601,18 +927,18 @@ impl TrapParameterLayout {
     /// different crystal can therefore panic.
     pub fn get(&self, trap: PlaceId) -> &TrapParameters {
         match self {
-            Self::Uniform(parameters) => parameters,
+            Self::Uniform{parameters} => parameters,
 
-            Self::Direct(parameters) => &parameters[trap.index()],
+            Self::Direct{parameters} => &parameters[trap.index()],
 
-            Self::Indexed { records, by_trap } => &records[by_trap[trap.index()].index()],
+            Self::Indexed {records, by_trap } => &records[by_trap[trap.index()].index()],
         }
     }
     /// Finds the weighting for the ground and excited states
     pub fn get_ground_excited_weights<'a>(&self,  traps: &PlaceAvailability, temperature: &Float) -> Result<(Vec<TimeFloat>, Vec<TimeFloat>), String> {
 
         match self {
-            Self::Uniform(parameters) => {
+            Self::Uniform{parameters} => {
 
                 let (g, e) = ground_excited_state_weights(
                             &parameters.excited_energy_gap,
@@ -626,7 +952,7 @@ impl TrapParameterLayout {
                 return Ok((ground_weights, excited_weights));
 
             },
-            Self::Direct(parameters) => {
+            Self::Direct{parameters} => {
                 let weights: Vec<(TimeFloat, TimeFloat)> = traps
                                                 .available_indices_vec()
                                                 .into_iter()
@@ -685,10 +1011,10 @@ impl TrapParameterLayout {
     {
         
         let e_cb_ground =  match self {
-            Self::Uniform(parameters) => {
+            Self::Uniform{parameters} => {
                 vec![parameters.e_cb_ground]
             }, 
-            Self::Direct(parameters) => {
+            Self::Direct{parameters} => {
                 traps.available_indices_vec()
                     .into_iter()
                     .map(|index| 
@@ -705,10 +1031,10 @@ impl TrapParameterLayout {
         };
       
         let frequency_ground =  match self {
-            Self::Uniform(parameters) => {
+            Self::Uniform{parameters} => {
                 vec![parameters.de_frequency_ground]
             }, 
-            Self::Direct(parameters) => {
+            Self::Direct{parameters} => {
                 traps.available_indices_vec()
                     .into_iter()
                     .map(|index| 
@@ -724,10 +1050,10 @@ impl TrapParameterLayout {
             }
         };
         let e_cb_excited = match self {
-            Self::Uniform(parameters) => {
+            Self::Uniform{parameters} => {
                 vec![parameters.e_cb_excited]
             }, 
-            Self::Direct(parameters) => {
+            Self::Direct{parameters} => {
                 traps.available_indices_vec()
                     .into_iter()
                     .map(|index| 
@@ -744,10 +1070,10 @@ impl TrapParameterLayout {
         };
         
         let frequency_excited = match self {
-            Self::Uniform(parameters) => {
+            Self::Uniform{parameters} => {
                 vec![parameters.de_frequency_excited]
             }, 
-            Self::Direct(parameters) => {
+            Self::Direct{parameters} => {
                 traps.available_indices_vec()
                     .into_iter()
                     .map(|index| 
@@ -787,7 +1113,7 @@ impl TrapParameterLayout {
         String,> 
     {
         Ok( match self {
-            Self::Uniform(parameters) => {
+            Self::Uniform{parameters} => {
                 LocalisedTransitionInputs {
                     alpha_ground: parameters.alpha_ground,
                     frequency_ground: parameters.lo_frequency_ground,
@@ -798,7 +1124,7 @@ impl TrapParameterLayout {
                     distance,
                 }
             },
-             Self::Direct(parameters) => { LocalisedTransitionInputs {
+             Self::Direct{parameters} => { LocalisedTransitionInputs {
                     alpha_ground: parameters[trap.index()].alpha_ground,
                     frequency_ground: parameters[trap.index()].lo_frequency_ground,
                     alpha_excited: parameters[trap.index()].alpha_excited,
@@ -836,7 +1162,7 @@ impl TrapParameterLayout {
         String,> 
     {
         Ok( match self {
-            Self::Uniform(parameters) => {
+            Self::Uniform{parameters} => {
                 LocalisedTransitionInputs {
                     alpha_ground: parameters.alpha_ground,
                     frequency_ground: parameters.lo_frequency_ground,
@@ -847,7 +1173,7 @@ impl TrapParameterLayout {
                     distance,
                 }
             },
-             Self::Direct(parameters) => { LocalisedTransitionInputs {
+             Self::Direct{parameters} => { LocalisedTransitionInputs {
                     alpha_ground: parameters[trap.index()].alpha_ground,
                     frequency_ground: parameters[trap.index()].lo_frequency_ground,
                     alpha_excited: parameters[trap.index()].alpha_excited,
@@ -1145,7 +1471,7 @@ use super::*;
     fn randomising_cube_positions_changes_traps_holes_and_bandtails() {
         let mut rng = random::get_std_rng_for_rep(0);
         let mut places = ElectronPlaces::random_new(3, 3, 3, 10.0, 10.0, 10.0, &mut rng).unwrap();
-        let cube = crate::crystal::Cube::new(10.0,10.0,10.0,3,3,3,true).unwrap();
+        let cube = crate::crystal::Cube::new(10.0,10.0,10.0,vec![3],3,3,true).unwrap();
         let original_places = places.clone();
 
         println!("Original coordinates");

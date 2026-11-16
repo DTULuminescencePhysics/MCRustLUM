@@ -2,6 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
+//! Compare simulated fills and ages with observations and record accepted histories.
+//!
+//! Residuals are normalized by measurement uncertainties. Bayesian rules use
+//! log likelihoods; frequentist rules combine p-values. Accepted histories can
+//! be buffered into compressed batches independently of the acceptance calculation.
+
 use common::numeric::{Float, TimeFloat};
 use common::constants::temperature::TemperatureUnit;
 use common::constants::time::TimeUnit;
@@ -17,26 +23,43 @@ use rand::Rng;
 use std::path::{Path, PathBuf};
 
 
+/// Likelihood state and proposal scales used by the Bayesian profile walk.
+///
+/// Acceptance compares log likelihoods and includes a move-specific prior ratio.
+/// The first proposal initializes the current profile without a likelihood comparison.
 pub struct BayesianWalk{
+    /// Gaussian log likelihood of the accepted/trial profile, without normalization constants.
     pub log_likelihood: Float,
+    /// Absolute width of the allowed temperature prior range.
     pub temp_diff: Float,
+    /// Product of the time and temperature birth scales used in prior corrections.
     pub birth_sigmas: Float, 
 
 }
 
 impl BayesianWalk {
 
+    /// Store the log likelihood of the newly accepted current profile.
     pub fn update_likelihood(&mut self, new_likelihood: Float) {
         self.log_likelihood = new_likelihood;
     }
+    /// Store the product of the time and temperature birth scales after tuning.
     pub fn update_birth_sigmas(&mut self, new_sigmas: Float) {
         self.birth_sigmas = new_sigmas;
     }
 
+    /// Convert squared, uncertainty-normalised fill and age residuals to a Gaussian log likelihood.
+    ///
+    /// Returns `-0.5 * (sum(ratio_likelihood) + age_likelihood)`; normalization
+    /// constants that cancel in likelihood ratios are omitted.
     fn calculate_log_likelihood(&self, ratio_likelihood: Vec<Float>, age_likelihood: Float) -> Float {
         -0.5*(ratio_likelihood.iter().sum::<Float>() + age_likelihood)
     }
     
+    /// Calculate the log prior/proposal correction for inserting node `k_choice`.
+    ///
+    /// Uses the two new time intervals, the old interval, and the birth-scale product.
+    /// The index must identify an interior node of the trial profile.
     fn birth_prior_ratio(
         &self,
         trial_profile: &TimeTempProfile, 
@@ -53,6 +76,10 @@ impl BayesianWalk {
         ).abs().ln()
     }
 
+    /// Calculate the reverse birth correction for deleting an interior node.
+    ///
+    /// Endpoint deletions and profiles with no removable interior node return
+    /// negative infinity so the proposal is rejected before indexing neighbours.
     fn death_prior_ratio(  
         &self,
         trial_profile: &TimeTempProfile, 
@@ -75,6 +102,9 @@ impl BayesianWalk {
         ).abs().ln()
     }
 
+    /// Calculate the log prior ratio from the intervals adjacent to a moved time node.
+    ///
+    /// Endpoint moves use one interval; interior moves use the product of both.
     fn time_prior_ratio(
         &self,
         trial_profile: &TimeTempProfile, 
@@ -104,6 +134,12 @@ impl BayesianWalk {
         }
     }
 
+    /// Apply a Bayesian walk decision and return acceptance plus diagnostic metadata.
+    ///
+    /// On acceptance, update the stored likelihood and the affected current-profile
+    /// coordinates. A missing current profile is initialized from the trial.
+    /// `k_choice` identifies the inserted, deleted, or perturbed node.
+    /// The stored posterior field is currently a zero placeholder.
     fn calculate_acceptance_criteria(
         &mut self, 
         ratio_likelihood: Vec<Float>, 
@@ -179,15 +215,29 @@ impl BayesianWalk {
 
 
 
+/// Acceptance rule paired with independent random profiles or a profile walk.
+///
+/// Frequentist modes use a combined p-value with a 0.05 rejection threshold;
+/// Bayesian modes compare a uniform log draw with a log-likelihood criterion.
 pub enum AcceptorType{
+    /// Independent rejection sampling using the trial log likelihood.
     BayesianRandom,
-    BayesianWalk{ values: BayesianWalk},
+    /// Bayesian walk acceptance with move-specific prior/proposal corrections.
+    BayesianWalk{
+        /// Current Bayesian likelihood and proposal-correction state.
+        values: BayesianWalk,
+    },
+    /// Independent profile acceptance using a combined frequentist p-value.
     FrequentistRandom,
+    /// Walk proposal testing using a combined frequentist p-value.
     FrequentistWalk,
 }
 
 impl AcceptorType{
 
+    /// Select an acceptance strategy from the chronology setup flags.
+    ///
+    /// Returns an error unless acceptance is `F` or `B` and generation is `R` or `W`.
     pub fn new(inputs: &ChronologyInputs) -> Result<Self, String>{
        
         match inputs.setup.acceptance{
@@ -216,6 +266,9 @@ impl AcceptorType{
             }
         }
     }
+    /// Return the upper-tail chi-squared probability for a squared residual.
+    ///
+    /// Rejects zero degrees of freedom and negative or non-finite residuals.
     fn chi_squared_test(&self,
         squared_residual: &Float,
         degrees_of_freedom: usize,
@@ -239,6 +292,11 @@ impl AcceptorType{
         Ok(p_value)
     }
 
+    /// Combine individual fill-ratio and age p-values using Fisher's method.
+    ///
+    /// Each squared residual is tested with one degree of freedom; the combined
+    /// statistic is tested with twice the number of measurements. Invalid
+    /// residuals propagate as errors.
     pub fn frequentist_testing(
         &self,  
         ratio_likelihood: Vec<Float>, 
@@ -257,6 +315,10 @@ impl AcceptorType{
     
     }
 
+    /// Evaluate a trial and return `(accepted, metadata)` for the selected strategy.
+    ///
+    /// Only the Bayesian walk updates `current_profile` here. That mode rejects
+    /// a trial without a move kind. Statistical validation errors are returned.
     pub fn make_decision(
         &mut self, 
         ratio_likelihood: Vec<Float>, 
@@ -320,19 +382,35 @@ impl AcceptorType{
 }
 
 
+/// Measured targets, acceptance state, and a buffer of accepted profiles.
+///
+/// Fill measurements correspond to experiment order. Accepted trials are
+/// written in batches of 1,000 when an output file has been configured.
 pub struct AcceptanceConstructor {
+    /// Measured occupied-trap fraction for each experiment, in experiment order.
     pub fill_ratio: Vec<Float>,
+    /// Non-zero measurement uncertainty for each corresponding fill ratio.
     pub fill_ratio_error: Vec<Float>,
+    /// Measured profile duration in the setup time unit.
     pub age: TimeFloat, 
+    /// Non-zero age uncertainty in the setup time unit.
     pub age_error:TimeFloat,
+    /// Acceptance strategy and its current statistical state.
     pub acceptor: AcceptorType,
+    /// Optional output buffer of accepted trials; `None` disables persistence.
     pub accepted_profiles: Option<Vec<AcceptedProfile<TimeTempProfile>>>,
+    /// Destination of the compressed accepted-profile batches.
     pub output_path: PathBuf, 
 
 }
 
 impl AcceptanceConstructor{
 
+    /// Copy measured targets and uncertainties and construct the requested acceptor.
+    ///
+    /// The age and age-error arrays must each contain at least one value; only
+    /// the first age measurement is used. Output remains disabled until
+    /// `set_output_file` is called. Invalid acceptance flags return an error.
     pub fn new(inputs: &ChronologyInputs) -> Result<Self, String>{
         Ok(Self{
             fill_ratio:inputs.measurement.fill_ratio.clone(),
@@ -345,6 +423,11 @@ impl AcceptanceConstructor{
         })
     }
 
+    /// Return squared normalized residuals between mean simulated and measured fills.
+    ///
+    /// Each inner result vector contains repetitions for one experiment. `reps`
+    /// and measurement uncertainties must be non-zero. Zipping limits the
+    /// comparison to the shortest of the result, target, and uncertainty vectors.
     fn ratio_likelihood(&self, result: Vec<Vec<Float>>, reps: usize) -> Vec<Float> {
 
         result.iter()
@@ -357,10 +440,19 @@ impl AcceptanceConstructor{
               .collect() 
     }
 
+    /// Return the squared age residual divided by the squared age uncertainty.
+    ///
+    /// The trial age and measured age must use the same unit and the uncertainty
+    /// must be non-zero.
     fn age_likelihood(&self, age:TimeFloat) -> Float {
         ((age-self.age)/self.age_error).powi(2) as Float
     }
 
+    /// Score a simulated trial, apply the selected rule, and buffer accepted trials.
+    ///
+    /// `result` is indexed by experiment then repetition. Returns whether the trial
+    /// was accepted, or a statistical/output error. Without an output buffer
+    /// (e.g. during burn-in), acceptance is evaluated without recording the trial.
     pub fn accept_reject_profile(&mut self, 
         trial_profile: TimeTempProfile, 
         current_profile: &mut Option<TimeTempProfile>,
@@ -393,10 +485,15 @@ impl AcceptanceConstructor{
         }
         Ok(add_prof)
     }
+    /// Flush any remaining accepted profiles at the end of a run.
     pub fn final_write_check(&mut self) -> Result<(), String> {
         self.write_to_output()
     }
 
+    /// Append the buffered accepted profiles and clear them only after a successful write.
+    ///
+    /// An absent or empty buffer is a no-op. A failed write returns an error and
+    /// retains the buffer for inspection or retry.
     pub fn write_to_output(&mut self) -> Result<(), String> {
         if let Some(accepted_profiles) = self.accepted_profiles.as_mut() {
             if !accepted_profiles.is_empty() {
@@ -410,6 +507,11 @@ impl AcceptanceConstructor{
 
     }
 
+    /// Create `chronology_results.bin.gz`, write its unit header, and enable buffering.
+    ///
+    /// The directory must already exist. Existing contents at that path are
+    /// replaced. The units describe the profile coordinates stored in later batches;
+    /// file creation and header-writing errors are returned.
     pub fn set_output_file(
         &mut self, 
         output_directory: impl AsRef<Path>, 
@@ -446,6 +548,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
+    /// Verify that writes full batches and flushes only remaining accepted profiles.
     fn writes_full_batches_and_flushes_only_remaining_accepted_profiles() {
         let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let directory = std::env::temp_dir().join(format!(
@@ -493,6 +596,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that failed write keeps buffered profiles.
     fn failed_write_keeps_buffered_profiles() {
         let mut acceptor = AcceptanceConstructor::new(&ChronologyInputs::default()).unwrap();
         acceptor.accepted_profiles = Some(vec![ AcceptedProfile{profile: TimeTempProfile {
@@ -504,6 +608,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that stores acceptance metadata for every acceptor type.
     fn stores_acceptance_metadata_for_every_acceptor_type() {
         let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let directory = std::env::temp_dir().join(format!(

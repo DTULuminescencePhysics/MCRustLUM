@@ -109,6 +109,7 @@ pub struct BatchReader<T> {
 impl<T: DeserializeOwned> Iterator for BatchReader<T> {
     type Item = Result<Vec<T>, OutputError>;
 
+    /// Read the next serialized batch, ending iteration at EOF or after a read/decode error.
     fn next(&mut self) -> Option<Self::Item> {
         if self.finished {
             return None;
@@ -455,11 +456,13 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    /// Minimal serializable record used to verify compressed batch round trips.
     struct TestRecord {
         id: u16,
         value: f64,
     }
 
+    /// Create a unique temporary file path for an isolated output test.
     fn temporary_output_path(label: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -473,6 +476,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that appends and streams multiple batches.
     fn appends_and_streams_multiple_batches() {
         let path = temporary_output_path("batches");
         let first = vec![
@@ -494,6 +498,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that an empty batch does not create a file.
     fn an_empty_batch_does_not_create_a_file() {
         let path = temporary_output_path("empty");
 
@@ -503,6 +508,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that creating an experiment file discards old batches.
     fn creating_an_experiment_file_discards_old_batches() {
         let path = temporary_output_path("truncate");
         let old = vec![TestRecord { id: 1, value: 1.5 }];
@@ -522,6 +528,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that missing input reports the path.
     fn missing_input_reports_the_path() {
         let path = temporary_output_path("missing");
         let error = match read_all_batches::<TestRecord>(&path) {
@@ -533,6 +540,7 @@ mod tests {
         assert!(matches!(error, OutputError::Open { .. }));
     }
 
+    /// Create a separate unique temporary path for continuous-CSV output tests.
     fn temporary_output_path_2() -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -546,6 +554,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that writes header and continuous rows.
     fn writes_header_and_continuous_rows() {
         let path = temporary_output_path_2();
         let rows = [

@@ -2,6 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
+//! Construct, perturb, and validate candidate time-temperature histories.
+//!
+//! Independent generation samples constraint boxes and recursively subdivides
+//! intervals. Walk generation inserts/removes points or perturbs coordinates.
+//! Proposal generation is separate from physical simulation and statistical acceptance.
+
 
 
 use common::constants::time::TimeUnit;
@@ -12,6 +18,7 @@ use io::chrono_inputs::{ChronologyInputs};
 
 use rand::Rng;
 
+/// Return two numeric bounds in ascending order.
 fn ordered_pair<T: Numeric>(first: T, second: T) -> (T, T) {
     if first <= second {
         (first, second)
@@ -20,6 +27,7 @@ fn ordered_pair<T: Numeric>(first: T, second: T) -> (T, T) {
     }
 }
 
+/// Draw from the closed range, returning its endpoint directly for a zero-width range.
 fn sample_inclusive<T: Numeric>(range: (T,T), rng: &mut impl Rng) -> T 
 {
     if range.0 == range.1 {
@@ -29,6 +37,7 @@ fn sample_inclusive<T: Numeric>(range: (T,T), rng: &mut impl Rng) -> T
     }
 }
 
+/// Draw strictly between the bounds, except that a zero-width range returns its endpoint.
 fn sample_exclusive<T: Numeric>(range: (T,T), rng: &mut impl Rng) -> T {
     if range.0 == range.1 {
         range.0
@@ -37,6 +46,10 @@ fn sample_exclusive<T: Numeric>(range: (T,T), rng: &mut impl Rng) -> T {
     }
 }
 
+/// Return whether a value lies within the supplied inclusive, ascending bounds.
+///
+/// This comparison does not reject NaN; callers requiring finite values
+/// must validate finiteness separately.
 pub fn check_within_bounds<T: Numeric>(to_check: T, range: (T,T)) -> bool {
     if to_check < range.0 {
         return false; 
@@ -47,6 +60,9 @@ pub fn check_within_bounds<T: Numeric>(to_check: T, range: (T,T)) -> bool {
     true
 } 
 
+/// Average `reps` draws from a closed range to favour values near its centre.
+///
+/// `reps` must be positive and the bounds must be ordered.
 fn intermediate_sample_inclusive<T: Numeric>(
     reps: u8, 
     range: (T,T), 
@@ -57,6 +73,9 @@ where
     (0..reps).map(|_| sample_inclusive(range,rng)).sum::<T>() /T::from(reps)
 }
 
+/// Average `reps` draws from an open range to favour values near its centre.
+///
+/// `reps` must be positive; equal bounds use the endpoint without sampling.
 fn intermediate_sample_exclusive<T: Numeric>(
     reps: u8, 
     range: (T,T), 
@@ -68,6 +87,12 @@ where
 }
 
 
+/// Recursively fill midpoint nodes between two already populated profile endpoints.
+///
+/// Time samples lie between neighbours. Modes `I` and `D` restrict temperature
+/// samples to neighbour bounds; other modes use the global temperature range.
+/// Both slices must contain the supplied indices and `random_rep_number`
+/// must be positive. Mutates only nodes strictly between `left` and `right`.
 fn fill_intermediate_nodes(
     times: &mut [TimeFloat],
     temps: &mut [Float],
@@ -120,11 +145,36 @@ fn fill_intermediate_nodes(
 
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// Paired time and temperature control points for a candidate thermal history.
+///
+/// Vectors must have equal lengths and at least two points before simulation.
+/// Times follow the selected unit: increasing elapsed time or decreasing
+/// geological age. The record itself stores no units and does not validate on construction.
+///
+/// # Example
+///
+/// ```
+/// use chronology::profiles::TimeTempProfile;
+/// use common::constants::time::TimeUnit;
+///
+/// let history = TimeTempProfile {
+///     times: vec![0.0, 10.0],
+///     temps: vec![300.0, 320.0], // Kelvin for the forward model.
+/// };
+/// assert_eq!(history.k(), 1);
+/// assert_eq!(history.age(), 10.0);
+/// let model_profile = history.generate_profile(TimeUnit::Second)?;
+/// assert_eq!(model_profile.current_temperature(), 300.0);
+/// # Ok::<(), String>(())
+/// ```
 pub struct TimeTempProfile {
+    /// Time coordinates in the profile time unit, paired with temperature coordinates.
     pub times: Vec<TimeFloat>,
+    /// Temperature coordinates paired with times; the record itself carries no unit metadata.
     pub temps: Vec<Float>,
 }
 impl io::chrono_plotting::ProfileCoordinates for TimeTempProfile {
+    /// Borrow the paired coordinates for plotting without copying the profile.
     fn coordinates(&self) -> io::chrono_plotting::ProfilePath<'_> {
         io::chrono_plotting::ProfilePath {
             times: &self.times,
@@ -134,6 +184,11 @@ impl io::chrono_plotting::ProfileCoordinates for TimeTempProfile {
 }
 impl TimeTempProfile {
 
+    /// Clone the control points into a validated, piecewise-linear simulation profile.
+    ///
+    /// `time_unit` selects forward or geological time ordering. Temperatures
+    /// are passed through and must already use the units expected by the model
+    /// (Kelvin for physical rate calculations). Invalid profile data returns an error.
     pub fn generate_profile(
         &self,
         time_unit: TimeUnit,
@@ -141,9 +196,13 @@ impl TimeTempProfile {
     {
         TimeTemperature::new(self.times.clone(), self.temps.clone(), time_unit)
     }
+    /// Return the number of segments (`times.len() - 1`); requires a non-empty profile.
     pub fn k(&self) -> usize {
         self.times.len()-1
     }
+    /// Return the absolute time span between the first and last control points.
+    ///
+    /// The result uses the profile time unit. Requires a non-empty time vector.
     pub fn age(&self,) -> TimeFloat{
         let i = self.times.len()-1;
         (self.times[0]-self.times[i]).abs()
@@ -152,22 +211,42 @@ impl TimeTempProfile {
 }
 
 #[derive(Debug, Clone)]
+/// Bounds, constraint boxes, and recursive subdivision rules for independent profiles.
+///
+/// Constraint endpoints are sampled first; intermediate nodes are recursively
+/// inserted between them. Generation and constraint validation are separate steps.
 pub struct RandomProfileConstructor{
+    /// Allowed temperature bounds in profile units.
     pub temp_range: (Float, Float),
+    /// Allowed bounds for every profile time coordinate, in the setup time unit.
     pub age_range: (TimeFloat, TimeFloat),
+    /// Exclusive upper bound on the number of profile segments accepted by validation.
     pub step_max: usize,
+    /// Strict minimum directed time difference between adjacent nodes.
     pub min_time: TimeFloat,
+    /// Strict minimum absolute temperature difference between adjacent nodes.
     pub min_temp: Float,
+    /// Total number of nodes generated after subdivision.
     pub profile_length:usize,
+    /// Number of interior nodes inserted between consecutive constraint endpoints.
     pub intermediate_node_num:  usize,
+    /// Node indices occupied by the sampled box endpoints.
     pub constraint_indices: Vec<usize>,
+    /// Constraint rectangles as paired time bounds and temperature bounds.
     pub constraint_boxes: Vec< ((TimeFloat,TimeFloat), (Float,Float))>,
+    /// Number of uniform draws averaged for each intermediate coordinate.
     pub random_rep_number: u8, 
+    /// Per-segment modes: `I` increasing, `D` decreasing, or `V` unrestricted.
     pub monotonicity: Vec<char>,
 }
 
 impl RandomProfileConstructor{
 
+    /// Read constraint boxes and subdivision rules from chronology inputs.
+    ///
+    /// Adds a fixed time-zero endpoint, placing it last for geological ages.
+    /// Returns errors for mismatched monotonicity counts or unsupported mode
+    /// characters (`D`, `I`, `V` for monotonicity; `I`, `E`, `G` for sampling).
     pub fn new(inputs: &ChronologyInputs) -> Result<Self, String> {
         if inputs.random_profiles.monotonicity.len() != inputs.random_profiles.constraint_box_num {
             return Err(format!("Number of constraint boxes must be the same las the monotonicity vector length they had {}, {} respecively",inputs.random_profiles.constraint_box_num, inputs.random_profiles.monotonicity.len()) );
@@ -225,6 +304,11 @@ impl RandomProfileConstructor{
         })
     }
 
+    /// Sample box endpoints and recursively fill intermediate profile coordinates.
+    ///
+    /// Uses this constructor's subdivision and sampling settings. The returned
+    /// profile has not yet passed `check_profile`; invalid constraints may still
+    /// produce a proposal that must be rejected by the caller.
     pub fn construct_new_profile(&self, rng: &mut impl Rng)-> Result<TimeTempProfile, String> {
 
         let mut times: Vec<TimeFloat> = vec![0.0; self.profile_length];// Vec::with_capacity(self.profile_length);
@@ -253,6 +337,12 @@ impl RandomProfileConstructor{
 
     }
 
+    /// Check structural, finite-value, global-bound, spacing, and monotonicity constraints.
+    ///
+    /// `box_check` enables endpoint and intermediate box checks. Intermediate
+    /// boxes test the presence of a time and a temperature independently.
+    /// `None` uses per-segment monotonicity; `Some` applies one mode globally.
+    /// The permitted segment count is strictly less than `step_max`.
     pub fn check_profile(&self, profile: &TimeTempProfile, box_check: bool, monotonicity: Option<char>, ) -> bool {
     
         let count = profile.times.len();
@@ -379,13 +469,19 @@ impl RandomProfileConstructor{
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Kind of profile change in the reversible-jump Monte Carlo walk.
 pub enum MoveKind{
+    /// Insert a new control point into an existing interval.
     Birth,
+    /// Delete an interior control point.
     Death,
+    /// Perturb one eligible time coordinate.
     Time,
+    /// Perturb one eligible temperature coordinate.
     Temp,
 }
 impl MoveKind {
+    /// Parse `birth`, `death`, `time`, or `temp`; return an error for any other name.
     pub fn from_name(choice: &str) -> Result<Self, String> {
         match choice {
             "birth" => Ok(Self::Birth),
@@ -395,6 +491,10 @@ impl MoveKind {
             _ => Err(format!("Unknown RJMCMC move type: {choice}")),
         }
     }
+    /// Map indices 0, 1, 2, and 3 to birth, death, time, and temperature moves.
+    ///
+    /// # Panics
+    /// Panics for indices outside `0..4`.
     pub fn from_index(index: usize) -> Self {
         match index {
             0 => MoveKind::Birth,
@@ -404,6 +504,7 @@ impl MoveKind {
             _ => unreachable!("expected an in index in 0..4")
         }
     }
+    /// Return the stable move-array index: birth 0, death 1, time 2, temperature 3.
     pub fn to_index(self) -> usize {
         match self {
             Self::Birth => 0,
@@ -413,6 +514,7 @@ impl MoveKind {
         }
     }
 
+    /// Return the lowercase configuration/progress name for this move.
     pub fn to_name(self) -> &'static str {
         match self {
             Self::Birth => "birth",
@@ -425,14 +527,26 @@ impl MoveKind {
 
 
 #[derive(Debug, Clone)]
+/// Normalized move weights with alternatives at the profile-size limits.
+///
+/// Vector order is birth, death, time, temperature. At one segment death is
+/// disabled; at `k_max` segments birth is disabled.
 pub struct MoveProbabilities {
+    /// Move weights in birth, death, time, temperature order.
     pub all: Vec<Float>,
+    /// Normalized move weights with birth probability set to zero.
     pub no_birth: Vec<Float>,
+    /// Normalized move weights with death probability set to zero.
     pub no_death: Vec<Float>,
+    /// Maximum segment count at which further birth moves are disabled.
     pub k_max: usize, 
 }
 impl MoveProbabilities {
 
+    /// Normalize move weights for ordinary, birth-disabled, and death-disabled proposals.
+    ///
+    /// Weights must be non-negative and every required sum must be positive.
+    /// `k_max` is the maximum segment count used when selecting a move.
     pub fn new(birth: Float, death: Float, time: Float, temp: Float , k_max: usize) -> Self{
         let total = birth + death + time + temp;
         let all:Vec<Float> = vec![ birth/total, death/total, time/total,temp/total];
@@ -447,6 +561,10 @@ impl MoveProbabilities {
             k_max: k_max
         }
     }
+    /// Sample a move, disabling death at one segment and birth at `k_max`.
+    ///
+    /// Weights must define a valid distribution and the segment count must stay
+    /// within the configured limits.
     pub fn choose_step(&self, rng: &mut impl Rng, k:usize) -> MoveKind{
 
         let index = if k == 1 {
@@ -462,31 +580,53 @@ impl MoveProbabilities {
 }
 
 #[derive(Debug, Clone)]
+/// Proposal widths in profile time and temperature units.
+///
+/// Time and temperature perturbations are Gaussian; birth uses scaled uniform
+/// draws for interpolation and temperature displacement.
 pub struct MoveSigmas{
+    /// Time interpolation scale used when inserting a node.
     pub time_birth: TimeFloat,
+    /// Temperature displacement width used when inserting a node.
     pub temp_birth: Float,
+    /// Gaussian time perturbation width in profile time units.
     pub time: TimeFloat, 
+    /// Gaussian temperature perturbation width in profile temperature units.
     pub temp: Float
 
 }
 impl MoveSigmas {
 
+    /// Store time/temperature widths for birth and single-node perturbations.
+    ///
+    /// Widths use the same units as the profile coordinates; no validation is performed.
     pub fn new(time_birth: TimeFloat, temp_birth:Float, time: TimeFloat, temp:Float) -> Self{  
         Self { time_birth, temp_birth, time, temp }
     }
 
+    /// Clone temperatures and add a Gaussian perturbation at index `k`.
+    ///
+    /// Requires a valid index; bounds are checked later by profile validation.
     pub fn temp(&self, k:usize, current_temps: &Vec<Float>, rng: &mut impl Rng) -> Vec<Float> {
         let mut temps = current_temps.clone();
         temps[k] += self.temp*generate_normal_random(rng);
         return temps;
     }
 
+    /// Clone times and add a Gaussian perturbation at index `k`.
+    ///
+    /// Requires a valid index; ordering and bounds are checked later.
     pub fn time(&self, k:usize, current_times: &Vec<TimeFloat> , rng: &mut impl Rng) -> Vec<TimeFloat> {
         let mut times = current_times.clone();
         times[k] += self.time*generate_normal_random(rng);
         return times;
     }
 
+    /// Insert a sampled point into the interval adjacent to anchor `k`.
+    ///
+    /// Returns cloned, extended coordinate vectors. The neighbour is `k + 1`
+    /// when the fixed endpoint is last and `k - 1` otherwise. Indices must be
+    /// valid; the proposed time and temperature still require constraint checks.
     pub fn birth(&self, k:usize, current_times: &Vec<TimeFloat>, 
         current_temps: &Vec<Float>, fixed_point_last: bool, rng: &mut impl Rng
     ) -> (Vec<TimeFloat>, Vec<Float>) 
@@ -510,6 +650,9 @@ impl MoveSigmas {
             
             (times, temps)
     }
+    /// Clone both coordinate vectors and remove node `k` from each.
+    ///
+    /// The caller must select a valid removable interior node.
     pub fn death(&self, k:usize, current_times: &Vec<TimeFloat>, 
         current_temps: &Vec<Float> )-> (Vec<TimeFloat>, Vec<Float>)  
     {
@@ -523,18 +666,30 @@ impl MoveSigmas {
 }
 
 #[derive(Debug, Clone)]
+/// Constraints and proposal settings for modifying the current thermal history.
 pub struct RandomWalkConstructor {
+    /// Allowed bounds for every profile time coordinate, in the setup time unit.
     pub age_range: (TimeFloat, TimeFloat),
+    /// Allowed temperature bounds in profile units.
     pub temp_range: (Float, Float),
+    /// Whether the protected time-zero endpoint is the last node (geological time).
     pub fixed_point_last: bool,
+    /// Whether walk proposals must continue to satisfy box constraints.
     pub maintain_constraint_boxes: bool,
+    /// Temperature ordering mode: `I` increasing, `D` decreasing, or `V` unrestricted.
     pub monotonicity: char,
+    /// Move-selection distributions including profile-size restrictions.
     pub move_probs: MoveProbabilities,
+    /// Widths used by birth and coordinate-perturbation proposals.
     pub move_sigmas: MoveSigmas,
 }
 
 impl RandomWalkConstructor{
 
+    /// Build walk bounds, move weights, and proposal scales from chronology inputs.
+    ///
+    /// Geological time units place the fixed time-zero point last. This method
+    /// currently wraps construction in `Ok` without validating weights or scales.
     pub fn new(inputs: &ChronologyInputs) -> Result<Self, String> {
         let move_probs = MoveProbabilities::new(
                                                 inputs.random_walk.p_birth, 
@@ -563,6 +718,7 @@ impl RandomWalkConstructor{
             }
         )
     }
+    /// Replace all walk settings, including the proposal scales tuned during burn-in.
     pub fn update_self(&mut self, new: RandomWalkConstructor) {
         self.age_range = new.age_range;
         self.temp_range= new.temp_range;
@@ -573,6 +729,10 @@ impl RandomWalkConstructor{
         self.move_sigmas = new.move_sigmas;
     }
 
+    /// Select an eligible node or birth anchor while protecting the fixed endpoint.
+    ///
+    /// Birth intervals are weighted by their duration, death chooses an interior
+    /// node, and perturbations exclude the fixed time-zero endpoint.
     fn pick_k(
         &self, 
         current_profile: &TimeTempProfile, 
@@ -608,6 +768,12 @@ impl RandomWalkConstructor{
 
     }
 
+    /// Propose one birth, death, time, or temperature move from the current profile.
+    ///
+    /// Returns `(trial, move_kind, changed_index)` without accepting or validating
+    /// the proposal. For birth, the index identifies the inserted point; for death,
+    /// it identifies the removed point in the old profile. The current profile is
+    /// left intact and must contain at least two points.
     pub fn construct_new_profile(&self, current_profile: &TimeTempProfile,  rng: &mut impl Rng
     )-> Result<(TimeTempProfile,MoveKind,usize), String> 
     {
@@ -647,12 +813,27 @@ impl RandomWalkConstructor{
 }
 
 
+/// Independent profile generator or a walk initialized by an independent generator.
 pub enum ProfileType{
-    Random {constructor: RandomProfileConstructor},
-    Walk   {constructor: RandomProfileConstructor, walker: RandomWalkConstructor}
+    /// Generate each trial independently from constraint boxes.
+    Random {
+        /// Independent-profile constructor and shared constraint validator.
+        constructor: RandomProfileConstructor,
+    },
+    /// Propose changes to a current profile, using independent generation for initialization.
+    Walk   {
+        /// Independent-profile constructor and shared constraint validator.
+        constructor: RandomProfileConstructor,
+        /// Proposal generator that modifies the current accepted profile.
+        walker: RandomWalkConstructor,
+    }
 }
 
 impl ProfileType {
+    /// Select independent random generation (`R`) or random-walk generation (`W`).
+    ///
+    /// Constructs the shared profile constraints and, for walks, proposal settings.
+    /// Unsupported generation flags and constructor errors are returned.
     pub fn new(inputs: &ChronologyInputs) -> Result<Self, String> {
         if !matches!(inputs.setup.profile_generation, 'R' | 'W' ) {
             return Err(format!("Invalid profile generation character: only R, and W are allowed, {} was entered",inputs.setup.profile_generation))
@@ -668,6 +849,10 @@ impl ProfileType {
             return Err(format!("Invalid profile generation character: only R, and W are allowed, {} was entered",inputs.setup.profile_generation))
         }
     }
+    /// Validate a proposal using constraints appropriate to the generation mode.
+    ///
+    /// Independent profiles use box and per-segment monotonicity checks; walks
+    /// use their configured box-preservation flag and global monotonicity.
     pub fn check_profile(&self, profile: &TimeTempProfile) -> bool {
         match self {
             ProfileType::Random { constructor } => {
@@ -693,6 +878,11 @@ impl ProfileType {
         }  
     } 
 
+    /// Generate and validate a proposal, returning `(profile, move_kind, changed_index)`.
+    ///
+    /// A constraint failure returns `None` for the profile and still consumes a
+    /// trial. A walk without a current profile starts from an independent proposal
+    /// and returns no move kind. Generation errors propagate.
     pub fn generate_next_profile(&self, current_profile: &Option<TimeTempProfile>, rng: &mut impl Rng
     ) -> Result<(Option<TimeTempProfile>, Option<MoveKind>, usize),String>{
 
@@ -746,6 +936,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// Verify that walk moves preserve the fixed endpoint in both directions.
     fn walk_moves_preserve_the_fixed_endpoint_in_both_directions() {
         for fixed_point_last in [true, false] {
             let current = TimeTempProfile {

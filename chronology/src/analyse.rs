@@ -15,12 +15,18 @@ use io::errors::PlotError;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Ascending physical bounds used for grid clipping and cell lookup.
 pub struct Bounds<T: Numeric> {
+    /// Lower physical bound.
     pub min: T,
+    /// Upper physical bound.
     pub max: T,
 }
 
 impl<T: Numeric> Bounds<T> {
+    /// Order two bounds and reject non-finite endpoints or a zero-width range.
+    ///
+    /// `name` identifies the axis in validation errors.
     fn new(a: T, b: T, name: &str) -> Result<Self, String> {
         let min = a.min(b);
         let max = a.max(b);
@@ -34,12 +40,16 @@ impl<T: Numeric> Bounds<T> {
         Ok(Self { min, max })
     }
 
+    /// Expand the bounds to include one additional value.
     fn include(&mut self, value: T) {
         self.min = self.min.min(value);
         self.max = self.max.max(value);
     }
 }
 
+/// Require at least two paired, finite time-temperature points.
+///
+/// Time ordering is validated separately against the grid time unit.
 fn validate_profile(profile: &TimeTempProfile) -> Result<(), String> {
     if profile.times.len() != profile.temps.len() {
         return Err(format!(
@@ -62,6 +72,7 @@ fn validate_profile(profile: &TimeTempProfile) -> Result<(), String> {
     Ok(())
 }
 
+/// Accumulate coordinate extrema, initializing the bounds from the first value.
 fn update_detected_bounds<T: Numeric>(values: &[T], bounds: &mut Option<Bounds<T>>) {
     for &value in values {
         match bounds {
@@ -175,6 +186,10 @@ fn clip_segment(
     ))
 }
 
+/// Map a coordinate inside inclusive bounds to a zero-based grid cell.
+///
+/// The overall upper edge belongs to the last cell; out-of-range values
+/// return `None`. Requires finite input, non-zero bounds width, and positive `cells`.
 fn cell_index<T: Numeric>(value: T, bounds: Bounds<T>, cells: usize) -> Option<usize> {
     let value = value.to_float();
     let min = bounds.min.to_float();
@@ -188,6 +203,10 @@ fn cell_index<T: Numeric>(value: T, bounds: Bounds<T>, cells: usize) -> Option<u
     Some(std::cmp::min(index, cells - 1))
 }
 
+/// Increment the containing cell once per profile, optionally recording touched cells.
+///
+/// Points outside the grid are ignored. `profile_number` must differ from the
+/// initial visitation marker; marker and weight slices must match the grid size.
 fn mark_point(
     time: TimeFloat,
     temperature: Float,
@@ -218,6 +237,7 @@ fn mark_point(
     }
 }
 
+/// Compare segment parameters with a scale-adjusted tolerance of 32 machine epsilons.
 fn same_parameter(left: TimeFloat, right: TimeFloat) -> bool {
     let scale = left.abs().max(right.abs()).max(1.0);
     (left - right).abs() <= 32.0 * TimeFloat::EPSILON * scale
@@ -319,6 +339,10 @@ fn rasterize_segment(
     }
 }
 
+/// Validate, clip, and rasterize one profile into the occupancy grid.
+///
+/// Each crossed cell gains at most one count for this profile. Time ordering
+/// must match the grid unit; malformed data or bounds return an error.
 fn add_profile(
     profile: &TimeTempProfile,
     grid: &mut ProfileGrid,
@@ -518,6 +542,7 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    /// Create a unique temporary file path for an isolated output test.
     fn temporary_output_path(label: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -530,11 +555,13 @@ mod tests {
         ))
     }
 
+    /// Create a chronology file with units and a batch of test profiles.
     fn write_profiles(path: &Path, profiles: &[TimeTempProfile]) {
         write_temporary_chronology_units(path, TimeUnit::Second, TemperatureUnit::Celsius).unwrap();
         append_profiles(path, profiles);
     }
 
+    /// Append test profile records with acceptance metadata to a chronology fixture.
     fn append_profiles(path: &Path, profiles: &[TimeTempProfile]) {
         let records: Vec<_> = profiles.iter().cloned().map(|profile| AcceptedProfile {
             profile,
@@ -544,6 +571,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that detects only bounds that were not supplied.
     fn detects_only_bounds_that_were_not_supplied() {
         let path = temporary_output_path("bounds");
         write_profiles(
@@ -574,6 +602,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that diagonal marks only the two cells it crosses.
     fn diagonal_marks_only_the_two_cells_it_crosses() {
         let path = temporary_output_path("diagonal");
         write_profiles(
@@ -601,6 +630,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that a profile contributes at most once to each cell.
     fn a_profile_contributes_at_most_once_to_each_cell() {
         let path = temporary_output_path("deduplicate");
         write_profiles(
@@ -634,6 +664,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that specified bounds clip segments without out of range indices.
     fn specified_bounds_clip_segments_without_out_of_range_indices() {
         let path = temporary_output_path("clip");
         write_profiles(
@@ -660,6 +691,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that rejects time order that disagrees with the unit.
     fn rejects_time_order_that_disagrees_with_the_unit() {
         let path = temporary_output_path("direction");
         write_profiles(
@@ -687,6 +719,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that geological time accepts decreasing profiles.
     fn geological_time_accepts_decreasing_profiles() {
         let path = temporary_output_path("geological");
         write_temporary_chronology_units(&path, TimeUnit::KAnnum, TemperatureUnit::Celsius)

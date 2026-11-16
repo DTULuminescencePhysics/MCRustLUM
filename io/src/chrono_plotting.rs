@@ -15,9 +15,22 @@ use std::str::FromStr;
 
 /// One lower/upper weighted-quantile interval drawn around the median path.
 #[derive(Debug, Clone, PartialEq)]
+///
+/// ```
+/// use io::chrono_plotting::QuantileBand;
+///
+/// let band = QuantileBand::central(0.90)?;
+/// assert!((band.lower - 0.05).abs() < 1e-12);
+/// assert!((band.upper - 0.95).abs() < 1e-12);
+/// assert!(QuantileBand::central(1.0).is_err());
+/// # Ok::<(), String>(())
+/// ```
 pub struct QuantileBand {
+    /// Lower quantile as a probability in `0..=1`.
     pub lower: Float,
+    /// Upper quantile, strictly greater than `lower` and at most one.
     pub upper: Float,
+    /// Human-readable legend label.
     pub label: String,
 }
 
@@ -57,8 +70,11 @@ impl QuantileBand {
 /// Rendering controls for a chronology heatmap.
 #[derive(Debug, Clone)]
 pub struct ProfileHeatmapOptions {
+    /// Raster width in pixels.
     pub width: u32,
+    /// Raster height in pixels.
     pub height: u32,
+    /// Title printed above the heatmap.
     pub caption: String,
     /// Intervals are drawn in this order, so place wider bands first.
     pub bands: Vec<QuantileBand>,
@@ -67,6 +83,7 @@ pub struct ProfileHeatmapOptions {
 }
 
 impl Default for ProfileHeatmapOptions {
+    /// Return a 1200 by 800 heatmap with 90% and 60% central bands and linear colours.
     fn default() -> Self {
         Self {
             width: 1200,
@@ -84,52 +101,69 @@ impl Default for ProfileHeatmapOptions {
 /// Optional known time-temperature path overlaid on the inferred paths.
 #[derive(Debug, Clone, Copy)]
 pub struct ProfilePath<'a> {
+    /// Time coordinates in the profile time unit, paired with temperature coordinates.
     pub times: &'a [TimeFloat],
+    /// Temperature coordinates paired with times, in the accompanying temperature unit.
     pub temperatures: &'a [Float],
 }
 /// Coordinates needed to draw a stored chronology profile.
 pub trait ProfileCoordinates {
+    /// Borrow time and temperature slices in their stored coordinate units.
     fn coordinates(&self) -> ProfilePath<'_>;
 }
 
 /// Parsed contents of `write_profile_grid_csv` output.
 #[derive(Debug, Clone)]
 pub struct ProfileGridCsv {
+    /// Number of accepted profiles contributing to this grid.
     pub accepted_profiles: u64,
     /// Start and end are retained in display order (`0 -> t` or `t -> 0`).
     pub time_start: TimeFloat,
+    /// Last displayed time; geological-age plots end at the younger bound.
     pub time_end: TimeFloat,
+    /// Time unit used to interpret the associated coordinates.
     pub time_unit: TimeUnit,
+    /// Lowest plotted temperature in the grid unit.
     pub temperature_min: Float,
+    /// Highest plotted temperature in the grid unit.
     pub temperature_max: Float,
+    /// Temperature unit used by this grid and associated profile coordinates.
     pub temperature_unit: TemperatureUnit,
+    /// Time coordinates of the representative profile selected from the accepted ensemble.
     pub best_fit_times: Vec<TimeFloat>,
+    /// Temperature coordinates paired with `best_fit_times`.
     pub best_fit_temperatures: Vec<Float>,
     /// Rows are stored high-temperature first, exactly as they appear in CSV.
     pub weights: Vec<Vec<u64>>,
 }
 
 impl ProfileGridCsv {
+    /// Return the number of displayed time columns, or zero for an empty grid.
     pub fn time_cells(&self) -> usize {
         self.weights.first().map_or(0, Vec::len)
     }
 
+    /// Return the number of displayed temperature rows.
     pub fn temperature_cells(&self) -> usize {
         self.weights.len()
     }
 
+    /// Return the signed time span per column; geological-time widths are negative.
     fn time_width(&self) -> TimeFloat {
         (self.time_end - self.time_start) / self.time_cells() as TimeFloat
     }
 
+    /// Return the positive temperature span per row of a validated grid.
     fn temperature_height(&self) -> Float {
         (self.temperature_max - self.temperature_min) / self.temperature_cells() as Float
     }
 
+    /// Return the time coordinate at the centre of a zero-based display column.
     fn time_centre(&self, column: usize) -> TimeFloat {
         self.time_start + (column as TimeFloat + 0.5) * self.time_width()
     }
 
+    /// Return the temperature at the centre of a row counted downward from the hottest row.
     fn temperature_centre(&self, row: usize) -> Float {
         self.temperature_max - (row as Float + 0.5) * self.temperature_height()
     }
@@ -155,6 +189,7 @@ impl ProfileGridCsv {
     }
 }
 
+/// Attach a file path and explanation to an invalid-data plotting error.
 fn invalid(path: &Path, message: impl Into<String>) -> PlotError {
     PlotError::InvalidData {
         path: path.to_path_buf(),
@@ -162,6 +197,7 @@ fn invalid(path: &Path, message: impl Into<String>) -> PlotError {
     }
 }
 
+/// Parse a required CSV metadata field and attach its name/path to errors.
 fn parse_field<T: std::str::FromStr>(
     path: &Path,
     value: Option<&str>,
@@ -173,11 +209,13 @@ fn parse_field<T: std::str::FromStr>(
         .map_err(|_| invalid(path, format!("invalid {name}")))
 }
 
+/// Parse a required time-unit field, returning a path-aware error for invalid input.
 fn parse_time_unit(path: &Path, value: Option<&str>) -> Result<TimeUnit, PlotError> {
     let value = value.ok_or_else(|| invalid(path, "missing time unit"))?;
     TimeUnit::from_str(value).map_err(|e| invalid(path, e))     
 }
 
+/// Parse a required temperature-unit field, returning a path-aware error for invalid input.
 fn parse_temperature_unit(path: &Path, value: Option<&str>) -> Result<TemperatureUnit, PlotError> {
     let value = value.ok_or_else(|| invalid(path, "missing temperature unit"))?;
     TemperatureUnit::from_str(value).map_err(|e| invalid(path, e))     
@@ -354,6 +392,7 @@ pub fn read_profile_grid_csv(path: impl AsRef<Path>) -> Result<ProfileGridCsv, P
 }
 
 
+/// Convert a plotting-backend failure into a drawing error carrying the output path.
 fn draw_error(path: &Path, error: impl std::fmt::Debug) -> PlotError {
     PlotError::Draw {
         path: path.to_path_buf(),
@@ -361,6 +400,7 @@ fn draw_error(path: &Path, error: impl std::fmt::Debug) -> PlotError {
     }
 }
 
+/// Reject zero image dimensions and invalid quantile bands before drawing.
 fn validate_options(output: &Path, options: &ProfileHeatmapOptions) -> Result<(), PlotError> {
     if options.width == 0 || options.height == 0 {
         return Err(invalid(output, "plot width and height must be non-zero"));
@@ -372,6 +412,7 @@ fn validate_options(output: &Path, options: &ProfileHeatmapOptions) -> Result<()
     Ok(())
 }
 
+/// Require finite paired overlay points with time ordering matching the grid unit.
 fn validate_overlay(
     output: &Path,
     path: ProfilePath<'_>,
@@ -624,6 +665,7 @@ pub fn plot_profile_grid_heatmap(
         .map_err(|error| draw_error(output_path, error))
 }
 
+/// Map a clamped intensity in `0..=1` through the blue-to-red heatmap colour stops.
 fn probability_colour(intensity: Float) -> RGBColor {
     let intensity = intensity.clamp(0.0, 1.0);
     let stops = [
@@ -648,6 +690,10 @@ fn probability_colour(intensity: Float) -> RGBColor {
     )
 }
 
+/// Draw a percentage-labelled colour scale up to `maximum_probability`.
+///
+/// Uses the same colour mapping as the heatmap and returns drawing failures
+/// with the output path.
 fn draw_probability_scale<DB: DrawingBackend>(
     area: &DrawingArea<DB, Shift>,
     output: &Path,
@@ -875,6 +921,7 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    /// Create a unique temporary path for a plotting test fixture.
     fn temporary_path(extension: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -889,6 +936,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that central intervals have the expected quantiles.
     fn central_intervals_have_the_expected_quantiles() {
         let outer = QuantileBand::central(0.90).unwrap();
         let inner = QuantileBand::central(0.60).unwrap();
@@ -900,6 +948,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that reads quantiles and renders reverse time heatmap.
     fn reads_quantiles_and_renders_reverse_time_heatmap() {
         let csv_path = temporary_path("csv");
         let png_path = temporary_path("png");

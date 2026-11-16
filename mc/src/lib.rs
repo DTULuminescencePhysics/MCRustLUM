@@ -33,13 +33,13 @@ use io::plotting::{plot_time_temperature, plot_default_continuous_results,plot_r
 
 /// Main call function to run the required Monte Carlo experiments
 
-pub fn monte_carlo_run(repetitions: usize, experiments: usize, minimum_traps: usize, event_bin_width: Option<TimeFloat>) -> Result<(), Box<dyn Error>> {
+pub fn monte_carlo_run(repetitions: usize, experiments: usize, event_bin_width: Option<TimeFloat>) -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let inputs = read_inputs("input.toml", experiments)?;
     eprintln!("read inputs:       {:?}", start.elapsed());
 
-    monte_carlo_experiment(&inputs, repetitions, experiments, minimum_traps)?;
+    monte_carlo_experiment(&inputs, repetitions, experiments)?;
 
     monte_carlo_result(&inputs, experiments, event_bin_width)?;
     Ok(())
@@ -47,11 +47,11 @@ pub fn monte_carlo_run(repetitions: usize, experiments: usize, minimum_traps: us
 }
 
 /// Main call function to run the required Monte Carlo experiments
-fn monte_carlo_experiment(inputs: &Vec<ResolvedExperiment>, repetitions: usize, experiments: usize, minimum_traps: usize) -> Result<(), Box<dyn Error>> {
+fn monte_carlo_experiment(inputs: &Vec<ResolvedExperiment>, repetitions: usize, experiments: usize) -> Result<(), Box<dyn Error>> {
 
 
     let start = Instant::now();
-    let mut monte_carlo = MonteCarloSimulation::new(&inputs, repetitions, experiments, minimum_traps)?;
+    let mut monte_carlo = MonteCarloSimulation::new(&inputs, repetitions, experiments)?;
     eprintln!("system setup:      {:?}", start.elapsed());
 
     let start = Instant::now();

@@ -5,7 +5,7 @@
 //! SI conversions and physical constants used by the transport equations.
 /// Internal scalar, square, and cubic SI prefix factors.
 ///
-/// These constants are currently reserved for future unit-aware geometry.
+/// These factors are used by unit parsing and quantity conversion.
 pub mod metric{
     use std::{fmt:: Debug, str::FromStr};    
 
@@ -88,26 +88,45 @@ pub mod metric{
     /// Cubed femto factor for volume conversions.
     const FEMTO_CUBE: f64 = FEMTO_SQ*FEMTO;
 
+    /// Metric prefix used to scale physical quantities, including the ångström length scale.
     #[derive(Debug, Clone, Copy, PartialEq)]
-    pub enum metric_abbrev {
+    pub enum MetricAbbrev {
+        /// Giga prefix (`10^9`).
         GIGA,
+        /// Mega prefix (`10^6`).
         MEGA,
+        /// Kilo prefix (`10^3`).
         KILO,
+        /// Hecto prefix (`10^2`).
         HECTO,
+        /// Deca prefix (`10^1`).
         DECA,
+        /// Deci prefix (`10^-1`).
         DECI,
+        /// Centi prefix (`10^-2`).
         CENTI,
+        /// Base unit without a prefix.
         STANDARD,
+        /// Milli prefix (`10^-3`).
         MILLI,
+        /// Micro prefix (`10^-6`).
         MICRO,
+        /// Nano prefix (`10^-9`).
         NANO,
+        /// Ångström length scale (`10^-10` metres).
         ANG,
+        /// Pico prefix (`10^-12`).
         PICO,
+        /// Femto prefix (`10^-15`).
         FEMTO,
     }
-     impl FromStr for metric_abbrev {
+     impl FromStr for MetricAbbrev {
         type Err = String;
 
+        /// Parse a case-insensitive prefix name; unrecognized names select `STANDARD`.
+        ///
+        /// This parser recognizes the names explicitly listed in its match table;
+        /// it does not reject unknown text.
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             match s.to_lowercase().as_str() {
                 "giga"   => Ok(Self::GIGA),
@@ -128,78 +147,85 @@ pub mod metric{
     }
 
 
-    impl metric_abbrev {
+    impl MetricAbbrev {
 
+        /// Return the display symbol for this prefix, or an empty string for the base unit.
         pub fn get_name(&self)-> &'static str {
             match self {
-                metric_abbrev::STANDARD => "",
-                metric_abbrev::GIGA => "G",
-                metric_abbrev::MEGA => "M",
-                metric_abbrev::KILO => "k",
-                metric_abbrev::HECTO => "h",
-                metric_abbrev::DECA => "da",
-                metric_abbrev::DECI => "d",
-                metric_abbrev::CENTI => "c",
-                metric_abbrev::MILLI => "m",
-                metric_abbrev::MICRO => "μ",
-                metric_abbrev::NANO => "n",
-                metric_abbrev::ANG => "Å",
-                metric_abbrev::PICO => "p",
-                metric_abbrev::FEMTO => "f",
+                MetricAbbrev::STANDARD => "",
+                MetricAbbrev::GIGA => "G",
+                MetricAbbrev::MEGA => "M",
+                MetricAbbrev::KILO => "k",
+                MetricAbbrev::HECTO => "h",
+                MetricAbbrev::DECA => "da",
+                MetricAbbrev::DECI => "d",
+                MetricAbbrev::CENTI => "c",
+                MetricAbbrev::MILLI => "m",
+                MetricAbbrev::MICRO => "μ",
+                MetricAbbrev::NANO => "n",
+                MetricAbbrev::ANG => "Å",
+                MetricAbbrev::PICO => "p",
+                MetricAbbrev::FEMTO => "f",
             }
         }
+        /// Return the configured linear prefix multiplier relative to the base unit.
         pub fn get_metric(&self)-> f64 {
             match self {
-                metric_abbrev::STANDARD => 1.0,
-                metric_abbrev::GIGA => GIGA,
-                metric_abbrev::MEGA => MEGA,
-                metric_abbrev::KILO => KILO,
-                metric_abbrev::HECTO => HECTO,
-                metric_abbrev::DECA => DECA,
-                metric_abbrev::DECI => DECI,
-                metric_abbrev::CENTI => CENTI,
-                metric_abbrev::MILLI => MILLI,
-                metric_abbrev::MICRO => MICRO,
-                metric_abbrev::NANO => NANO,
-                metric_abbrev::ANG => ANG,
-                metric_abbrev::PICO => PICO,
-                metric_abbrev::FEMTO => FEMTO,
+                MetricAbbrev::STANDARD => 1.0,
+                MetricAbbrev::GIGA => GIGA,
+                MetricAbbrev::MEGA => MEGA,
+                MetricAbbrev::KILO => KILO,
+                MetricAbbrev::HECTO => HECTO,
+                MetricAbbrev::DECA => DECA,
+                MetricAbbrev::DECI => DECI,
+                MetricAbbrev::CENTI => CENTI,
+                MetricAbbrev::MILLI => MILLI,
+                MetricAbbrev::MICRO => MICRO,
+                MetricAbbrev::NANO => NANO,
+                MetricAbbrev::ANG => ANG,
+                MetricAbbrev::PICO => PICO,
+                MetricAbbrev::FEMTO => FEMTO,
             }
         }
+        /// Return the configured squared-prefix multiplier used by area conversions.
         pub fn get_square_metric(&self)-> f64 {
             match self {
-                metric_abbrev::STANDARD => 1.0,
-                metric_abbrev::GIGA => GIGA_SQ,
-                metric_abbrev::MEGA => MEGA_SQ,
-                metric_abbrev::KILO => KILO_SQ,
-                metric_abbrev::HECTO => HECTO_SQ,
-                metric_abbrev::DECA => DECA_SQ,
-                metric_abbrev::DECI => DECI_SQ,
-                metric_abbrev::CENTI => CENTI_SQ,
-                metric_abbrev::MILLI => MILLI_SQ,
-                metric_abbrev::MICRO => MICRO_SQ,
-                metric_abbrev::NANO => NANO_SQ,
-                metric_abbrev::ANG => ANG_SQ,
-                metric_abbrev::PICO => PICO_SQ,
-                metric_abbrev::FEMTO => FEMTO_SQ,
+                MetricAbbrev::STANDARD => 1.0,
+                MetricAbbrev::GIGA => GIGA_SQ,
+                MetricAbbrev::MEGA => MEGA_SQ,
+                MetricAbbrev::KILO => KILO_SQ,
+                MetricAbbrev::HECTO => HECTO_SQ,
+                MetricAbbrev::DECA => DECA_SQ,
+                MetricAbbrev::DECI => DECI_SQ,
+                MetricAbbrev::CENTI => CENTI_SQ,
+                MetricAbbrev::MILLI => MILLI_SQ,
+                MetricAbbrev::MICRO => MICRO_SQ,
+                MetricAbbrev::NANO => NANO_SQ,
+                MetricAbbrev::ANG => ANG_SQ,
+                MetricAbbrev::PICO => PICO_SQ,
+                MetricAbbrev::FEMTO => FEMTO_SQ,
             }
         }
+        /// Return the volume-conversion multiplier stored for this prefix.
+        ///
+        /// The current `GIGA` branch returns 1.0; other branches use their cubed
+        /// prefix constants.
         pub fn get_cube_metric(&self)-> f64 {
             match self {
-                metric_abbrev::STANDARD => 1.0,
-                metric_abbrev::GIGA => 1.0,
-                metric_abbrev::MEGA => MEGA_CUBE,
-                metric_abbrev::KILO => KILO_CUBE,
-                metric_abbrev::HECTO => HECTO_CUBE,
-                metric_abbrev::DECA => DECA_CUBE,
-                metric_abbrev::DECI => DECI_CUBE,
-                metric_abbrev::CENTI => CENTI_CUBE,
-                metric_abbrev::MILLI => MILLI_CUBE,
-                metric_abbrev::MICRO => MICRO_CUBE,
-                metric_abbrev::NANO => NANO_CUBE,
-                metric_abbrev::ANG => ANG_CUBE,
-                metric_abbrev::PICO => PICO_CUBE,
-                metric_abbrev::FEMTO => FEMTO_CUBE,
+                MetricAbbrev::STANDARD => 1.0,
+                MetricAbbrev::GIGA => 1.0,
+                MetricAbbrev::MEGA => MEGA_CUBE,
+                MetricAbbrev::KILO => KILO_CUBE,
+                MetricAbbrev::HECTO => HECTO_CUBE,
+                MetricAbbrev::DECA => DECA_CUBE,
+                MetricAbbrev::DECI => DECI_CUBE,
+                MetricAbbrev::CENTI => CENTI_CUBE,
+                MetricAbbrev::MILLI => MILLI_CUBE,
+                MetricAbbrev::MICRO => MICRO_CUBE,
+                MetricAbbrev::NANO => NANO_CUBE,
+                MetricAbbrev::ANG => ANG_CUBE,
+                MetricAbbrev::PICO => PICO_CUBE,
+                MetricAbbrev::FEMTO => FEMTO_CUBE,
             }
         }
 
@@ -278,6 +304,7 @@ pub mod time{
     impl FromStr for TimeUnit {
         type Err = String;
 
+        /// Parse a time-unit name or supported geological-age alias; reject unknown names.
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             match s.to_lowercase().as_str() {
                 "second"   => Ok(Self::Second),
@@ -285,15 +312,14 @@ pub mod time{
                 "hour"     => Ok(Self::Hour),
                 "day"      => Ok(Self::Day),
                 "year"     => Ok(Self::Year),
-                "ka annum" => Ok(Self::KAnnum),
-                "ma annum" => Ok(Self::MaAnnum),
-                "kaannum" => Ok(Self::KAnnum),
-                "maannum" => Ok(Self::MaAnnum),
+                "ka annum" | "kaannum" | "ka_annum" | "ka" => Ok(Self::KAnnum),
+                "ma annum" | "maannum" | "ma_annum" | "ma" => Ok(Self::MaAnnum),
                 _ => Err(format!("Invalid TimeUnit: {s}")),
             }
         }
     }
     impl fmt::Display for TimeUnit {
+        /// Write the unit's human-readable display name or symbol to the formatter.
         fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             let name = match self {
                 TimeUnit::Second => "second",
@@ -329,6 +355,7 @@ pub mod time{
                 TimeUnit::MaAnnum => MA_ANNUM,
             }
         }
+        /// Return the human-readable time-unit name used in labels.
         pub fn get_name(&self) -> &'static str {
             match self {
                TimeUnit::Second => "second",
@@ -340,6 +367,10 @@ pub mod time{
                 TimeUnit::MaAnnum => "Ma",
             }
         }
+        /// Convert a scalar or container from `unit` into the target time unit `self`.
+        ///
+        /// Scales by source-seconds divided by target-seconds at time precision,
+        /// preserving container shape. Returns the element-wise operation's optional result.
         pub fn convert_unit<T>(&self, unit: &TimeUnit, value:T)-> Option<T::Output>
         where
             T: PrecisionInput<TimePrecision>,
@@ -416,6 +447,7 @@ pub mod temperature {
         Kelvin,
     }
     impl fmt::Display for TemperatureUnit {
+        /// Write the unit's human-readable display name or symbol to the formatter.
         fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             let name = match self {
                 TemperatureUnit::Celsius => "°C",
@@ -428,6 +460,7 @@ pub mod temperature {
     impl FromStr for TemperatureUnit {
         type Err = String;
 
+        /// Parse Kelvin/Celsius names or symbols without case sensitivity; reject unknown units.
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             match s.to_lowercase().as_str() {
                 "kelvin" | "k" => Ok(Self::Kelvin),
@@ -438,6 +471,11 @@ pub mod temperature {
     }
     impl TemperatureUnit {
 
+        /// Convert values using the source/target pair `(self, unit)` at program precision.
+        ///
+        /// The Celsius/Kelvin pair adds 273.15 and the reverse pair subtracts it;
+        /// equal units retain values. Container shape is preserved and conversion
+        /// returns the optional element-wise result.
         pub fn convert_unit<T>(&self, unit: &TemperatureUnit, value:T)-> Option<T::Output>
         where
             T: PrecisionInput<ProgramPrecision>,
@@ -460,6 +498,7 @@ pub mod temperature {
 
         }   
 
+        /// Return `°C` or `K` for temperature labels.
         pub fn get_name(&self) -> &'static str {
             match self {
                 TemperatureUnit::Celsius => "°C",
@@ -483,18 +522,21 @@ pub mod quantities{
         BoundedExponentialRandom, GaussianRandom,
         generate_bounded_exponential_random, generate_gaussian_random,
     };
-    use crate::constants::metric::metric_abbrev;
+    use crate::constants::metric::MetricAbbrev;
     use serde::{Deserialize, Deserializer};
     use std::{fmt, str::FromStr};        
     use rand::Rng;
 
-    /// A scalar or container whose values support unit conversion.
+    /// Energy unit attached to an energy dimension.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum EnergyUnit {
+        /// Energy in joules.
         Joule,
+        /// Energy in electron volts.
         ElectronVolt,
     }
     impl EnergyUnit {
+        /// Return `J` or `eV` for energy labels.
         pub fn get_name(&self,) -> &'static str {
             match self {
                 EnergyUnit::Joule => "J",
@@ -503,6 +545,10 @@ pub mod quantities{
             }
         }
         
+        /// Convert values from energy unit `self` to `unit`, preserving container shape.
+        ///
+        /// Electron volts to joules multiply by `EV_TO_J`; the reverse divides by it.
+        /// Equal units retain values. Returns the optional element-wise result.
         pub fn convert_unit<T>(&self, unit: EnergyUnit, value:T)-> Option<T::Output>
         where
             T: PrecisionInput<ProgramPrecision>,
@@ -522,22 +568,42 @@ pub mod quantities{
         }
     }
     
+    /// Scalar or mutable container supporting in-place affine unit conversion.
+    ///
+    /// Container implementations apply the same scale and offset recursively
+    /// to their elements.
     pub trait UnitValue {
+        /// Replace each scalar value with `value * scale + offset` in place.
+        ///
+        /// Container implementations preserve shape and recurse through elements;
+        /// `f32` results are cast back after calculation in `f64`.
         fn apply_conversion(&mut self, scale: f64, offset: f64);
     }
 
     impl UnitValue for f64 {
+        /// Replace each scalar value with `value * scale + offset` in place.
+        ///
+        /// Container implementations preserve shape and recurse through elements;
+        /// `f32` results are cast back after calculation in `f64`.
         fn apply_conversion(&mut self, scale: f64, offset: f64) {
             *self = *self * scale + offset;
         }
     }
     impl UnitValue for f32 {
+        /// Replace each scalar value with `value * scale + offset` in place.
+        ///
+        /// Container implementations preserve shape and recurse through elements;
+        /// `f32` results are cast back after calculation in `f64`.
         fn apply_conversion(&mut self, scale: f64, offset: f64) {
             *self = (f64::from(*self) * scale + offset) as f32;
         }
     }
 
     impl<T: UnitValue> UnitValue for Vec<T> {
+        /// Replace each scalar value with `value * scale + offset` in place.
+        ///
+        /// Container implementations preserve shape and recurse through elements;
+        /// `f32` results are cast back after calculation in `f64`.
         fn apply_conversion(&mut self, scale: f64, offset: f64) {
             for value in self {
                 value.apply_conversion(scale, offset);
@@ -546,6 +612,10 @@ pub mod quantities{
     }
 
     impl<T: UnitValue, const N: usize> UnitValue for [T; N] {
+        /// Replace each scalar value with `value * scale + offset` in place.
+        ///
+        /// Container implementations preserve shape and recurse through elements;
+        /// `f32` results are cast back after calculation in `f64`.
         fn apply_conversion(&mut self, scale: f64, offset: f64) {
             for value in self {
                 value.apply_conversion(scale, offset);
@@ -560,6 +630,10 @@ pub mod quantities{
         S: ndarray::DataMut<Elem = T>,
         D: ndarray::Dimension,
     {
+        /// Replace each scalar value with `value * scale + offset` in place.
+        ///
+        /// Container implementations preserve shape and recurse through elements;
+        /// `f32` results are cast back after calculation in `f64`.
         fn apply_conversion(&mut self, scale: f64, offset: f64) {
             for value in self.iter_mut() {
                 value.apply_conversion(scale, offset);
@@ -567,7 +641,7 @@ pub mod quantities{
         }
     }
 
-    /// Explicit definition of 
+    /// Physical dimension and, where needed, its concrete time, temperature, or energy unit.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Dimension {
         /// No dimension 
@@ -585,17 +659,38 @@ pub mod quantities{
         /// Number of something per volume
         Density,
         /// Time in any unit amount
-        Time {kind: time::TimeUnit},
+        Time {
+            /// Concrete unit used within this physical dimension.
+            kind: time::TimeUnit,
+        },
         /// Reciprocal of time
-        Frequency {kind: time::TimeUnit},
+        Frequency {
+            /// Concrete unit used within this physical dimension.
+            kind: time::TimeUnit,
+        },
         /// Temperature in celsius or kelvin
-        Temperature { kind: temperature::TemperatureUnit},
+        Temperature {
+            /// Concrete unit used within this physical dimension.
+            kind: temperature::TemperatureUnit,
+        },
         /// Energy 
-        Energy{ kind: EnergyUnit},
+        Energy{
+            /// Concrete unit used within this physical dimension.
+            kind: EnergyUnit,
+        },
         /// Dose in some scaled number of Gy
         Dose,
         /// Dose per time
-        DoseRate {kind: time::TimeUnit},
+        DoseRate {
+            /// Concrete unit used within this physical dimension.
+            kind: time::TimeUnit,
+        },
+    }
+    impl Dimension {
+        /// Return whether dimensions share a variant, ignoring their embedded unit choices.
+        pub fn same_kind(&self, other: &Self) -> bool {
+            std::mem::discriminant(self) == std::mem::discriminant(other)
+        }
     }
 
     /// Holds information about the unit and how it is scaled
@@ -603,7 +698,7 @@ pub mod quantities{
     pub struct Unit {
         /// Holds the metric type milli, mega etc. 
         /// or the time unit 
-        pub metric: metric_abbrev,
+        pub metric: MetricAbbrev,
         /// Holds the type of dimension the unit is
         pub dimension: Dimension, 
     }
@@ -611,6 +706,11 @@ pub mod quantities{
     impl FromStr for Unit {
         type Err = String;
 
+        /// Parse a physical-unit expression after normalizing whitespace and ASCII case.
+        ///
+        /// Recognizes dimensionless values, time/temperature/energy units, metric
+        /// prefixes, and supported inverse/dose-rate forms. Unsupported expressions
+        /// return an error.
         fn from_str(input: &str) -> Result<Self, Self::Err> {
 
             // Normalize capitalization and whitespace.
@@ -622,43 +722,43 @@ pub mod quantities{
 
             match normalised.as_str() {
                 "" | "1" => Ok(Self {
-                                metric: metric_abbrev::STANDARD,
+                                metric: MetricAbbrev::STANDARD,
                                 dimension: Dimension::Dimensionless,
                             }),
                 "second" => Ok(Self {
-                                metric: metric_abbrev::STANDARD,
+                                metric: MetricAbbrev::STANDARD,
                                 dimension: Dimension::Time {kind: time::TimeUnit::Second},
                                 }),
                 "minute" => Ok(Self {
-                                metric: metric_abbrev::STANDARD,
+                                metric: MetricAbbrev::STANDARD,
                                 dimension: Dimension::Time {kind: time::TimeUnit::Minute},
                             }),
                 "hour" => Ok(Self {
-                                metric: metric_abbrev::STANDARD,
+                                metric: MetricAbbrev::STANDARD,
                                 dimension: Dimension::Time {kind: time::TimeUnit::Hour},
                         }),
                 "day" => Ok(Self {
-                                    metric: metric_abbrev::STANDARD,
+                                    metric: MetricAbbrev::STANDARD,
                                     dimension: Dimension::Time {kind: time::TimeUnit::Day},
                          }),
                 "year"     => Ok(Self {
-                            metric: metric_abbrev::STANDARD,
+                            metric: MetricAbbrev::STANDARD,
                             dimension: Dimension::Time {kind: time::TimeUnit::Year},
                         }),
-                "ka annum" | "kaannum" | "ka" => Ok(Self {
-                            metric: metric_abbrev::STANDARD,
+                "ka annum" | "kaannum" | "ka" | "ka_annum" => Ok(Self {
+                            metric: MetricAbbrev::STANDARD,
                             dimension: Dimension::Time {kind: time::TimeUnit::KAnnum},
                                 }),
-                "ma annum" | "maannum" | "ma" => Ok(Self {
-                            metric: metric_abbrev::STANDARD,
+                "ma annum" | "maannum" | "ma" | "ma_annum" => Ok(Self {
+                            metric: MetricAbbrev::STANDARD,
                             dimension: Dimension::Time {kind: time::TimeUnit::MaAnnum},
                         }),
                 "kelvin" | "k" => Ok(Self {
-                            metric: metric_abbrev::STANDARD,
+                            metric: MetricAbbrev::STANDARD,
                             dimension: Dimension::Temperature {kind: temperature::TemperatureUnit::Kelvin},
                         }),
                 "celsius" | "c" => Ok(Self {
-                            metric: metric_abbrev::STANDARD,
+                            metric: MetricAbbrev::STANDARD,
                             dimension: Dimension::Temperature{kind: temperature::TemperatureUnit::Kelvin},
                         }),
                 _ => {
@@ -729,10 +829,10 @@ pub mod quantities{
                                 "year" if time.is_none() => {
                                     time = Some("year")
                                 }
-                                "kaannum" | "ka_annum" | "ka" if time.is_none() => {
+                                "kaannum" | "ka_annum" | "ka" | "ka_annum" if time.is_none() => {
                                     time = Some("Ka")
                                 }
-                                "maannum" | "ma_annum" | "ma" if time.is_none() => {
+                                "maannum" | "ma_annum" | "ma" | "ma_annum" if time.is_none() => {
                                     time = Some("Ma")
                                 }
 
@@ -763,8 +863,7 @@ pub mod quantities{
                         let power = power.unwrap_or(1);
                         let contains_slash = contains_slash.unwrap_or(false);
                         let time = time.unwrap_or("");
-                        let metric = metric_abbrev::from_str(metric.unwrap_or(""))?;
-
+                        let metric = MetricAbbrev::from_str(metric.unwrap_or(""))?;
                         let dimension =  if key_unit_word == "metre" {
                             match (reciprocal, power) {
                                 (false, 1) => Dimension::Length,
@@ -781,18 +880,18 @@ pub mod quantities{
                             Dimension::Energy{kind: EnergyUnit::Joule}
                         } else if key_unit_word == "gy" {
                             if contains_slash{
-                                Dimension::Dose
-                            }else {
                                 Dimension::DoseRate{ kind: time::TimeUnit::from_str(time)?}
+                            }else {
+                                Dimension::Dose   
                             }
                         }else if key_unit_word == "celsius" {
                             return Ok(Self {
-                                metric: metric_abbrev::STANDARD,
+                                metric: MetricAbbrev::STANDARD,
                                 dimension: Dimension::Temperature {kind: temperature::TemperatureUnit::Celsius},
                             })
                         } else if key_unit_word == "kelvin" {
                             return Ok(Self {
-                                metric: metric_abbrev::STANDARD,
+                                metric: MetricAbbrev::STANDARD,
                                 dimension: Dimension::Temperature {kind: temperature::TemperatureUnit::Kelvin},
                             })
                         } else {
@@ -813,6 +912,10 @@ pub mod quantities{
 
     impl Unit {
 
+        /// Return this dimension's stored base-unit scale or prefix power.
+        ///
+        /// Reciprocal dimensions use the same positive scale here; conversion logic
+        /// handles whether that scale multiplies or divides the quantity.
         fn get_scaler(&self) -> f64 {
             match self.dimension {
                 Dimension::Dimensionless => 1.0,
@@ -830,6 +933,9 @@ pub mod quantities{
                 Dimension::Dose => self.metric.get_metric(),
             }
         }
+        /// Extract the time unit from a time, frequency, or dose-rate dimension.
+        ///
+        /// Returns an error for dimensions that contain no time unit.
         pub fn get_time_unit(&self) -> Result<TimeUnit,String> {
 
             match self.dimension {
@@ -843,6 +949,7 @@ pub mod quantities{
 
             }
         } 
+        /// Extract the temperature unit, or return an error for a different dimension.
         pub fn get_temperature_unit(&self) -> Result<TemperatureUnit,String>{
              match self.dimension {
 
@@ -858,6 +965,7 @@ pub mod quantities{
 
     }
     impl<'de> Deserialize<'de> for Unit {
+        /// Deserialize a unit string through the shared parser and report invalid expressions.
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
@@ -868,6 +976,7 @@ pub mod quantities{
         }
     }
     impl fmt::Display for Unit {
+        /// Write the unit's human-readable display name or symbol to the formatter.
         fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 
              let (name, name2,name3)= match self.dimension {
@@ -911,7 +1020,7 @@ pub mod quantities{
             };
 
             let name = match self.metric {
-                metric_abbrev::ANG => {
+                MetricAbbrev::ANG => {
                     format!("{name}{name3}")
                 },
                 _ => {
@@ -950,13 +1059,16 @@ pub mod quantities{
             use Dimension::*;
             let source = self.unit.dimension;
             let target = new_unit.dimension;
-            if self.unit.dimension != new_unit.dimension {
+            if !self.unit.dimension.same_kind(&new_unit.dimension) {
                 return Err(format!("Attempting to convert between {} and {} ",self.unit, new_unit));
             }
 
             let (scale, offset) = match (source, target) {
                 (Temperature{kind}, Temperature{kind:kind_new}) => {
                     let offset = kind.convert_unit(&kind_new, 0.0).ok_or("err")?;
+                    if offset == 0.0{
+                        return Ok(());
+                    }
                     (0.0, offset)
                 },
 
@@ -994,6 +1106,7 @@ pub mod quantities{
             };
 
             if !scale.is_finite() || scale <= 0.0 {
+                println!("{:?}, {:?}", self.unit.dimension, new_unit.dimension);
                 return Err(format!("invalid unit conversion scale: {scale}"));
             }
 
@@ -1088,6 +1201,7 @@ mod tests {
     use crate::numeric::Float;
 
     #[test]
+    /// Verify that converts celsius to kelvin at program precision.
     fn converts_celsius_to_kelvin_at_program_precision() {
         let temperature = TemperatureUnit::Celsius.convert_unit(&TemperatureUnit::Kelvin, 20.0_f32).unwrap();
 
@@ -1095,6 +1209,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that converts temperature vectors to kelvin.
     fn converts_temperature_vectors_to_kelvin() {
         let temperatures = TemperatureUnit::Celsius.convert_unit(&TemperatureUnit::Kelvin, vec![0_i32, 100_i32]).unwrap();
 
@@ -1103,6 +1218,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that preserves kelvin values while converting precision.
     fn preserves_kelvin_values_while_converting_precision() {
         let temperature = TemperatureUnit::Kelvin.convert_unit(&TemperatureUnit::Kelvin, 300.0_f32).unwrap();
 
@@ -1111,6 +1227,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that converts kelvin to celsius for scalars and vectors.
     fn converts_kelvin_to_celsius_for_scalars_and_vectors() {
         let scalar = TemperatureUnit::Kelvin.convert_unit(&TemperatureUnit::Celsius, 373.15_f64).unwrap();
         let vector = TemperatureUnit::Kelvin.convert_unit(&TemperatureUnit::Celsius, vec![273.15_f64, 293.15, 373.15],).unwrap();
@@ -1126,6 +1243,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that temperature units parse and display consistently.
     fn temperature_units_parse_and_display_consistently() {
         assert_eq!("kelvin".parse(), Ok(TemperatureUnit::Kelvin));
         assert_eq!("celsius".parse(), Ok(TemperatureUnit::Celsius));
@@ -1134,6 +1252,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that time units display with human readable names.
     fn time_units_display_with_human_readable_names() {
         let names = [
             (TimeUnit::Second, "second"),
@@ -1151,6 +1270,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that time multipliers and seconds cover short and geological units.
     fn time_multipliers_and_seconds_cover_short_and_geological_units() {
         assert!(matches!(
             unit_multiplier(TimeUnit::Hour),

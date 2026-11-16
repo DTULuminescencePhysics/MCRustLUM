@@ -2,6 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
+//! Connect profile proposals, forward simulations, acceptance, and result storage.
+//!
+//! A run may tune a Bayesian walker first, then evaluate production proposals
+//! and flush accepted profiles to the configured compressed output file.
+
 use crate::profiles::{ProfileType, TimeTempProfile,MoveKind};
 use crate::acceptance::{AcceptanceConstructor, AcceptorType};
 use crate::burn_in::BurnInApparatus;
@@ -14,6 +19,9 @@ use rand::Rng;
 use common::random::get_std_rng_for_rep;
 use std::path::Path;
 
+/// Profile generator, acceptance state, and forward Monte Carlo model for inference.
+///
+/// Coordinates are interpreted using the chronology time and temperature units.
 pub struct ChronologyExperiment{
     generator:ProfileType ,
     acceptor:AcceptanceConstructor,
@@ -25,17 +33,20 @@ pub struct ChronologyExperiment{
 
 impl ChronologyExperiment {
 
+    /// Build the proposal generator, acceptor, and forward model from resolved inputs.
+    ///
+    /// `repetitions` controls independent trajectories per experiment; `experiments`
+    /// selects configurations. Configuration and model construction errors propagate.
     pub fn setup( profile_inputs: &ChronologyInputs, 
                   inputs: &Vec<ResolvedExperiment>, 
                   repetitions: usize, 
                   experiments: usize, 
-                  minimum_traps:usize) 
-        -> Result<Self,String>
+    ) -> Result<Self,String>
     {
         
         let generator = ProfileType::new(profile_inputs)?;
         let acceptor= AcceptanceConstructor::new(profile_inputs)?;
-        let monte_carlo = MonteCarloSimulation::new(inputs, repetitions, experiments, minimum_traps)?;
+        let monte_carlo = MonteCarloSimulation::new(inputs, repetitions, experiments)?;
 
         
         Ok(Self{
@@ -49,6 +60,12 @@ impl ChronologyExperiment {
 
     }
     
+    /// Evaluate up to `trial_num` proposals and persist accepted profiles.
+    ///
+    /// Creates/replaces the chronology file in the existing output directory.
+    /// Invalid proposals count toward the trial limit but skip forward simulation.
+    /// The current Bayesian walk profile is updated by acceptance; remaining
+    /// records are flushed on success. Generation, simulation, and I/O errors propagate.
     pub fn run_experiment(
         &mut self, 
         trial_num: usize, 
@@ -92,6 +109,13 @@ impl ChronologyExperiment {
 
     }
 
+    /// Tune Bayesian walk proposal scales and return the final current profile.
+    ///
+    /// Requires a Bayesian walk setup and positive window/stability limits.
+    /// Evaluates a starting profile, then adapts scales until convergence or the
+    /// window limit. Copies tuned scales into the generator and acceptance rule.
+    /// Invalid settings, failed initialization, and simulation errors are returned.
+    /// No production output file is configured by this method.
     pub fn run_burn_in(
         &mut self, 
         inputs: &ChronologyInputs, 
@@ -189,6 +213,11 @@ impl ChronologyExperiment {
     }
 
 
+    /// Seed profile generation, optionally tune a Bayesian walk, then run inference.
+    ///
+    /// `seed` identifies a stream derived from the global base seed. Burn-in
+    /// runs only when enabled for Bayesian walk generation. Production output
+    /// is written under the existing `tmp/` directory; errors propagate.
     pub fn run(
         &mut self, 
         inputs: &ChronologyInputs, 

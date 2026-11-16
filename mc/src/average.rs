@@ -382,6 +382,10 @@ impl AverageFillRows {
 impl Iterator for AverageFillRows {
     type Item = Result<ContinuousValueRow, String>;
 
+    /// Merge the next union time, carrying each repetition's fill forward before averaging.
+    ///
+    /// Yields a row with filling statistics and the mean temperature recorded at
+    /// that time, or a contextual input error; stops at exhaustion.
     fn next(&mut self) -> Option<Self::Item> {
         if self.finished {
             return None;
@@ -435,6 +439,9 @@ struct RollingAverageFillRows {
 impl Iterator for RollingAverageFillRows {
     type Item = Result<RollingAverageFillRow, String>;
 
+    /// Return cumulative fill statistics at each repetition checkpoint for the next union time.
+    ///
+    /// Advances the shared merge first so every repetition is sampled at the same time.
     fn next(&mut self) -> Option<Self::Item> {
         // Advancing the existing iterator updates every cursor to the same
         // union time, including carrying unchanged fills forward.
@@ -1006,6 +1013,7 @@ mod tests {
 
     static NEXT_TEMPORARY_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
+    /// Create a uniquely named temporary directory for an isolated averaging test.
     fn temporary_directory() -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1022,6 +1030,7 @@ mod tests {
         directory
     }
 
+    /// Build a recorded state with supplied time and filling for averaging tests.
     fn record(time: TimeFloat, temperature: Float, fill: Float) -> RecordedEvent {
         RecordedEvent {
             time,
@@ -1031,6 +1040,7 @@ mod tests {
         }
     }
 
+    /// Build a recorded transition event for event-binning tests.
     fn event_record(time: TimeFloat, event: Event) -> RecordedEvent {
         RecordedEvent {
             time,
@@ -1040,6 +1050,7 @@ mod tests {
         }
     }
 
+    /// Write a repetition's test records using the production compressed-batch writer.
     fn write_records(path: &Path, records: &[RecordedEvent]) {
         create_monte_carlo_experiment_file(path).unwrap();
         for batch in records.chunks(2) {
@@ -1048,6 +1059,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that unions times and carries each fill forward before averaging.
     fn unions_times_and_carries_each_fill_forward_before_averaging() {
         let directory = temporary_directory();
         let temporary_directory = directory.join("tmp");
@@ -1105,6 +1117,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that preserves reverse simulation order.
     fn preserves_reverse_simulation_order() {
         let directory = temporary_directory();
         let temporary_directory = directory.join("tmp");
@@ -1148,6 +1161,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that bins events and averages counts over repetitions.
     fn bins_events_and_averages_counts_over_repetitions() {
         let directory = temporary_directory();
         let temporary_directory = directory.join("tmp");
@@ -1239,6 +1253,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that bounds automatic bins for geological times.
     fn bounds_automatic_bins_for_geological_times() {
         let directory = temporary_directory();
         let temporary_directory = directory.join("tmp");
@@ -1285,6 +1300,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that rejects an explicit width that would create too many bins.
     fn rejects_an_explicit_width_that_would_create_too_many_bins() {
         let half_ma = time::convert_to_seconds(TimeUnit::MaAnnum, 0.5).unwrap();
         let error = event_bin_count(0.0, half_ma, MINIMUM_EVENT_BIN_WIDTH).unwrap_err();
@@ -1293,6 +1309,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that separates fill and event outputs by experiment.
     fn separates_fill_and_event_outputs_by_experiment() {
         let directory = temporary_directory();
         let temporary_directory = directory.join("tmp");

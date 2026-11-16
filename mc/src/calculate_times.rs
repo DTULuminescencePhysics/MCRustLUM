@@ -892,9 +892,9 @@ pub fn run_final_ratio_only(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::constants::time::TimeUnit;
     use common::trap_hole_band_tail::{Coord, TrapParameters};
 
+    /// Build a transition selection with the requested pathways for an event test.
     fn selected_transitions(
         localised_recombination: bool,
         localised_retrapping: bool,
@@ -914,6 +914,7 @@ mod tests {
         .unwrap()
     }
 
+    /// Construct representative trap parameters for event-selection tests.
     fn parameters() -> TrapParameterLayout {
         TrapParameterLayout::Uniform{parameters: TrapParameters::new(
             "trap 1".to_string(),
@@ -931,6 +932,7 @@ mod tests {
         )}
     }
 
+    /// Construct sites, occupancy partitions, and geometry for capture-selection tests.
     fn delocalised_test_state() -> (ElectronPlaces, PlaceAvailability, PlaceAvailability, Cube) {
         let places = ElectronPlaces::new_standard(
             vec![
@@ -950,6 +952,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that candidate builders add ground and excited candidates.
     fn candidate_builders_add_ground_and_excited_candidates() {
         let source = PlaceId::new(0).unwrap();
         let destination = PlaceId::new(1).unwrap();
@@ -1030,6 +1033,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that filling is one aggregate candidate with one sampled time.
     fn filling_is_one_aggregate_candidate_with_one_sampled_time() {
         let inputs = FillingTransitionInputs::get_inputs(
             4.0,
@@ -1051,6 +1055,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that filling candidate uses the configured dose rate.
     fn filling_candidate_uses_the_configured_dose_rate() {
         let inputs = FillingTransitionInputs::get_inputs(
             4.0,
@@ -1067,6 +1072,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that delocalised outcome uses retrapping layout and updates selected destination.
     fn delocalised_outcome_uses_retrapping_layout_and_updates_selected_destination() {
         let source = PlaceId::new(0).unwrap();
         let hole = PlaceId::new(0).unwrap();

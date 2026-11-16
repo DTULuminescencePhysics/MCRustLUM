@@ -178,6 +178,7 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    /// Create a temporary working-directory fixture containing a minimal input file.
     fn temporary_starting_directory(label: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -199,6 +200,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that named experiment contains tmp and an input copy.
     fn named_experiment_contains_tmp_and_an_input_copy() {
         let starting_directory = temporary_starting_directory("named");
 
@@ -223,6 +225,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that unnamed experiments use the first available number.
     fn unnamed_experiments_use_the_first_available_number() {
         let starting_directory = temporary_starting_directory("numbered");
         fs::create_dir(starting_directory.join("run")).unwrap();
@@ -238,6 +241,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that rejects nested names and existing named experiments.
     fn rejects_nested_names_and_existing_named_experiments() {
         let starting_directory = temporary_starting_directory("invalid");
 
@@ -256,6 +260,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that missing input does not consume an experiment number.
     fn missing_input_does_not_consume_an_experiment_number() {
         let starting_directory = temporary_starting_directory("missing_input");
         fs::remove_file(starting_directory.join("input.toml")).unwrap();

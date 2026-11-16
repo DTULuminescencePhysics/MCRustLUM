@@ -62,23 +62,23 @@ periodic = true
 ####################################################################################################################################
 
 [time_temperature.i]
-times =        {value = [  0.5, 0.0], unit = "ma_annum"}
+times =        {value = [  0.5, 0.0], unit = "ma"}
 temperatures = {value = [25.0, 25.0], unit = "celsius"}
 
 [time_temperature.ii]
-times =        {value = [ 0.5, 0.11,  0.1,  0.0], unit = "ma_annum"}
+times =        {value = [ 0.5, 0.11,  0.1,  0.0], unit = "ma"}
 temperatures = {value = [85.0, 85.0, 25.0, 25.0], unit = "celsius"}
 [time_temperature.iii]
-times =        {value = [  0.5, 0.18 ,  0.0], unit = "ma_annum"}
+times =        {value = [  0.5, 0.18 ,  0.0], unit = "ma"}
 temperatures = {value = [100.0, 100.0, 25.0], unit = "celsius"}
 [time_temperature.iv]
-times =        {value = [  0.5,  0.21, 0.19,  0.1, 0.09,  0.0], unit = "ma_annum"}
+times =        {value = [  0.5,  0.21, 0.19,  0.1, 0.09,  0.0], unit = "ma"}
 temperatures = {value = [25.0, 25.0], unit = "celsius"}
 [time_temperature.v]
-times =        {value = [130.0, 130.0, 80.0, 80.0, 25.0, 25.0], unit = "ma_annum"}
+times =        {value = [130.0, 130.0, 80.0, 80.0, 25.0, 25.0], unit = "ma"}
 temperatures = {value = [25.0, 25.0], unit = "celsius"}
 [time_temperature.vi]
-times =        {value = [  0.5,   0.3,  0.29,   0.2, 0.19,  0.1, 0.09, 0.02,  0.0], unit = "ma_annum"}
+times =        {value = [  0.5,   0.3,  0.29,   0.2, 0.19,  0.1, 0.09, 0.02,  0.0], unit = "ma"}
 temperatures = {value = [140.0, 140.0, 100.0, 100.0, 80.0, 80.0, 45.0, 45.0, 25.0], unit = "celsius"}
 
 
@@ -95,8 +95,8 @@ s_ground_to_excited_frequency = {value = 9.0e10, unit = "1 / second", distribute
 s_excited_to_ground_frequency = {value = 9.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_ground_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_excited_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
-alpha_ground_state_barrier_constant = {value = 1.1e13, unit = "1 / metre cube", distribute = false, function = {kind="gaussian", sigma=0} } 
-alpha_excited_state_barrier_constant = {value = 1.1e10, unit = "1 / metre cube", distribute = false, function = {kind="gaussian", sigma=0} }
+alpha_ground_state_barrier_constant = {value = 1.1e13, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
+alpha_excited_state_barrier_constant = {value = 1.1e10, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_state_to_conduction_band_frequency = {value = 2.4e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_state_to_conduction_band_frequency = {value = 2.4e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 
@@ -109,8 +109,8 @@ s_ground_to_excited_frequency = {value = 9.0e10, unit = "1 / second", distribute
 s_excited_to_ground_frequency = {value = 9.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_ground_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_excited_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
-alpha_ground_state_barrier_constant = {value = 1.6e9, unit = "1 / metre cube", distribute = false, function = {kind="gaussian", sigma=0} } 
-alpha_excited_state_barrier_constant = {value = 1.1e9, unit = "1 / metre cube", distribute = false, function = {kind="gaussian", sigma=0} }
+alpha_ground_state_barrier_constant = {value = 1.6e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
+alpha_excited_state_barrier_constant = {value = 1.1e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_state_to_conduction_band_frequency= {value = 1.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_state_to_conduction_band_frequency = {value = 1.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 
@@ -123,8 +123,8 @@ s_ground_to_excited_frequency = {value = 9.0e10, unit = "1 / second", distribute
 s_excited_to_ground_frequency = {value = 9.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_ground_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_excited_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
-alpha_ground_state_barrier_constant = {value = 1.6e9, unit = "1 / metre cube", distribute = false, function = {kind="gaussian", sigma=0} } 
-alpha_excited_state_barrier_constant = {value = 1.1e9, unit = "1 / metre cube", distribute = false, function = {kind="gaussian", sigma=0} }
+alpha_ground_state_barrier_constant = {value = 1.6e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
+alpha_excited_state_barrier_constant = {value = 1.1e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_state_to_conduction_band_frequency= {value = 6.76e9, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_state_to_conduction_band_frequency = {value = 6.76e9, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 
@@ -137,8 +137,8 @@ s_ground_to_excited_frequency = {value = 9.0e10, unit = "1 / second", distribute
 s_excited_to_ground_frequency = {value = 9.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_ground_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_excited_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
-alpha_ground_state_barrier_constant = {value = 1.6e9, unit = "1 / metre cube", distribute = false, function = {kind="gaussian", sigma=0} } 
-alpha_excited_state_barrier_constant = {value = 1.1e9, unit = "1 / metre cube", distribute = false, function = {kind="gaussian", sigma=0} }
+alpha_ground_state_barrier_constant = {value = 1.6e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
+alpha_excited_state_barrier_constant = {value = 1.1e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_state_to_conduction_band_frequency= {value = 5.62e9, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_state_to_conduction_band_frequency = {value = 5.62e9, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 
@@ -147,19 +147,19 @@ s_excited_state_to_conduction_band_frequency = {value = 5.62e9, unit = "1 / seco
 ####################################################################################################################################
 [filling.fill_1]
 d0 = {value = 620.0, unit = "Gy" } 
-d_dot = {value = 7.0, unit = "Gy / k_annum" }
+d_dot = {value = 7.0, unit = "Gy / ka" }
 
 [filling.fill_2]
 d0 = {value = 681.0, unit = "Gy" } 
-d_dot = {value = 7.0, unit = "Gy / k_annum" }
+d_dot = {value = 7.0, unit = "Gy / ka" }
 
 [filling.fill_3]
 d0 = {value = 767.0, unit = "Gy" } 
-d_dot = {value = 7.0, unit = "Gy / k_annum" }
+d_dot = {value = 7.0, unit = "Gy / ka" }
 
 [filling.fill_4]
 d0 = {value = 669.0, unit = "Gy" } 
-d_dot = {value = 7.0, unit = "Gy / k_annum" }
+d_dot = {value = 7.0, unit = "Gy / ka" }
 
 ####################################################################################################################################
 ####                                                      Transitions                                                            ###

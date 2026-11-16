@@ -39,6 +39,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// Verify that cube contains random point.
     fn cube_contains_random_point() {
         let cube = crystal::Cube::new(10.0, 20.0, 30.0, vec![0], 0, 0, true).unwrap();
         let mut rng = random::get_std_rng_for_rep(0);
@@ -47,6 +48,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that filled random creates features.
     fn filled_random_creates_features() {
         let cube = crystal::Cube::new(5.0, 5.0, 5.0, vec![2], 3, 1, true).unwrap();
         let mut rng = random::get_std_rng_for_rep(0);
@@ -71,6 +73,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that mixed types coordinates.
     fn mixed_types_coordinates() {
         // x: i32, y: f32, z: i64
         let boundary = crystal::Boundary::new(10i32, 10.0f32, 10i64, false).unwrap();

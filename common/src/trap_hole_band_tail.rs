@@ -499,6 +499,10 @@ impl TrapParameters {
 
 }
 #[derive(Debug, Clone,)]
+/// Optional sampling distributions for a trap family's physical parameters.
+///
+/// `None` preserves the configured scalar. The excited-to-band energy is
+/// derived from the sampled ground-to-band energy minus the local excitation gap.
 pub struct TrapDistributions {
     /// Distribution for Energy separation between the localised ground and excited states, in eV.
     pub excited_energy_gap_distribution: Option<Distribution>,
@@ -523,6 +527,7 @@ pub struct TrapDistributions {
 }
 impl TrapDistributions {
 
+    /// Store the optional distribution for each independently sampled trap parameter.
     pub fn new( excited_energy_gap_distribution: Option<Distribution>,
         s_frequency_e_distribution: Option<Distribution>,
         s_frequency_g_distribution: Option<Distribution>,
@@ -547,6 +552,7 @@ impl TrapDistributions {
             }
 
     }
+    /// Construct a distribution record that preserves every configured scalar parameter.
     pub fn new_all_none() -> Self {
         Self{
             excited_energy_gap_distribution: None,
@@ -561,6 +567,7 @@ impl TrapDistributions {
             alpha_excited_distribution: None,
         }
     }
+    /// Return true when every parameter has sampling disabled.
     pub fn all_none(&self) -> bool {
         [
             &self.excited_energy_gap_distribution,
@@ -582,6 +589,10 @@ impl TrapDistributions {
 
 
 #[derive(Debug, Clone,)]
+/// Base trap-family parameters with optional per-record sampling distributions.
+///
+/// Use `get_parameters` to sample one physical record or
+/// `generate_multiple_parameters` for a population of records.
 pub struct TrapGenerator {
     parameters: TrapParameters, 
     distributions:TrapDistributions,
@@ -589,6 +600,11 @@ pub struct TrapGenerator {
 
 impl TrapGenerator {
 
+    /// Store a trap family's base parameters and optional sampling distributions.
+    ///
+    /// Energy gaps use eV; frequencies and inverse-distance constants must
+    /// already match the simulation time and coordinate units. Sampling is
+    /// deferred until `get_parameters`.
     pub fn new( 
         trap_type: String,
         excited_energy_gap: Float,
@@ -640,6 +656,9 @@ impl TrapGenerator {
             }
 
     }
+    /// Construct a deterministic trap family from already normalized physical parameters.
+    ///
+    /// Every parameter uses its scalar value; no random distributions are attached.
     pub fn new_no_distribution( 
         trap_type: String,
         excited_energy_gap: Float,
@@ -672,6 +691,11 @@ impl TrapGenerator {
             }
     } 
 
+    /// Sample one trap parameter record from the configured family distributions.
+    ///
+    /// Parameters without distributions retain their base values. Recomputes
+    /// the excited-to-band energy as sampled ground-to-band energy minus the
+    /// sampled excitation gap, even for a family without distributions.
     pub fn get_parameters(&self, rng: &mut impl Rng) -> TrapParameters {
         let p = &self.parameters;
         let d = &self.distributions;
@@ -737,6 +761,7 @@ impl TrapGenerator {
         }
     }
 
+    /// Generate `number` independent parameter records using successive draws from `rng`.
     pub fn generate_multiple_parameters(&self, number:usize, rng: &mut impl Rng) -> Vec<TrapParameters> {
 
         (0..number)
@@ -749,6 +774,7 @@ impl TrapGenerator {
     }
 
 }
+/// Use the configured scalar unchanged, or sample its optional distribution.
 fn resolve_parameter(
     value: Float,
     distribution: &Option<Distribution>,
@@ -771,12 +797,18 @@ fn resolve_parameter(
 /// while direct and indexed layouts support heterogeneous trap populations.
 pub enum TrapParameterLayout {
     /// Every trap uses exactly the same parameters.
-    Uniform{parameters: TrapParameters},
+    Uniform{
+        /// Physical trap parameters shared by or assigned to the represented sites.
+        parameters: TrapParameters,
+    },
 
     /// Every trap has its own parameters.
     ///
     /// `parameters[trap_id]`
-    Direct{parameters: Box<[TrapParameters]>},
+    Direct{
+        /// Physical trap parameters shared by or assigned to the represented sites.
+        parameters: Box<[TrapParameters]>,
+    },
 
     /// Traps reference a table of shared parameter records.
     ///
@@ -1434,6 +1466,7 @@ mod tests {
     use crate::random;
 
 use super::*;
+    /// Print labelled site coordinates for inspecting spatial test fixtures.
     fn print_coordinates(label: &str, coordinates: &[Coord]) {
         println!("{label}:");
         for (index, coordinate) in coordinates.iter().enumerate() {
@@ -1444,6 +1477,7 @@ use super::*;
         }
     }
 
+    /// Return whether every paired site coordinate differs between two test populations.
     fn every_position_changed(original: &[Coord], updated: &[Coord]) -> bool {
         original.len() == updated.len()
             && original.iter().zip(updated).all(|(original, updated)| {
@@ -1453,6 +1487,7 @@ use super::*;
             })
     }
      #[test]
+    /// Verify that generation rejects invalid coordinates.
     fn generation_rejects_invalid_coordinates() {
         let mut rng = random::get_std_rng_for_rep(0);
         assert!(Coord::new(-1.0, 0.0, 0.0).is_err());
@@ -1460,6 +1495,7 @@ use super::*;
     }
 
     #[test]
+    /// Verify that distance euclidean.
     fn distance_euclidean() {
         let p1 = Coord::new(0.0, 0.0, 0.0).unwrap();
         let p2 = Coord::new(3.0, 4.0, 0.0).unwrap();
@@ -1468,6 +1504,7 @@ use super::*;
 
 
     #[test]
+    /// Verify that randomising cube positions changes traps holes and bandtails.
     fn randomising_cube_positions_changes_traps_holes_and_bandtails() {
         let mut rng = random::get_std_rng_for_rep(0);
         let mut places = ElectronPlaces::random_new(3, 3, 3, 10.0, 10.0, 10.0, &mut rng).unwrap();
@@ -1509,6 +1546,7 @@ use super::*;
     }
 
      #[test]
+    /// Verify that site generation propagates coordinate errors.
     fn site_generation_propagates_coordinate_errors() {
         let invalid = Coord {
             x: Float::NAN,
@@ -1520,6 +1558,7 @@ use super::*;
     }
 
     #[test]
+    /// Verify that electron place mutations validate before changing collections.
     fn electron_place_mutations_validate_before_changing_collections() {
         let mut places = ElectronPlaces::with_capacity(2, 2, 2).unwrap();
         places.push_trap_at(1.0, 2.0, 3.0).unwrap();
@@ -1548,6 +1587,7 @@ use super::*;
     }
 
     #[test]
+    /// Verify that constructors reserve and populate requested counts and report allocation errors.
     fn constructors_reserve_and_populate_requested_counts_and_report_allocation_errors() {
         let empty = ElectronPlaces::with_capacity(3, 6, 9)
                                     .expect("small capacities should be reservable");
@@ -1581,6 +1621,7 @@ use super::*;
     }
 
     #[test]
+    /// Verify that standard places add and remove bandtail storage.
     fn standard_places_add_and_remove_bandtail_storage() {
         let mut places = ElectronPlaces::with_capacity(2, 2, 0).unwrap();
         assert!(matches!(places, ElectronPlaces::Standard { .. }));

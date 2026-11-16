@@ -242,6 +242,7 @@ mod tests {
     use common::trap_hole_band_tail::{ReTrapParameterLayout, TrapGenerator};
 
     #[test]
+    /// Verify that initialise uses current runtime inputs and updates filling population.
     fn initialise_uses_current_runtime_inputs_and_updates_filling_population() {
         let cube = Cube::new_from_density(1.0, 1.0, 1.0, vec![1.0], 1, 0, false, 1).unwrap();
         let trap_generators = vec![TrapGenerator::new_no_distribution(

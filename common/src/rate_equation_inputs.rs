@@ -224,6 +224,7 @@ impl<E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap, SE, SG,>
 mod tests {
     use super::*;
 
+    /// Construct representative transition inputs for temperature/population update tests.
     fn transition_inputs() -> TransitionInputs {
         TransitionInputs {
             delocalised: DelocalisedTransitionInputs {
@@ -266,6 +267,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that update inputs refreshes temperature weights and filling population.
     fn update_inputs_refreshes_temperature_weights_and_filling_population() {
         let mut inputs = transition_inputs();
         let new_temperature = 450.0;
@@ -305,6 +307,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that update inputs keeps weights when temperature is unchanged.
     fn update_inputs_keeps_weights_when_temperature_is_unchanged() {
         let mut inputs = transition_inputs();
         let original_delocalised_weights = (
@@ -324,6 +327,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that update inputs supports vector weights and population.
     fn update_inputs_supports_vector_weights_and_population() {
         let mut inputs = TransitionInputs {
             delocalised: DelocalisedTransitionInputs {

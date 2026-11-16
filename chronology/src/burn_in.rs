@@ -2,19 +2,31 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
+//! Tune Bayesian walk proposal scales using per-move acceptance windows.
+//!
+//! Convergence requires consecutive observed windows inside every target range.
+//! Birth and death corrections share scales; coordinate moves are tuned separately.
+
 use crate::{profiles::{MoveKind, RandomWalkConstructor}};
 use io::chrono_inputs::ChronologyInputs;
 use common::numeric::Float;
 
+/// Acceptance counts and consecutive stable-window count for one proposal kind.
 pub struct AcceptanceWindow {
+    /// Proposal kind whose acceptance is counted by this window.
     pub move_kind: MoveKind,
+    /// Inclusive target acceptance-rate interval.
     pub acceptance_range: (Float, Float),
+    /// Number of attempts observed in the current window.
     pub trials: usize,
+    /// Number of successful attempts in the current window.
     pub accepted: usize,
+    /// Number of consecutive observed windows within the target range.
     pub stable_windows: usize,
 }
 
 impl AcceptanceWindow {
+    /// Start an empty observation window with an inclusive target acceptance range.
     pub fn new(move_kind: MoveKind, acceptance_range: (Float, Float)) -> Self {
         Self {
             move_kind,
@@ -25,6 +37,7 @@ impl AcceptanceWindow {
         }
     }
 
+    /// Record one proposal attempt, incrementing the accepted count when successful.
     pub fn record(&mut self, accepted: bool) {
         self.trials += 1;
         self.accepted += usize::from(accepted);
@@ -53,14 +66,20 @@ impl AcceptanceWindow {
         (rate, in_range, trials, accepted)
     }
 
+    /// Return whether at least `required_windows` consecutive windows met the target.
     pub fn stable_for(&self, required_windows: usize) -> bool {
         self.stable_windows >= required_windows
     }
 
+    /// Return the current number of consecutive observed windows within the target range.
     pub fn stable_windows(&self) -> usize {
         self.stable_windows
     }
 
+    /// Return target-midpoint minus observed acceptance when outside the target range.
+    ///
+    /// Returns zero inside the range and `None` when this move has no attempts.
+    /// The correction is consumed before resetting the observation window.
     pub fn correction_factor(&self) -> Option<Float> {
         
         if self.trials == 0 {
@@ -80,13 +99,24 @@ impl AcceptanceWindow {
 
 }
 
+/// Adaptive proposal tuning state for Bayesian random-walk burn-in.
+///
+/// Keeps separate acceptance windows for birth, death, time, and temperature
+/// moves, together with the walker whose scales are being tuned.
 pub struct BurnInApparatus  {
+    /// One observation window for each of the four proposal kinds.
     pub acceptance_windows: Vec<AcceptanceWindow>,
+    /// Walker copy whose proposal scales are adapted during burn-in.
     pub walker_alt: RandomWalkConstructor,
+    /// Finished-window tuples `(rate, in_range, trials, accepted)` per move.
     pub window_rates: Vec<(Float, bool, usize,usize)>
 }
 impl BurnInApparatus {
 
+    /// Construct one acceptance window per move kind and an independently tunable walker.
+    ///
+    /// Uses the configured target ranges and proposal scales; walker construction
+    /// errors are returned.
     pub fn new(inputs: &ChronologyInputs) -> Result<Self, String> {
 
         let acceptance_windows = vec![
@@ -106,6 +136,7 @@ impl BurnInApparatus {
 
     }
 
+    /// Borrow the observation window for a move kind, or report a missing window.
     pub fn get_window(&mut self, move_kind: MoveKind) -> Result<&mut AcceptanceWindow, String>{
         self.acceptance_windows
             .iter_mut()
@@ -114,6 +145,10 @@ impl BurnInApparatus {
 
     }
 
+    /// Rescale proposal widths exponentially using the supplied acceptance corrections.
+    ///
+    /// Birth and death share their mean available correction. Time and temperature
+    /// use their own corrections. Updated widths are clamped to `1e-8..=1e8`.
     pub fn adjust_walker(
         &mut self, 
         birth: Option<Float>, 
@@ -144,6 +179,12 @@ impl BurnInApparatus {
 
     }
 
+/// Finish a global observation window and report whether tuning has converged.
+///
+/// Capture corrections before resetting counts, print per-move acceptance,
+/// and require every move to meet `stable_window` consecutive target windows.
+/// If not converged, adjust proposal scales. Missing move windows return errors.
+/// `window_index` is zero-based and `maximum_no_windows` is used for progress output.
 pub fn burn_in_operation(
     &mut self,
     window_index: usize,
@@ -194,6 +235,7 @@ pub fn burn_in_operation(
     Ok(false)
 }
 
+/// Print the tuned proposal scales and report reaching the configured window limit.
 pub fn print_update(&self, window_index: usize, max_windows: usize) {
     if window_index + 1 == max_windows {
         eprintln!("Burn-in reached the maximum of {} window(s) without meeting the stability criterion.",max_windows);
@@ -213,6 +255,7 @@ mod tests {
     use super::*;
     use crate::profiles::{MoveProbabilities, MoveSigmas};
 
+    /// Construct a small walker with equal move weights and unit scales for burn-in tests.
     fn walker() -> RandomWalkConstructor {
         RandomWalkConstructor {
             age_range: (0.0, 1.0),
@@ -226,6 +269,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that birth death corrections balance both moves.
     fn birth_death_corrections_balance_both_moves() {
         let kinds = [
             MoveKind::Birth,
@@ -267,6 +311,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that finds moves in any order and reports convergence.
     fn finds_moves_in_any_order_and_reports_convergence() {
         let mut burn = BurnInApparatus {
             acceptance_windows: [MoveKind::Temp, MoveKind::Time, MoveKind::Death, MoveKind::Birth]
@@ -294,6 +339,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that stability requires consecutive observed windows.
     fn stability_requires_consecutive_observed_windows() {
         let mut window = AcceptanceWindow::new(MoveKind::Birth, (0.4, 0.6));
         for _ in 0..2 {

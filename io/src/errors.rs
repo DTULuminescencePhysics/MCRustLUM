@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
+//! Contextual error types for configuration, binary/CSV output, filesystem setup, and plotting.
+
 //! Error catching for the filesystem and input and outputs
 
 use std::error::Error;
@@ -30,6 +32,7 @@ pub enum FilesystemError {
 }
 
 impl fmt::Display for FilesystemError {
+    /// Format this error with operation details and the affected path or data context.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidFolderName { name } => write!(
@@ -50,6 +53,7 @@ impl fmt::Display for FilesystemError {
 }
 
 impl Error for FilesystemError {
+    /// Return the underlying error when present; validation-only variants have no source.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Operation { source, .. } => Some(source),
@@ -68,7 +72,7 @@ pub enum InputError {
         /// Underlying filesystem error.
         source: std::io::Error,
     },
-    /// File contents were not valid TOML for [`crate::inputs::SimulationInputs`]
+    /// File contents were not valid TOML for the target configuration type
     /// or for [`crate::chrono_inputs::ChronologyInputs`].
     Parse {
         /// Path containing the invalid TOML.
@@ -78,6 +82,7 @@ pub enum InputError {
     },
 }
 impl fmt::Display for InputError {
+    /// Format this error with operation details and the affected path or data context.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Read { path, source } => {
@@ -90,6 +95,7 @@ impl fmt::Display for InputError {
     }
 }
 impl Error for InputError {
+    /// Return the underlying error when present; validation-only variants have no source.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Read { source, .. } => Some(source),
@@ -135,6 +141,7 @@ pub enum OutputError {
         /// Bincode deserialization error.
         source: Box<bincode::ErrorKind>,
     },
+    /// Invalid source data or configuration.
     Invalid {
         /// File attempting to be written to.
         path: PathBuf,
@@ -146,6 +153,7 @@ pub enum OutputError {
 }
 
 impl fmt::Display for OutputError {
+    /// Format this error with operation details and the affected path or data context.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Open { path, source } => {
@@ -189,6 +197,7 @@ impl fmt::Display for OutputError {
 }
 
 impl Error for OutputError {
+    /// Return the underlying error when present; validation-only variants have no source.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Open { source, .. } | Self::Finish { source, .. } | Self::Read { source, .. } => {
@@ -228,6 +237,7 @@ pub enum CsvOutputError {
 }
 
 impl fmt::Display for CsvOutputError {
+    /// Format this error with operation details and the affected path or data context.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Create { path, source } => {
@@ -246,6 +256,7 @@ impl fmt::Display for CsvOutputError {
 }
 
 impl Error for CsvOutputError {
+    /// Return the underlying error when present; validation-only variants have no source.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Create { source, .. } | Self::Write { source, .. } => Some(source),
@@ -257,8 +268,11 @@ impl Error for CsvOutputError {
 /// Error returned while loading, validating, rebinning, or plotting results.
 #[derive(Debug)]
 pub enum PlotError {
+    /// Invalid plot setup or unit selection.
     Setup {
+        /// Operation or setup context associated with this validation failure.
         source: String,
+        /// Human-readable explanation of the failure.
         message: String,
     },
     /// A CSV file could not be opened or parsed.
@@ -292,6 +306,7 @@ pub enum PlotError {
 }
 
 impl fmt::Display for PlotError {
+    /// Format this error with operation details and the affected path or data context.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Setup { source, message } => {
@@ -324,6 +339,7 @@ impl fmt::Display for PlotError {
 }
 
 impl Error for PlotError {
+    /// Return the underlying error when present; validation-only variants have no source.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Setup { .. } => None,

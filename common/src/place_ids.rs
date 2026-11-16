@@ -44,6 +44,21 @@ impl PlaceId {
 /// meaning is population-specific: an available trap is electron occupied,
 /// while an available hole site contains a hole that can recombine.
 #[derive(Debug)]
+///
+/// # Example
+///
+/// ```
+/// use common::place_ids::{PlaceAvailability, PlaceId};
+///
+/// let mut traps = PlaceAvailability::new(4)?;
+/// let first = PlaceId::new(0)?;
+/// assert_eq!(traps.available_count(), 0);
+/// assert!(traps.make_available(first));
+/// assert_eq!(traps.fill_ratio(), 0.25);
+/// assert!(traps.make_unavailable(first));
+/// assert_eq!(traps.available_count(), 0);
+/// # Ok::<(), String>(())
+/// ```
 pub struct PlaceAvailability {
     /// A permutation containing every [`PlaceId`] exactly once.
     ids: Box<[PlaceId]>,

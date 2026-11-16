@@ -617,6 +617,7 @@ mod tests {
 
     const TOLERANCE: f64 = 1.0e-10;
 
+    /// Compute the scalar reference Arrhenius rate used by rate-equation tests.
     fn expected_first_order_rate(
         e_cb: Float,
         s_frequency: Float,
@@ -626,6 +627,7 @@ mod tests {
         (s_frequency * exponent) as f64
     }
 
+    /// Assert that two numeric results agree within the test's floating-point tolerance.
     fn assert_close(left: f64, right: f64) {
         assert!(
             (left - right).abs() < TOLERANCE,
@@ -635,6 +637,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that first order delocalised rate equation returns expected float value.
     fn first_order_delocalised_rate_equation_returns_expected_float_value() {
         let e_cb: Float = 0.45;
         let s_frequency: Float = 1.0e12;
@@ -656,6 +659,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that first order delocalised rate equation returns expected vec values.
     fn first_order_delocalised_rate_equation_returns_expected_vec_values() {
         let e_cb: Vec<Float> = vec![0.35, 0.45, 0.55];
         let s_frequency: Vec<Float> = vec![1.0e12, 2.0e12, 3.0e12];
@@ -688,6 +692,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that first order delocalised rate equation returns expected ndarray values.
     fn first_order_delocalised_rate_equation_returns_expected_ndarray_values() {
         let e_cb = array![0.35 as Float, 0.45 as Float, 0.55 as Float];
         let s_frequency = array![1.0e12 as Float, 2.0e12 as Float, 3.0e12 as Float];
@@ -716,6 +721,7 @@ mod tests {
         assert_eq!(temp, array![300.0 as Float, 450.0 as Float, 600.0 as Float]);
     }
 
+    /// Assert that paired vector elements agree within the floating-point tolerance.
     fn assert_vec_close(actual: &[f64], expected: &[f64]) {
         assert_eq!(actual.len(), expected.len());
         for (actual, expected) in actual.iter().zip(expected.iter()) {
@@ -724,6 +730,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that exponential energy over kb t returns expected values for all supported inputs.
     fn exponential_energy_over_kb_t_returns_expected_values_for_all_supported_inputs() {
         let e: Float = 0.45;
         let temp: Float = 450.0;
@@ -764,6 +771,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that second order delocalised rate equation returns per particle rate.
     fn second_order_delocalised_rate_equation_returns_per_particle_rate() {
         let e_cb: Float = 0.45;
         let s_frequency: Float = 2.0e12;
@@ -782,6 +790,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that general order delocalised rate equation returns per particle rate.
     fn general_order_delocalised_rate_equation_returns_per_particle_rate() {
         let e_cb: Float = 0.45;
         let s_frequency: Float = 2.0e12;
@@ -802,6 +811,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that general order matches first and second order at integer orders.
     fn general_order_matches_first_and_second_order_at_integer_orders() {
         let e_cb: Float = 0.45;
         let s_frequency: Float = 2.0e12;
@@ -839,6 +849,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that hole change delocalised rate equation returns recombination loss.
     fn hole_change_delocalised_rate_equation_returns_recombination_loss() {
         let m: Float = 0.4;
         let nc: Float = 0.3;
@@ -851,6 +862,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that retrapping change delocalised rate equation uses available traps.
     fn retrapping_change_delocalised_rate_equation_uses_available_traps() {
         let n_tot: Float = 1.0;
         let n: Float = 0.35;
@@ -869,6 +881,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that trap change is sum of thermal release and retrapping.
     fn trap_change_is_sum_of_thermal_release_and_retrapping() {
         let e_cb: Float = 0.45;
         let s_frequency: Float = 1.0e12;
@@ -905,6 +918,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that cb band change combines retrapping recombination and release.
     fn cb_band_change_combines_retrapping_recombination_and_release() {
         let e_cb: Float = 0.45;
         let s_frequency: Float = 1.0e12;
@@ -948,6 +962,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that quasi equilibrium rate applies recombination branching fraction.
     fn quasi_equilibrium_rate_applies_recombination_branching_fraction() {
         let e_cb: Float = 0.45;
         let s_frequency: Float = 1.0e12;
@@ -983,6 +998,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that tunnelling rate matches exponential distance decay.
     fn tunnelling_rate_matches_exponential_distance_decay() {
         let alpha: Float = 2.0;
         let b: Float = 5.0e6;
@@ -995,6 +1011,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that filling rate scales with dose rate and available traps.
     fn filling_rate_scales_with_dose_rate_and_available_traps() {
         let d0: Float = 4.0;
         let d_dot: Float = 2.0;
@@ -1008,6 +1025,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that filling with recombination applies retrapping branching fraction.
     fn filling_with_recombination_applies_retrapping_branching_fraction() {
         let d0: Float = 4.0;
         let d_dot: Float = 2.0;
@@ -1039,6 +1057,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that affinity probabilities are complementary.
     fn affinity_probabilities_are_complementary() {
         let n: Float = 0.25;
         let n_tot: Float = 1.0;
@@ -1057,6 +1076,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that affinity probabilities support vector populations.
     fn affinity_probabilities_support_vector_populations() {
         let n: Vec<Float> = vec![0.0, 0.5];
         let n_tot: Float = 1.0;
@@ -1074,6 +1094,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that distance retrapping factor matches documented equation.
     fn distance_retrapping_factor_matches_documented_equation() {
         let prefactor: Float = 2.0;
         let mu: Float = 2.0;
@@ -1087,6 +1108,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that distance retrapping factor supports vector distances.
     fn distance_retrapping_factor_supports_vector_distances() {
         let prefactor: Float = 2.0;
         let mu: Float = 2.0;
@@ -1103,6 +1125,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that ground excited state weights follow boltzmann distribution.
     fn ground_excited_state_weights_follow_boltzmann_distribution() {
         let e: Float = 0.045;
         let s_frequency_e: Float = 1.0e11;
@@ -1126,6 +1149,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that ground excited state weights support vector energy and scalar temperature.
     fn ground_excited_state_weights_support_vector_energy_and_scalar_temperature() {
         let e: Vec<Float> = vec![0.01, 0.03, 0.05];
         let s_frequency_e: Vec<Float> =  vec![1.0e12,1.0e12,1.0e11];
@@ -1143,6 +1167,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that thermal ground state rate subtracts thermal leaving rate from arrival.
     fn thermal_ground_state_rate_subtracts_thermal_leaving_rate_from_arrival() {
         let e: Float = 0.45;
         let s_frequency_e: Float = 1.0e12;
@@ -1172,6 +1197,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that thermal excited state rate adds thermal arrival to leaving rate.
     fn thermal_excited_state_rate_adds_thermal_arrival_to_leaving_rate() {
         let e: Float = 0.45;
         let s_frequency_e: Float = 1.0e12;
@@ -1201,6 +1227,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that delocalised rates accept vector properties and scalar temperature.
     fn delocalised_rates_accept_vector_properties_and_scalar_temperature() {
         let e_cb: Vec<Float> = vec![0.35, 0.45, 0.55];
         let s_frequency: Vec<Float> = vec![1.0e12, 2.0e12, 3.0e12];
@@ -1225,6 +1252,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that tunnelling rate accepts scalar parameters and vector distances.
     fn tunnelling_rate_accepts_scalar_parameters_and_vector_distances() {
         let alpha: Float = 2.0;
         let b: Float = 5.0e6;
@@ -1242,6 +1270,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that filling rate accepts scalar dose and vector occupancy.
     fn filling_rate_accepts_scalar_dose_and_vector_occupancy() {
         let d0: Float = 4.0;
         let d_dot: Float = 2.0;
@@ -1260,6 +1289,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that thermal excited state rate accepts vector populations and scalar temperature.
     fn thermal_excited_state_rate_accepts_vector_populations_and_scalar_temperature() {
         let e: Vec<Float> = vec![0.35, 0.45];
         let s_frequency_e: Vec<Float> = vec![1.0e12, 2.0e12];

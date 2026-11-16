@@ -55,12 +55,11 @@ impl MonteCarloSimulation {
         inputs: &Vec<ResolvedExperiment>,
         repetitions: usize,
         experiments: usize,
-        minimum_traps:usize,
     ) -> Result<Self, String> {
         if experiments == 0 {
             return Err("experiments must be positive".to_string());
         }
-        
+
         let cubes = (0..experiments)
             .map(|experiment_index| {
                 let densities: Vec<Float> = inputs[experiment_index]
@@ -71,7 +70,7 @@ impl MonteCarloSimulation {
                 MonteCarloSimulation::generate_cube_for_experiment(
                     &inputs[experiment_index].cube,
                     densities,
-                    minimum_traps,
+                    inputs[experiment_index].total_traps,
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -239,6 +238,12 @@ impl MonteCarloSimulation {
         )
     }
 
+    /// Build capture/retrapping settings from transition flags and band parameters.
+    ///
+    /// Combines ground/excited conduction-band flags, filling/retrapping switches,
+    /// the Gaussian-kernel flag, preference ratios, and capture distances. Values
+    /// must already use the simulation units. Currently returns the layout in `Ok`
+    /// without additional validation.
     pub fn generate_retrapping(inputs: &TransitionDefinition, band: &BandDefinition) -> Result<ReTrapParameterLayout, String> {
 
         Ok(ReTrapParameterLayout::new(
@@ -420,6 +425,7 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    /// Create a unique temporary output directory for a simulation setup test.
     fn temporary_output_directory(label: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -432,6 +438,7 @@ mod tests {
         ))
     }
 
+    /// Construct a small resolved experiment fixture for fast simulation setup tests.
     fn small_inputs() -> Vec<ResolvedExperiment> {
         let fixture = include_str!("../../input.toml")
             .replace("ma_annum", "ma annum")
@@ -465,9 +472,10 @@ mod tests {
     }
 
     #[test]
+    /// Verify that new builds all runtime state from grouped inputs.
     fn new_builds_all_runtime_state_from_grouped_inputs() {
         let inputs = small_inputs();
-        let simulation = MonteCarloSimulation::new(&inputs, 12, 1, 3)
+        let simulation = MonteCarloSimulation::new(&inputs, 12, 1,)
             .expect("valid grouped inputs should build a simulation");
 
         assert_eq!(simulation.repetitions, 12);
@@ -484,6 +492,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that generation helpers propagate invalid geometry and profiles.
     fn generation_helpers_propagate_invalid_geometry_and_profiles() {
         let mut inputs = small_inputs();
         inputs[0].cube.cube_height.value = 0.0;
@@ -501,6 +510,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that transition generation maps flags to equations.
     fn transition_generation_maps_flags_to_equations() {
         let mut inputs = small_inputs();
         inputs[0].transitions.ground_state_tunnelling = true;
@@ -524,9 +534,10 @@ mod tests {
     }
 
     #[test]
+    /// Verify that run writes every experiment and repetition.
     fn run_writes_every_experiment_and_repetition() {
         let inputs = small_inputs();
-        let mut simulation = MonteCarloSimulation::new(&inputs, 3, 1, 1).unwrap();
+        let mut simulation = MonteCarloSimulation::new(&inputs, 3, 1).unwrap();
         let output_directory = temporary_output_directory("simulation");
         fs::create_dir(&output_directory).unwrap();
 
@@ -543,9 +554,10 @@ mod tests {
     }
 
     #[test]
+    /// Verify that final ratios are grouped by experiment.
     fn final_ratios_are_grouped_by_experiment() {
         let inputs = small_inputs();
-        let simulation = MonteCarloSimulation::new(&inputs, 3, 1, 1).unwrap();
+        let simulation = MonteCarloSimulation::new(&inputs, 3, 1).unwrap();
         let ratios = simulation
             .run_to_final_ratio_only(simulation.time_temperature[0].clone(), 1)
             .unwrap();

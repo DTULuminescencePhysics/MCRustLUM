@@ -65,207 +65,267 @@ pub trait Numeric:
 }
 
 impl Numeric for f32 {
+    /// Cast this scalar to the simulation `Float` representation.
     fn to_float(self) -> Float {
         self as Float
     }
+    /// Cast this scalar to the dedicated `TimeFloat` representation.
     fn to_time_float(self) -> TimeFloat {
         self as TimeFloat
     }
+    /// Return the additive identity of this scalar type.
     fn zero() -> Self {
         0.0
     }
+    /// Return the multiplicative identity of this scalar type.
     fn one() -> Self {
         1.0
     }
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64(self) -> f64 {
         self as f64
     }
  
 }
 impl Numeric for f64 {
+    /// Cast this scalar to the simulation `Float` representation.
     fn to_float(self) -> Float {
         self as Float
     }
+    /// Cast this scalar to the dedicated `TimeFloat` representation.
     fn to_time_float(self) -> TimeFloat {
         self as TimeFloat
     }
+    /// Return the additive identity of this scalar type.
     fn zero() -> Self {
         0.0
     }
+    /// Return the multiplicative identity of this scalar type.
     fn one() -> Self {
         1.0
     }
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64(self) -> f64 {
         self as f64
     }
 }
 impl Numeric for u8 {
+    /// Cast this scalar to the simulation `Float` representation.
     fn to_float(self) -> Float {
         self as Float
     }
+    /// Cast this scalar to the dedicated `TimeFloat` representation.
     fn to_time_float(self) -> TimeFloat {
         self as TimeFloat
     }
+    /// Return the additive identity of this scalar type.
     fn zero() -> Self {
         0
     }
+    /// Return the multiplicative identity of this scalar type.
     fn one() -> Self {
         1
     }
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64(self) -> f64 {
         self as f64
     }
 }
 impl Numeric for i8 {
+    /// Cast this scalar to the simulation `Float` representation.
     fn to_float(self) -> Float {
         self as Float
     }
+    /// Cast this scalar to the dedicated `TimeFloat` representation.
     fn to_time_float(self) -> TimeFloat {
         self as TimeFloat
     }
+    /// Return the additive identity of this scalar type.
     fn zero() -> Self {
         0
     }
+    /// Return the multiplicative identity of this scalar type.
     fn one() -> Self {
         1
     }
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64(self) -> f64 {
         self as f64
     }
 }
 impl Numeric for u16 {
+    /// Cast this scalar to the simulation `Float` representation.
     fn to_float(self) -> Float {
         self as Float
     }
+    /// Cast this scalar to the dedicated `TimeFloat` representation.
     fn to_time_float(self) -> TimeFloat {
         self as TimeFloat
     }
+    /// Return the additive identity of this scalar type.
     fn zero() -> Self {
         0
     }
+    /// Return the multiplicative identity of this scalar type.
     fn one() -> Self {
         1
     }
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64(self) -> f64 {
         self as f64
     }
 }
 impl Numeric for i16 {
+    /// Cast this scalar to the simulation `Float` representation.
     fn to_float(self) -> Float {
         self as Float
     }
+    /// Cast this scalar to the dedicated `TimeFloat` representation.
     fn to_time_float(self) -> TimeFloat {
         self as TimeFloat
     }
+    /// Return the additive identity of this scalar type.
     fn zero() -> Self {
         0
     }
+    /// Return the multiplicative identity of this scalar type.
     fn one() -> Self {
         1
     }
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64(self) -> f64 {
         self as f64
     }
 }
 impl Numeric for u32 {
+    /// Cast this scalar to the simulation `Float` representation.
     fn to_float(self) -> Float {
         self as Float
     }
+    /// Cast this scalar to the dedicated `TimeFloat` representation.
     fn to_time_float(self) -> TimeFloat {
         self as TimeFloat
     }
+    /// Return the additive identity of this scalar type.
     fn zero() -> Self {
         0
     }
+    /// Return the multiplicative identity of this scalar type.
     fn one() -> Self {
         1
     }
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64(self) -> f64 {
         self as f64
     }
 }
 
 impl Numeric for i32 {
+    /// Cast this scalar to the simulation `Float` representation.
     fn to_float(self) -> Float {
         self as Float
     }
+    /// Cast this scalar to the dedicated `TimeFloat` representation.
     fn to_time_float(self) -> TimeFloat {
         self as TimeFloat
     }
+    /// Return the additive identity of this scalar type.
     fn zero() -> Self {
         0
     }
+    /// Return the multiplicative identity of this scalar type.
     fn one() -> Self {
         1
     }
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64(self) -> f64 {
         self as f64
     }
 }
 impl Numeric for u64 {
+    /// Cast this scalar to the simulation `Float` representation.
     fn to_float(self) -> Float {
         self as Float
     }
+    /// Cast this scalar to the dedicated `TimeFloat` representation.
     fn to_time_float(self) -> TimeFloat {
         self as TimeFloat
     }
+    /// Return the additive identity of this scalar type.
     fn zero() -> Self {
         0
     }
+    /// Return the multiplicative identity of this scalar type.
     fn one() -> Self {
         1
     }
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64(self) -> f64 {
         self as f64
     }
 }
 impl Numeric for i64 {
+    /// Cast this scalar to the simulation `Float` representation.
     fn to_float(self) -> Float {
         self as Float
     }
+    /// Cast this scalar to the dedicated `TimeFloat` representation.
     fn to_time_float(self) -> TimeFloat {
         self as TimeFloat
     }
+    /// Return the additive identity of this scalar type.
     fn zero() -> Self {
         0
     }
+    /// Return the multiplicative identity of this scalar type.
     fn one() -> Self {
         1
     }
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64(self) -> f64 {
         self as f64
     }
 }
 impl Numeric for usize {
+    /// Cast this scalar to the simulation `Float` representation.
     fn to_float(self) -> Float {
         self as Float
     }
+    /// Cast this scalar to the dedicated `TimeFloat` representation.
     fn to_time_float(self) -> TimeFloat {
         self as TimeFloat
     }
+    /// Return the additive identity of this scalar type.
     fn zero() -> Self {
         0
     }
+    /// Return the multiplicative identity of this scalar type.
     fn one() -> Self {
         1
     }
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64(self) -> f64 {
         self as f64
     }
 }
 impl Numeric for isize {
+    /// Cast this scalar to the simulation `Float` representation.
     fn to_float(self) -> Float {
         self as Float
     }
+    /// Cast this scalar to the dedicated `TimeFloat` representation.
     fn to_time_float(self) -> TimeFloat {
         self as TimeFloat
     }
+    /// Return the additive identity of this scalar type.
     fn zero() -> Self {
         0
     }
+    /// Return the multiplicative identity of this scalar type.
     fn one() -> Self {
         1
     }
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64(self) -> f64 {
         self as f64
     }
@@ -311,6 +371,7 @@ pub struct TimePrecision;
 
 impl PrecisionTarget for ProgramPrecision {
     type Value = Float;
+    /// Convert one supported numeric scalar to this implementation's precision target.
     fn from_numeric<T: Numeric>(value: T) -> Self::Value {
         value.to_float()
     }
@@ -318,6 +379,7 @@ impl PrecisionTarget for ProgramPrecision {
 
 impl PrecisionTarget for TimePrecision {
     type Value = TimeFloat;
+    /// Convert one supported numeric scalar to this implementation's precision target.
     fn from_numeric<T: Numeric>(value: T) -> Self::Value {
         value.to_time_float()
     }
@@ -347,10 +409,16 @@ where
 {
     type Output = P::Value;
 
+    /// Convert the scalar or every container element to the selected precision.
+    ///
+    /// Container dimensions are preserved; a borrowed slice produces an owned vector.
     fn map_to_precision(self) -> Self::Output {
         P::from_numeric(self)
     }
 
+    /// Convert values to the selected precision and multiply each by `multiplier`.
+    ///
+    /// Container dimensions are preserved; a borrowed slice produces an owned vector.
     fn multiply_to_precision(self, multiplier: P::Value) -> Self::Output {
         P::from_numeric(self) * multiplier
     }
@@ -363,10 +431,16 @@ where
 {
     type Output = Vec<P::Value>;
 
+    /// Convert the scalar or every container element to the selected precision.
+    ///
+    /// Container dimensions are preserved; a borrowed slice produces an owned vector.
     fn map_to_precision(self) -> Self::Output {
         self.into_iter().map(P::from_numeric).collect()
     }
 
+    /// Convert values to the selected precision and multiply each by `multiplier`.
+    ///
+    /// Container dimensions are preserved; a borrowed slice produces an owned vector.
     fn multiply_to_precision(self, multiplier: P::Value) -> Self::Output {
         self.into_iter()
             .map(|value| P::from_numeric(value) * multiplier)
@@ -384,10 +458,16 @@ where
 {
     type Output = Vec<P::Value>;
 
+    /// Convert the scalar or every container element to the selected precision.
+    ///
+    /// Container dimensions are preserved; a borrowed slice produces an owned vector.
     fn map_to_precision(self) -> Self::Output {
         self.iter().copied().map(P::from_numeric).collect()
     }
 
+    /// Convert values to the selected precision and multiply each by `multiplier`.
+    ///
+    /// Container dimensions are preserved; a borrowed slice produces an owned vector.
     fn multiply_to_precision(self, multiplier: P::Value) -> Self::Output {
         self.iter()
             .copied()
@@ -405,10 +485,16 @@ where
 {
     type Output = Array<P::Value, D>;
 
+    /// Convert the scalar or every container element to the selected precision.
+    ///
+    /// Container dimensions are preserved; a borrowed slice produces an owned vector.
     fn map_to_precision(self) -> Self::Output {
         self.mapv(P::from_numeric)
     }
 
+    /// Convert values to the selected precision and multiply each by `multiplier`.
+    ///
+    /// Container dimensions are preserved; a borrowed slice produces an owned vector.
     fn multiply_to_precision(self, multiplier: P::Value) -> Self::Output {
         self.mapv(|value| P::from_numeric(value) * multiplier)
     }
@@ -434,17 +520,21 @@ pub trait RealNumber:
 }
 
 impl RealNumber for f32 {
+    /// Return the natural exponential using this scalar type's floating-point implementation.
     fn exp(self) -> Self {
         f32::exp(self)
     }
 
+    /// Raise the scalar to the supplied floating-point power.
     fn powf(self, power: Self) -> Self {
         f32::powf(self, power)
     }
 
+    /// Convert an `f64` into this floating-point type, rounding when narrowing to `f32`.
     fn from_f64(value: f64) -> Self {
         value as f32
     }
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64<T>(value: T) -> f64
     where
         T: Numeric,
@@ -454,18 +544,22 @@ impl RealNumber for f32 {
 }
 
 impl RealNumber for f64 {
+    /// Return the natural exponential using this scalar type's floating-point implementation.
     fn exp(self) -> Self {
         f64::exp(self)
     }
 
+    /// Raise the scalar to the supplied floating-point power.
     fn powf(self, power: Self) -> Self {
         f64::powf(self, power)
     }
 
+    /// Convert an `f64` into this floating-point type, rounding when narrowing to `f32`.
     fn from_f64(value: f64) -> Self {
         value
     }
 
+    /// Convert the scalar to `f64`, accepting rounding for integers beyond its exact range.
     fn to_f64<T>(value: T) -> Self
     where
         T: Numeric,
@@ -518,18 +612,38 @@ macro_rules! impl_element_wise_scalar {
         impl ElementWise<$type> for $type {
             type Output = $type;
 
+            /// Add operands element by element in left-to-right order.
+            ///
+            /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+            /// paired arrays require equal shapes, and vector/array pairs broadcast
+            /// along the trailing dimension. Returns `None` for incompatible shapes.
             fn element_add(&self, rhs: &$type) -> Option<Self::Output> {
                 Some(*self + *rhs)
             }
 
+            /// Subtract operands element by element in left-to-right order.
+            ///
+            /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+            /// paired arrays require equal shapes, and vector/array pairs broadcast
+            /// along the trailing dimension. Returns `None` for incompatible shapes.
             fn element_sub(&self, rhs: &$type) -> Option<Self::Output> {
                 Some(*self - *rhs)
             }
 
+            /// Multiply operands element by element in left-to-right order.
+            ///
+            /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+            /// paired arrays require equal shapes, and vector/array pairs broadcast
+            /// along the trailing dimension. Returns `None` for incompatible shapes.
             fn element_mul(&self, rhs: &$type) -> Option<Self::Output> {
                 Some(*self * *rhs)
             }
 
+            /// Divide operands element by element in left-to-right order.
+            ///
+            /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+            /// paired arrays require equal shapes, and vector/array pairs broadcast
+            /// along the trailing dimension. Returns `None` for incompatible shapes.
             fn element_div(&self, rhs: &$type) -> Option<Self::Output> {
                 Some(*self / *rhs)
             }
@@ -538,10 +652,12 @@ macro_rules! impl_element_wise_scalar {
         impl ElementWiseUnary for $type {
             type Output = $type;
 
+            /// Return the natural exponential of each value, preserving the input shape.
             fn element_exp(&self) -> Self::Output {
                 <$type>::exp(*self)
             }
 
+            /// Raise each value to the supplied scalar power, preserving the input shape.
             fn element_powf<P>(&self, power: P) -> Self::Output
             where
                 P: Numeric,
@@ -561,18 +677,38 @@ impl_element_wise_scalar!(f64);
 impl ElementWise<f32> for f64 {
     type Output = f64;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &f32) -> Option<Self::Output> {
         Some(*self + *rhs as f64)
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &f32) -> Option<Self::Output> {
         Some(*self - *rhs as f64)
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &f32) -> Option<Self::Output> {
         Some(*self * *rhs as f64)
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &f32) -> Option<Self::Output> {
         Some(*self / *rhs as f64)
     }
@@ -581,18 +717,38 @@ impl ElementWise<f32> for f64 {
 impl ElementWise<f64> for f32 {
     type Output = f64;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &f64) -> Option<Self::Output> {
         Some(*self as f64 + *rhs)
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &f64) -> Option<Self::Output> {
         Some(*self as f64 - *rhs)
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &f64) -> Option<Self::Output> {
         Some(*self as f64 * *rhs)
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &f64) -> Option<Self::Output> {
         Some(*self as f64 / *rhs)
     }
@@ -601,21 +757,41 @@ impl ElementWise<f64> for f32 {
 impl ElementWise<Vec<f64>> for f32 {
     type Output = Vec<f64>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &Vec<f64>) -> Option<Self::Output> {
         let left = *self as f64;
         Some(rhs.iter().map(|value| left + *value).collect())
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &Vec<f64>) -> Option<Self::Output> {
         let left = *self as f64;
         Some(rhs.iter().map(|value| left - *value).collect())
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &Vec<f64>) -> Option<Self::Output> {
         let left = *self as f64;
         Some(rhs.iter().map(|value| left * *value).collect())
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &Vec<f64>) -> Option<Self::Output> {
         let left = *self as f64;
         Some(rhs.iter().map(|value| left / *value).collect())
@@ -625,21 +801,41 @@ impl ElementWise<Vec<f64>> for f32 {
 impl ElementWise<f32> for Vec<f64> {
     type Output = Vec<f64>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &f32) -> Option<Self::Output> {
         let right = *rhs as f64;
         Some(self.iter().map(|value| *value + right).collect())
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &f32) -> Option<Self::Output> {
         let right = *rhs as f64;
         Some(self.iter().map(|value| *value - right).collect())
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &f32) -> Option<Self::Output> {
         let right = *rhs as f64;
         Some(self.iter().map(|value| *value * right).collect())
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &f32) -> Option<Self::Output> {
         let right = *rhs as f64;
         Some(self.iter().map(|value| *value / right).collect())
@@ -654,6 +850,11 @@ where
 {
     type Output = Vec<T>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         (self.len() == rhs.len()).then(|| {
             self.iter()
@@ -663,6 +864,11 @@ where
         })
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         (self.len() == rhs.len()).then(|| {
             self.iter()
@@ -672,6 +878,11 @@ where
         })
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         (self.len() == rhs.len()).then(|| {
             self.iter()
@@ -681,6 +892,11 @@ where
         })
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         (self.len() == rhs.len()).then(|| {
             self.iter()
@@ -698,18 +914,38 @@ where
 {
     type Output = Vec<T>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &T) -> Option<Self::Output> {
         Some(self.iter().map(|value| *value + *rhs).collect())
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &T) -> Option<Self::Output> {
         Some(self.iter().map(|value| *value - *rhs).collect())
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &T) -> Option<Self::Output> {
         Some(self.iter().map(|value| *value * *rhs).collect())
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &T) -> Option<Self::Output> {
         Some(self.iter().map(|value| *value / *rhs).collect())
     }
@@ -721,18 +957,38 @@ where
 {
     type Output = Vec<T>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         Some(rhs.iter().map(|value| *self + *value).collect())
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         Some(rhs.iter().map(|value| *self - *value).collect())
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         Some(rhs.iter().map(|value| *self * *value).collect())
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         Some(rhs.iter().map(|value| *self / *value).collect())
     }
@@ -744,10 +1000,12 @@ where
 {
     type Output = Vec<T>;
 
+    /// Return the natural exponential of each value, preserving the input shape.
     fn element_exp(&self) -> Self::Output {
         self.iter().map(|value| value.exp()).collect()
     }
 
+    /// Raise each value to the supplied scalar power, preserving the input shape.
     fn element_powf<P>(&self, power: P) -> Self::Output
     where
         P: Numeric,
@@ -766,18 +1024,38 @@ where
 {
     type Output = T;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &T) -> Option<Self::Output> {
         Some(**self + *rhs)
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &T) -> Option<Self::Output> {
         Some(**self - *rhs)
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &T) -> Option<Self::Output> {
         Some(**self * *rhs)
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &T) -> Option<Self::Output> {
         Some(**self / *rhs)
     }
@@ -789,18 +1067,38 @@ where
 {
     type Output = T;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &&T) -> Option<Self::Output> {
         Some(*self + **rhs)
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &&T) -> Option<Self::Output> {
         Some(*self - **rhs)
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &&T) -> Option<Self::Output> {
         Some(*self * **rhs)
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &&T) -> Option<Self::Output> {
         Some(*self / **rhs)
     }
@@ -812,18 +1110,38 @@ where
 {
     type Output = Vec<T>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &T) -> Option<Self::Output> {
         Some(self.iter().map(|&value| value + *rhs).collect())
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &T) -> Option<Self::Output> {
         Some(self.iter().map(|&value| value - *rhs).collect())
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &T) -> Option<Self::Output> {
         Some(self.iter().map(|&value| value * *rhs).collect())
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &T) -> Option<Self::Output> {
         Some(self.iter().map(|&value| value / *rhs).collect())
     }
@@ -836,6 +1154,11 @@ where
 {
     type Output = Vec<T>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &&[T]) -> Option<Self::Output> {
         (self.len() == rhs.len()).then(|| {
             self.iter()
@@ -845,6 +1168,11 @@ where
         })
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &&[T]) -> Option<Self::Output> {
         (self.len() == rhs.len()).then(|| {
             self.iter()
@@ -854,6 +1182,11 @@ where
         })
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &&[T]) -> Option<Self::Output> {
         (self.len() == rhs.len()).then(|| {
             self.iter()
@@ -863,6 +1196,11 @@ where
         })
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &&[T]) -> Option<Self::Output> {
         (self.len() == rhs.len()).then(|| {
             self.iter()
@@ -879,18 +1217,38 @@ where
 {
     type Output = Vec<T>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         self.element_add(&rhs.as_slice())
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         self.element_sub(&rhs.as_slice())
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         self.element_mul(&rhs.as_slice())
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         self.element_div(&rhs.as_slice())
     }
@@ -902,18 +1260,38 @@ where
 {
     type Output = Vec<T>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &&[T]) -> Option<Self::Output> {
         self.as_slice().element_add(rhs)
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &&[T]) -> Option<Self::Output> {
         self.as_slice().element_sub(rhs)
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &&[T]) -> Option<Self::Output> {
         self.as_slice().element_mul(rhs)
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &&[T]) -> Option<Self::Output> {
         self.as_slice().element_div(rhs)
     }
@@ -925,10 +1303,12 @@ where
 {
     type Output = Vec<T>;
 
+    /// Return the natural exponential of each value, preserving the input shape.
     fn element_exp(&self) -> Self::Output {
         self.iter().map(|value| value.exp()).collect()
     }
 
+    /// Raise each value to the supplied scalar power, preserving the input shape.
     fn element_powf<P>(&self, power: P) -> Self::Output
     where
         P: Numeric,
@@ -943,18 +1323,38 @@ where
 {
     type Output = Vec<T>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &&[T]) -> Option<Self::Output> {
         Some(rhs.iter().map(|&value| *self + value).collect())
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &&[T]) -> Option<Self::Output> {
         Some(rhs.iter().map(|&value| *self - value).collect())
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &&[T]) -> Option<Self::Output> {
         Some(rhs.iter().map(|&value| *self * value).collect())
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &&[T]) -> Option<Self::Output> {
         Some(rhs.iter().map(|&value| *self / value).collect())
     }
@@ -972,6 +1372,11 @@ where
 {
     type Output = Array<T, D>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &ArrayBase<S2, D>) -> Option<Self::Output> {
         (self.shape() == rhs.shape()).then(|| {
             Zip::from(self)
@@ -980,6 +1385,11 @@ where
         })
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &ArrayBase<S2, D>) -> Option<Self::Output> {
         (self.shape() == rhs.shape()).then(|| {
             Zip::from(self)
@@ -988,6 +1398,11 @@ where
         })
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &ArrayBase<S2, D>) -> Option<Self::Output> {
         (self.shape() == rhs.shape()).then(|| {
             Zip::from(self)
@@ -996,6 +1411,11 @@ where
         })
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &ArrayBase<S2, D>) -> Option<Self::Output> {
         (self.shape() == rhs.shape()).then(|| {
             Zip::from(self)
@@ -1014,18 +1434,38 @@ where
 {
     type Output = Array<T, D>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &T) -> Option<Self::Output> {
         Some(self.mapv(|value| value + *rhs))
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &T) -> Option<Self::Output> {
         Some(self.mapv(|value| value - *rhs))
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &T) -> Option<Self::Output> {
         Some(self.mapv(|value| value * *rhs))
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &T) -> Option<Self::Output> {
         Some(self.mapv(|value| value / *rhs))
     }
@@ -1039,18 +1479,38 @@ where
 {
     type Output = Array<T, D>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &ArrayBase<S, D>) -> Option<Self::Output> {
         Some(rhs.mapv(|value| *self + value))
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &ArrayBase<S, D>) -> Option<Self::Output> {
         Some(rhs.mapv(|value| *self - value))
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &ArrayBase<S, D>) -> Option<Self::Output> {
         Some(rhs.mapv(|value| *self * value))
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &ArrayBase<S, D>) -> Option<Self::Output> {
         Some(rhs.mapv(|value| *self / value))
     }
@@ -1064,10 +1524,12 @@ where
 {
     type Output = Array<T, D>;
 
+    /// Return the natural exponential of each value, preserving the input shape.
     fn element_exp(&self) -> Self::Output {
         self.mapv(|value| value.exp())
     }
 
+    /// Raise each value to the supplied scalar power, preserving the input shape.
     fn element_powf<P>(&self, power: P) -> Self::Output
     where
         P: Numeric,
@@ -1088,6 +1550,11 @@ where
 {
     type Output = ArrayD<T>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &ArrayBase<S, D>) -> Option<Self::Output> {
         let left = Array1::from(self.clone()).into_dyn();
         let right = rhs.view().into_dyn();
@@ -1099,6 +1566,11 @@ where
         )
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &ArrayBase<S, D>) -> Option<Self::Output> {
         let left = Array1::from(self.clone()).into_dyn();
         let right = rhs.view().into_dyn();
@@ -1110,6 +1582,11 @@ where
         )
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &ArrayBase<S, D>) -> Option<Self::Output> {
         let left = Array1::from(self.clone()).into_dyn();
         let right = rhs.view().into_dyn();
@@ -1121,6 +1598,11 @@ where
         )
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &ArrayBase<S, D>) -> Option<Self::Output> {
         let left = Array1::from(self.clone()).into_dyn();
         let right = rhs.view().into_dyn();
@@ -1141,6 +1623,11 @@ where
 {
     type Output = ArrayD<T>;
 
+    /// Add operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_add(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         let left = self.view().into_dyn();
         let right = Array1::from(rhs.clone()).into_dyn();
@@ -1152,6 +1639,11 @@ where
         )
     }
 
+    /// Subtract operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_sub(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         let left = self.view().into_dyn();
         let right = Array1::from(rhs.clone()).into_dyn();
@@ -1163,6 +1655,11 @@ where
         )
     }
 
+    /// Multiply operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_mul(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         let left = self.view().into_dyn();
         let right = Array1::from(rhs.clone()).into_dyn();
@@ -1174,6 +1671,11 @@ where
         )
     }
 
+    /// Divide operands element by element in left-to-right order.
+    ///
+    /// Scalar operands broadcast. Paired vectors/slices require equal lengths,
+    /// paired arrays require equal shapes, and vector/array pairs broadcast
+    /// along the trailing dimension. Returns `None` for incompatible shapes.
     fn element_div(&self, rhs: &Vec<T>) -> Option<Self::Output> {
         let left = self.view().into_dyn();
         let right = Array1::from(rhs.clone()).into_dyn();
@@ -1192,6 +1694,7 @@ mod tests {
     use ndarray::array;
 
     #[test]
+    /// Verify that precision conversion preserves scalar vector and array shapes.
     fn precision_conversion_preserves_scalar_vector_and_array_shapes() {
         let scalar = <i32 as PrecisionInput<ProgramPrecision>>::map_to_precision(3);
         let vector =
@@ -1208,6 +1711,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that scalar vector operations preserve operand order.
     fn scalar_vector_operations_preserve_operand_order() {
         let vector = vec![2.0_f64, 4.0];
 
@@ -1218,6 +1722,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that borrowed scalar operations preserve operand order.
     fn borrowed_scalar_operations_preserve_operand_order() {
         let left = 10.0_f64;
         let right = 2.0_f64;
@@ -1233,6 +1738,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that borrowed slice operations match vector operations.
     fn borrowed_slice_operations_match_vector_operations() {
         let left_values = [2.0_f64, 4.0, 8.0];
         let right_values = [1.0_f64, 2.0, 4.0];
@@ -1251,6 +1757,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that borrowed slice precision conversion returns an owned vector.
     fn borrowed_slice_precision_conversion_returns_an_owned_vector() {
         let values = [1_i16, 2, 3];
         let values = values.as_slice();
@@ -1261,6 +1768,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that paired containers reject incompatible shapes.
     fn paired_containers_reject_incompatible_shapes() {
         let short = vec![1.0_f64, 2.0];
         let long = vec![1.0_f64, 2.0, 3.0];
@@ -1272,6 +1780,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that vector array operations broadcast the trailing dimension.
     fn vector_array_operations_broadcast_the_trailing_dimension() {
         let vector = vec![10.0_f64, 20.0, 30.0];
         let matrix = array![[1.0_f64, 2.0, 3.0], [4.0, 5.0, 6.0]];
@@ -1295,6 +1804,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that unary operations apply to every container element.
     fn unary_operations_apply_to_every_container_element() {
         let vector = vec![1.0_f64, 2.0, 3.0];
         let squared = vector.element_powf(2_i32);

@@ -87,6 +87,9 @@ impl DelocalisedRateEquationType {
 impl FromStr for DelocalisedRateEquationType {
     type Err = String;
 
+    /// Parse a delocalised kinetic model name and any general-order parameter.
+    ///
+    /// Returns an error for unknown models or invalid kinetic orders.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let value = value.trim().to_ascii_lowercase();
 
@@ -268,6 +271,9 @@ impl DelocalisedRateEquation {
 impl FromStr for DelocalisedRateEquation {
     type Err = String;
 
+    /// Parse a combined state-selection/model expression for delocalised release.
+    ///
+    /// Returns an error for unsupported state names or kinetic models.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let value = value.trim();
         let normalized = value.to_ascii_lowercase();
@@ -390,6 +396,7 @@ impl LocalisedRateEquation {
 impl FromStr for LocalisedRateEquation {
     type Err = String;
 
+    /// Parse the enabled localised states from text, rejecting unsupported names.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let value = value.trim().to_ascii_lowercase();
 
@@ -467,6 +474,7 @@ impl FillingRateEquation {
 impl FromStr for FillingRateEquation {
     type Err = String;
 
+    /// Parse a filling-model name, rejecting unsupported equations.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let value = value.trim().to_ascii_lowercase();
 
@@ -719,6 +727,7 @@ mod tests {
     };
     use crate::numeric::TimeFloat;
 
+    /// Construct scalar physical parameters for transition-selection tests.
     fn scalar_transition_inputs() -> TransitionInputs {
         TransitionInputs {
             delocalised: DelocalisedTransitionInputs {
@@ -761,6 +770,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that calculate returns seven rates with stable transition kinds.
     fn calculate_returns_seven_rates_with_stable_transition_kinds() {
         let selected = Transitions {
             delocalised: DelocalisedRateEquation::Both {
@@ -792,6 +802,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that calculate represents disabled pathways with zero rates.
     fn calculate_represents_disabled_pathways_with_zero_rates() {
         let selected = Transitions {
             delocalised: DelocalisedRateEquation::Ground {
@@ -816,6 +827,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that calculate supports vector transition inputs.
     fn calculate_supports_vector_transition_inputs() {
         let selected = Transitions {
             delocalised: DelocalisedRateEquation::Both {
@@ -879,6 +891,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that runtime selected delocalised equation uses one common interface.
     fn runtime_selected_delocalised_equation_uses_one_common_interface() {
         let e_cb = vec![0.35 as Float, 0.45 as Float];
         let s_frequency = vec![1.0e12 as Float, 2.0e12 as Float];
@@ -900,6 +913,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that delocalised equation can be selected from two values.
     fn delocalised_equation_can_be_selected_from_two_values() {
         assert_eq!(
             DelocalisedRateEquation::from_strs("ground", "first").unwrap(),
@@ -929,6 +943,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that delocalised equation can be selected from combined text.
     fn delocalised_equation_can_be_selected_from_combined_text() {
         assert_eq!(
             "ground:first"
@@ -956,6 +971,7 @@ mod tests {
 
 
     #[test]
+    /// Verify that runtime selection accepts vector properties and scalar temperature.
     fn runtime_selection_accepts_vector_properties_and_scalar_temperature() {
         let e_cb: Vec<Float> = vec![0.35, 0.45];
         let s_frequency: Vec<Float> = vec![1.0e12, 2.0e12];
@@ -979,6 +995,7 @@ mod tests {
 
 
     #[test]
+    /// Verify that nested delocalised transition selects ground first order.
     fn nested_delocalised_transition_selects_ground_first_order() {
         let selected = DelocalisedRateEquation::Ground {
             re: DelocalisedRateEquationType::FirstOrder,
@@ -993,6 +1010,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that nested delocalised transition selects both general order.
     fn nested_delocalised_transition_selects_both_general_order() {
         let selected = DelocalisedRateEquation::Both {
             re: DelocalisedRateEquationType::GeneralOrder { order: 1.5 },
@@ -1007,6 +1025,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that none delocalised equation returns scalar zero pair.
     fn none_delocalised_equation_returns_scalar_zero_pair() {
         let selected = DelocalisedRateEquation::None;
         let inputs = DelocalisedTransitionInputs {
@@ -1026,6 +1045,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that none delocalised equation returns vector zero pair.
     fn none_delocalised_equation_returns_vector_zero_pair() {
         let selected = DelocalisedRateEquation::None;
         let e_cb_g: Vec<Float> = vec![0.35, 0.45, 0.55];
@@ -1059,6 +1079,7 @@ mod tests {
 
 
     #[test]
+    /// Verify that filling equation can be selected from text.
     fn filling_equation_can_be_selected_from_text() {
         assert_eq!(
             "first_order".parse::<FillingRateEquation>().unwrap(),
@@ -1072,6 +1093,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that first order filling selection uses filling rate.
     fn first_order_filling_selection_uses_filling_rate() {
         let d0: Float = 4.0;
         let d_dot: Float = 2.0;
@@ -1100,6 +1122,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that none filling selection returns zero matching d0 shape.
     fn none_filling_selection_returns_zero_matching_d0_shape() {
         let d0: Vec<Float> = vec![4.0, 5.0, 6.0];
         let d_dot: Float = 2.0;
@@ -1121,6 +1144,7 @@ mod tests {
 
 
     #[test]
+    /// Verify that transitions from strs parses each equation selection.
     fn transitions_from_strs_parses_each_equation_selection() {
         let selected = Transitions::from_strs(
             "both",
@@ -1145,6 +1169,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that transitions from strs rejects invalid localised retrapping.
     fn transitions_from_strs_rejects_invalid_localised_retrapping() {
         let result = Transitions::from_strs(
             "none",
@@ -1158,6 +1183,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that boolean transition builder keeps all selections independent.
     fn boolean_transition_builder_keeps_all_selections_independent() {
         let selected = Transitions::from_bool(
             true,
@@ -1185,6 +1211,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that equation parsers reject invalid or non positive general orders.
     fn equation_parsers_reject_invalid_or_non_positive_general_orders() {
         assert!("general:0".parse::<DelocalisedRateEquationType>().is_err());
         assert!("general:-1".parse::<DelocalisedRateEquationType>().is_err());

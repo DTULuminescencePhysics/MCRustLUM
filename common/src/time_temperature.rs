@@ -108,9 +108,8 @@ impl TimeAdvance {
 
     /// Move by `dt` and clamp the result to the terminal boundary.
     ///
-    /// Forward intervals expect a non-negative value and reverse intervals a
-    /// non-positive value. The requirement is checked by a debug assertion;
-    /// [`Step::advance`] performs the corresponding runtime check.
+    /// Uses `dt.abs()`, adding it for forward intervals and subtracting it for
+    /// reverse intervals. Both directions clamp at their terminal boundary.
     pub fn advance(&mut self, dt: TimeFloat) {
        
         match self {
@@ -297,13 +296,12 @@ impl TimeTemperature {
     /// Build and validate a time/temperature profile.
     ///
     /// `times` and `temperatures` must have the same length and contain at
-    /// least two values. Times are converted from `unit` to seconds. Units
+    /// least two values. Time values remain in the supplied profile unit. Units
     /// recognised as `ka` or `ma` create a reverse profile; all other known
     /// units create a forward profile.
     ///
-    /// Returns an error for an unknown unit, mismatched lengths, insufficient
-    /// points, or control points that are not strictly ordered after
-    /// conversion.
+    /// Returns an error for mismatched lengths, insufficient points, or control
+    /// points that are not strictly ordered after separating duplicate times.
     ///
     /// ```
     /// use common::constants::time::TimeUnit;
@@ -371,11 +369,12 @@ impl TimeTemperature {
         Ok(profile)
     }
 
-    /// Convert control-point times to seconds and select their direction.
+    /// Retain control-point time units, separate duplicates, and select travel direction.
     ///
-    /// Equal neighbouring times are separated by one second in the direction
-    /// of travel. This handles distinct input values that collapse to the same
-    /// representable second after conversion.
+    /// Adjacent equal times are moved by one representable step derived from
+    /// the maximum profile time. Geological ages decrease toward zero; other
+    /// units increase from zero. Requires a non-empty vector whose maximum
+    /// time is finite and non-negative.
     pub fn convert_time_temperature(
         times: Vec<TimeFloat>,
         unit: TimeUnit
@@ -414,7 +413,7 @@ impl TimeTemperature {
         assert!(max_seconds.is_finite() && max_seconds >= 0.0);
         max_seconds - max_seconds.next_down()
     }
-    /// Separate adjacent duplicate times by the signed number of seconds.
+    /// Separate adjacent duplicate times by `sec`, expressed in profile time units.
     fn fix_duplicate_times(times: &mut Vec<TimeFloat>, sec: TimeFloat) {
         for i in 1..times.len() {
             if times[i] == times[i - 1] {
@@ -423,7 +422,7 @@ impl TimeTemperature {
         }
     }
 
-    /// Return the current profile time in seconds.
+    /// Return the current time in the original profile time unit.
     pub fn current_time(&self) -> TimeFloat {
         self.step.time_advance.current()
     }
@@ -433,10 +432,9 @@ impl TimeTemperature {
         self.current_temperature
     }
 
-    /// Return the signed maximum timestep permitted from the current state.
+    /// Return the magnitude of the maximum permitted timestep in profile time units.
     ///
-    /// The value is positive for forward profiles, negative for reverse
-    /// profiles, and zero after the profile finishes.
+    /// The result is non-negative in either time direction and zero when finished.
     pub fn current_max_dt(&self) -> TimeFloat {
         self.step.current_max_dt.abs()
     }
@@ -495,6 +493,7 @@ mod tests {
 
     const EPS: TimeFloat = 1.0e-4;
 
+    /// Assert that two numeric results agree within the test's floating-point tolerance.
     fn assert_close(actual: TimeFloat, expected: TimeFloat) {
         assert!(
             (actual - expected).abs() <= EPS,
@@ -502,6 +501,7 @@ mod tests {
         );
     }
 
+    /// Assert that two single-precision results agree within the test tolerance.
     fn assert_close_f32(actual: Float, expected: Float) {
         assert!(
             (actual - expected).abs() <= 1.0e-4,
@@ -510,6 +510,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that time advance forward starts at zero and clamps at end.
     fn time_advance_forward_starts_at_zero_and_clamps_at_end() {
         let mut advance = TimeAdvance::forward(10.0);
 
@@ -529,6 +530,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that time advance reverse starts at start and clamps at zero.
     fn time_advance_reverse_starts_at_start_and_clamps_at_zero() {
         let mut advance = TimeAdvance::reverse(10.0);
 
@@ -548,6 +550,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that new rejects mismatched time and temperature lengths.
     fn new_rejects_mismatched_time_and_temperature_lengths() {
         let result = TimeTemperature::new(
             vec![0.0, 1.0],
@@ -563,6 +566,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that new rejects profiles with fewer than two points.
     fn new_rejects_profiles_with_fewer_than_two_points() {
         let result = TimeTemperature::new(
             vec![0.0],
@@ -580,6 +584,7 @@ mod tests {
     
 
     #[test]
+    /// Verify that convert time temperature preserves forward input values.
     fn convert_time_temperature_preserves_forward_input_values() {
         let (times, time_advance, _) = TimeTemperature::convert_time_temperature(
             vec![0.0, 1.0, 2.0],
@@ -595,6 +600,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that convert time temperature separates duplicate forward times.
     fn convert_time_temperature_separates_duplicate_forward_times() {
         let (times, time_advance, _) = TimeTemperature::convert_time_temperature(
             vec![0.0, 1.0, 1.0, 3.0],
@@ -609,8 +615,9 @@ mod tests {
     }
 
     #[test]
+    /// Verify that convert time temperature uses reverse time for ka profiles.
     fn convert_time_temperature_uses_reverse_time_for_ka_profiles() {
-        let (times, time_advance, min_step) = TimeTemperature::convert_time_temperature(
+        let (times, time_advance, _min_step) = TimeTemperature::convert_time_temperature(
             vec![2.0, 1.0, 0.0],
             TimeUnit::KAnnum
         )
@@ -623,8 +630,9 @@ mod tests {
     }
 
     #[test]
+    /// Verify that convert time temperature adds one second to duplicate reverse times.
     fn convert_time_temperature_adds_one_second_to_duplicate_reverse_times() {
-        let (times, time_advance, min_step) = TimeTemperature::convert_time_temperature(
+        let (times, time_advance, _min_step) = TimeTemperature::convert_time_temperature(
             vec![2.0, 1.0, 1.0, 0.0],
             TimeUnit::MaAnnum
         )
@@ -637,6 +645,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that new rejects non increasing forward profiles after conversion.
     fn new_rejects_non_increasing_forward_profiles_after_conversion() {
         let result = TimeTemperature::new(
             vec![0.0, 2.0, 1.0],
@@ -652,6 +661,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that new rejects non decreasing reverse profiles after conversion.
     fn new_rejects_non_decreasing_reverse_profiles_after_conversion() {
         let result = TimeTemperature::new(
             vec![0.0, 1.0, 2.0],
@@ -667,6 +677,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that new builds forward profile with expected initial state.
     fn new_builds_forward_profile_with_expected_initial_state() {
         let profile = TimeTemperature::new(
             vec![0.0, 10.0, 20.0],
@@ -684,6 +695,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that step new calculates gradients and max dt for forward profile.
     fn step_new_calculates_gradients_and_max_dt_for_forward_profile() {
         let times = vec![0.0, 10.0, 20.0];
         let temperatures = vec![20.0, 30.0, 50.0];
@@ -698,6 +710,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that update current max dt uses smaller of temperature limit and boundary limit.
     fn update_current_max_dt_uses_smaller_of_temperature_limit_and_boundary_limit() {
         let mut profile = TimeTemperature::new(
             vec![0.0, 0.5, 10.0],
@@ -711,6 +724,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that advance updates time temperature section and current max dt.
     fn advance_updates_time_temperature_section_and_current_max_dt() {
         let mut profile = TimeTemperature::new(
             vec![0.0, 10.0, 20.0],
@@ -736,6 +750,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that reset restores forward profile starting state.
     fn reset_restores_forward_profile_starting_state() {
         let mut profile = TimeTemperature::new(
             vec![0.0, 10.0, 20.0],
@@ -755,6 +770,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that advance ignores dt with wrong direction.
     fn advance_ignores_dt_with_wrong_direction() {
         let mut profile = TimeTemperature::new(
             vec![0.0, 10.0],
@@ -769,6 +785,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that reverse profile initializes at its oldest age.
     fn reverse_profile_initializes_at_its_oldest_age() {
         let profile = TimeTemperature::new(
             vec![2.0, 1.0, 0.0],
@@ -783,6 +800,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that reset restores reverse profile starting state.
     fn reset_restores_reverse_profile_starting_state() {
         let mut profile = TimeTemperature::new(
             vec![2.0, 1.0, 0.0],
@@ -803,6 +821,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that constant temperature profile stops at its terminal boundary.
     fn constant_temperature_profile_stops_at_its_terminal_boundary() {
         let mut profile = TimeTemperature::new(
             vec![0.0, 10.0],

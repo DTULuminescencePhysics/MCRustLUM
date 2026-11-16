@@ -2,14 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Loading and representing simulation configuration.
+//! Configuration loading, compressed result storage, CSV export, and plotting.
 //!
-//! Use [`inputs::read_inputs`] when a TOML file is supplied and
-//! [`inputs::default_inputs`]
-//! when the built-in configuration is sufficient. Both paths return the same
-//! [`inputs::SimulationInputs`] type, so downstream simulation code does not need to
-//! know where the values came from.
+//! Start with [`inputs::read_inputs`] to resolve named experiment definitions
+//! and normalize their units into [`inputs::ResolvedExperiment`] values.
+//! [`chrono_inputs::read_chrono_inputs`] loads inference settings separately.
+//! Simulation trajectories are streamed through [`outputs`]; accepted thermal
+//! histories use [`chrono_outputs`]. The plotting modules consume consolidated
+//! results and report path-aware errors.
 
+#![warn(missing_docs)]
+
+/// Path-aware input, output, filesystem, and plotting error types.
 pub mod errors;
 
 /// Typed groups corresponding to the sections of an input TOML file.
@@ -24,8 +28,10 @@ pub mod outputs;
 /// Loading consolidated CSV results and producing plots from them.
 pub mod plotting;
 
+/// TOML settings for thermal-history inference and adaptive burn-in.
 pub mod chrono_inputs;
 
+/// Accepted-profile batch storage and occupancy-grid CSV export.
 pub mod chrono_outputs;
 
 /// Plot weighted time-temperature paths produced by chronology analysis.

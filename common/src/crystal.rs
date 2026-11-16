@@ -240,6 +240,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// Verify that distance padded boundary.
     fn distance_padded_boundary() {
         let p1 = Coord::new(1.0, 1.0, 1.0).unwrap();
         let p2 = Coord::new(4.0, 1.0, 1.0).unwrap();
@@ -249,6 +250,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that distance periodic boundary wraps.
     fn distance_periodic_boundary_wraps() {
         let p1 = Coord::new(0.5, 5.0, 5.0).unwrap();
         let p2 = Coord::new(8.5, 5.0, 5.0).unwrap();
@@ -260,6 +262,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that coord with integers.
     fn coord_with_integers() {
         let boundary = Boundary::new(10i32, 10i32, 10i32, false).unwrap();
         let p1 = Coord::new(0i32, 0i32, 0i32).unwrap();
@@ -269,6 +272,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that generation rejects invalid boundaries and density.
     fn generation_rejects_invalid_boundaries_and_density() {
         assert!(Boundary::new(0.0, 10.0, 10.0, false).is_err());
         assert!(Boundary::new(Float::NAN, 10.0, 10.0, false).is_err());
@@ -286,6 +290,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that boundary volume density and containment include the faces.
     fn boundary_volume_density_and_containment_include_the_faces() {
         let boundary = Boundary::new(2.0, 3.0, 4.0, false).unwrap();
 

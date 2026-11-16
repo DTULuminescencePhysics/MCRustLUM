@@ -6,7 +6,23 @@ underlying approach can be applied to other crystal systems.
 
 Analytical solvers are planned for a future release.
 
-Detailed documentation can be found in the accompanying [website](https://dtuluminescencephysics.github.io/MCRustLUM/luminescence/)
+
+## Understanding the code
+
+Start with the [codebase guide](docs/CODEBASE_GUIDE.md) for the simulation and
+chronology workflows, units, reading order, and a list of documentation additions.
+Functions, structs, enums, traits, and public fields are documented in the source. Detailed documentation can be found in the accompanying [website](https://dtuluminescencephysics.github.io/MCRustLUM/luminescence/).
+
+Build the full reference, including private helpers locally:
+
+```console
+cargo doc --workspace --no-deps --document-private-items
+```
+
+Open `target/doc/luminescence/index.html`, or the `common`, `io`, `mc`, and
+`chronology` crate indexes in the same directory. Check declaration coverage with
+`python3 scripts/check_documentation.py`; run examples with
+`cargo test --workspace --doc`.
 
 ## Project status
 
@@ -64,7 +80,6 @@ cargo run --release -p luminescence -- [Options]
 | -r | --repetitions | NUMBER  | Repetitions | 1000 |
 | -e | --experiments | NUMBER  | Experiments | 1 |
 | -s | --seed | NUMBER  | Random seed | 0 |
-| -t | --traps | NUMBER  | Minimum traps. | 800 |
 | -mc | --montec | BOOLEAN | Run a Monte Carlo Simulation | TRUE |
 | -tc | --thermochron | BOOLEAN | Run a Thermochronology experiment | FALSE |
 | -p | --profiles | NUMBER  | Number of profiles to test during a thermochronology experiment | 10000 |

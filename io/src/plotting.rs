@@ -7,7 +7,7 @@
 //! [`crate::plotting::SimulationResults::from_csv`] loads the `average_fill.csv` and
 //! `average_event.csv` files produced after a simulation. Individual methods
 //! create filling, temperature, and event-frequency plots, while
-//! [`crate::plotting::plot_default_results`] creates a useful standard set in one call.
+//! [`crate::plotting::plot_default_continuous_results`] creates a useful standard set in one call.
 
 use crate::errors::PlotError;
 use crate::outputs::{AverageEventRow, ContinuousValueRow};
@@ -198,6 +198,7 @@ impl FillBand {
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Central filling statistic and optional uncertainty band used by a plot axis.
 pub struct FillStatistic {
     /// Arithmetic mean filling fraction.
     average: FillAverage,
@@ -300,11 +301,20 @@ impl FillStatistic {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Axis {
     /// Plot elapsed/profile time in seconds.
-    Time { unit: TimeUnit },
+    Time {
+        /// Display unit selected for this plot axis.
+        unit: TimeUnit,
+    },
     /// Plot against temperature.
-    Temperature { unit: TemperatureUnit },
+    Temperature {
+        /// Display unit selected for this plot axis.
+        unit: TemperatureUnit,
+    },
     /// Plot trap filling ratio
-    Fill { statistics: FillStatistic },
+    Fill {
+        /// Central filling statistic and uncertainty band for this axis.
+        statistics: FillStatistic,
+    },
     /// Plot events/luminescence glow curve
     Event,
 }
@@ -369,10 +379,13 @@ pub struct PlotOptions {
     /// Image height in pixels.
     pub height: u32,
 
+    /// Font family used for captions and labels.
     pub font: &'static str,
 
+    /// Caption font size in pixels.
     pub caption_font_size: u32,
 
+    /// Padding around the drawing area in pixels.
     pub margin: u32,
 }
 
@@ -395,6 +408,7 @@ impl PlotOptions {
 }
 
 impl Default for PlotOptions {
+    /// Return the standard raster dimensions, caption size, and plot styling.
     fn default() -> Self {
         Self {
             width: 1200,
@@ -406,13 +420,20 @@ impl Default for PlotOptions {
     }
 }
 
+/// Plot destination, horizontal/vertical axes, and raster rendering settings.
+///
+/// Methods validate the supplied data and draw PNG output at `output`.
 pub struct PlotWindow {
+    /// Destination path of the rendered plot.
     pub output: PathBuf,
 
+    /// Quantity and display settings for the horizontal axis.
     pub x_axis: Axis,
 
+    /// Quantity and display settings for the vertical axis.
     pub y_axis: Axis,
 
+    /// Raster dimensions, fonts, and layout settings.
     pub options: PlotOptions,
 }
 
@@ -983,8 +1004,16 @@ pub struct GeneratedPlots {
 /// Consolidated fill and event results loaded from the two simulation CSVs.
 #[derive(Debug, Clone)]
 pub enum SimulationResults {
-    Contiuous {fill_rows: Vec<ContinuousValueRow>},
-    Events {event_rows: Vec<AverageEventRow>},
+    /// Loaded continuous filling and temperature observations.
+    Contiuous {
+        /// Continuous filling/temperature rows loaded for plotting.
+        fill_rows: Vec<ContinuousValueRow>,
+    },
+    /// Loaded counts of transition events in time bins.
+    Events {
+        /// Binned transition-count rows loaded for plotting.
+        event_rows: Vec<AverageEventRow>,
+    },
 }
 
 /// One completed event bin represented by its centre, width, and frequency row.
@@ -1135,13 +1164,10 @@ pub fn plot_rolling_average_fill_results(
         "none",
     )?;
 
-    let (display_time_unit, display_temp_unit, time_on_x) =
-            match (window.x_axis, window.y_axis) {
-                (Axis::Time { unit: time }, Axis::Temperature { unit: temp }) => {
-                    (time, temp, true)
-                }
-                (Axis::Temperature { unit: temp }, Axis::Time { unit: time }) => {
-                    (time, temp, false)
+    let display_time_unit =
+            match window.x_axis {
+                Axis::Time { unit: time } => {
+                    time
                 }
                 _ => {
                     return Err(PlotError::Setup {
@@ -1259,6 +1285,11 @@ fn read_rolling_fill_means(
     Ok((times, series))
 }
 
+/// Write both temperature-versus-time and time-versus-temperature PNG plots.
+///
+/// Creates the output directory if necessary and uses the units carried by
+/// `inputs`. Returns errors for missing time/temperature dimensions, invalid
+/// coordinate data, directory creation, or rendering failures.
 pub fn plot_time_temperature(
     output_directory: impl AsRef<Path>,
     inputs: &TimeTemperatureDefinition,
@@ -1288,7 +1319,7 @@ pub fn plot_time_temperature(
                         message: "Could not find a time unit".into(),
                     })
     };
-    let temp_unit = match inputs.times.unit.dimension {
+    let temp_unit = match inputs.temperatures.unit.dimension {
         Dimension::Temperature{kind} => kind,
         _ => return Err(PlotError::Setup {
                         source: "Extracting temperature unit".into(),
@@ -1465,6 +1496,7 @@ mod unit_conversion_tests {
     use super::*;
 
     #[test]
+    /// Verify that reads rolling means with dynamic columns and reverse time.
     fn reads_rolling_means_with_dynamic_columns_and_reverse_time() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
@@ -1489,6 +1521,7 @@ mod unit_conversion_tests {
     }
 
     #[test]
+    /// Verify that rolling means reject missing duplicate and invalid data.
     fn rolling_means_reject_missing_duplicate_and_invalid_data() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
@@ -1511,6 +1544,7 @@ mod unit_conversion_tests {
     }
 
     #[test]
+    /// Verify that plots coordinate profiles in both axis orders.
     fn plots_coordinate_profiles_in_both_axis_orders() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1542,6 +1576,7 @@ mod unit_conversion_tests {
     }
 
     #[test]
+    /// Verify that coordinate profiles reject short or mismatched inputs.
     fn coordinate_profiles_reject_short_or_mismatched_inputs() {
         let window = PlotWindow {
             output: PathBuf::from("unused.png"),
@@ -1566,6 +1601,7 @@ mod unit_conversion_tests {
     }
 
     #[test]
+    /// Verify that converts canonical values to requested plot units.
     fn converts_canonical_values_to_requested_plot_units() {
         let one_ma_in_seconds = TimeUnit::MaAnnum.convert_unit(&TimeUnit::Second, 1.0).unwrap();
 
@@ -1577,6 +1613,7 @@ mod unit_conversion_tests {
     }
 
     #[test]
+    /// Verify that geological time ranges run from age to zero.
     fn geological_time_ranges_run_from_age_to_zero() {
         assert_eq!(
             orient_range(Axis::Time { unit: TimeUnit::MaAnnum }, 0.0..2.0),

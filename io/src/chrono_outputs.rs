@@ -6,12 +6,12 @@
 //!
 //! The uncompressed bincode stream contains, in order:
 //!
-//! 1. one [`TimeUnit`];
-//! 2. one [`TemperatureUnit`];
+//! 1. one [`common::constants::time::TimeUnit`];
+//! 2. one [`common::constants::temperature::TemperatureUnit`];
 //! 3. zero or more `Vec<T>` batches.
 //!
 //! The header and every appended batch are separate gzip members. A
-//! [`MultiGzDecoder`] exposes them as one continuous bincode stream when read.
+//! [`flate2::bufread::MultiGzDecoder`] exposes them as one continuous bincode stream when read.
 
 use crate::errors::{CsvOutputError, OutputError};
 use common::constants::temperature::TemperatureUnit;
@@ -31,14 +31,24 @@ use serde::{Serialize,Deserialize};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Statistical diagnostics stored alongside an accepted thermal history.
+///
+/// The variant identifies the acceptance method. Bayesian values are log
+/// likelihoods; the frequentist value is the combined test p-value.
 pub enum AcceptanceInfo {
+    /// Independent rejection sampling using the trial log likelihood.
     BayesianRandom {
+        /// Gaussian log likelihood of the accepted/trial profile, without normalization constants.
         log_likelihood: Float,
     },
+    /// Combined test probability associated with the accepted profile.
     Frequentist {
+        /// Combined frequentist p-value used for the 0.05 rejection threshold.
         p_test: Float,
     },
+    /// Bayesian walk acceptance with move-specific prior/proposal corrections.
     BayesianWalk {
+        /// Gaussian log likelihood of the accepted/trial profile, without normalization constants.
         log_likelihood: Float,
         /// Reserved for a future calculation; currently written as 0.0.
         log_posterior: Float,
@@ -46,8 +56,11 @@ pub enum AcceptanceInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A serialized profile paired with the diagnostic values used for its acceptance.
 pub struct AcceptedProfile<P> {
+    /// Accepted thermal-history payload.
     pub profile: P,
+    /// Acceptance diagnostics stored with this profile.
     pub acceptance: AcceptanceInfo,
 }
 
@@ -177,6 +190,9 @@ pub struct ChronologyBatchReader<T> {
 impl<T: DeserializeOwned> Iterator for ChronologyBatchReader<T> {
     type Item = Result<Vec<T>, OutputError>;
 
+    /// Read and deserialize the next compressed profile batch, or return `None` at EOF.
+    ///
+    /// Read/decode failures are yielded as errors and terminate iteration.
     fn next(&mut self) -> Option<Self::Item> {
         if self.finished {
             return None;
@@ -243,16 +259,28 @@ pub fn read_all_chrono_batches<T: DeserializeOwned>(
     })
 }
 
+/// Accepted-profile occupancy counts and a representative path on a regular grid.
+///
+/// Coordinates retain the stored units. Internal rows/columns ascend in physical
+/// order, while CSV output reverses temperature rows and geological time columns.
+/// A profile contributes at most one count to each cell it crosses.
 pub struct ProfileGrid {
+    /// Number of accepted profiles contributing to this grid.
     pub accepted_profiles: u64,
 
+    /// Ascending minimum and maximum grid times in `time_unit`.
     pub time_bounds: (TimeFloat, TimeFloat),
+    /// Ascending minimum and maximum temperatures in `temperature_unit`.
     pub temperature_bounds: (Float, Float),
 
+    /// Time unit used to interpret the associated coordinates.
     pub time_unit: TimeUnit,
+    /// Temperature unit used by this grid and associated profile coordinates.
     pub temperature_unit: TemperatureUnit,
 
+    /// Number of grid columns along the time axis.
     pub time_cells: usize,
+    /// Number of grid rows along the temperature axis.
     pub temperature_cells: usize,
 
     /// Row-major: `weights[temp_index * time_cells + time_index]`.
@@ -262,9 +290,16 @@ pub struct ProfileGrid {
     /// Most-supported profile selected from the ensemble by mean cell weight.
     /// These rows are written immediately before the occupancy grid in CSV.
     pub best_fit_times: Vec<TimeFloat>,
+    /// Temperature coordinates paired with `best_fit_times`.
     pub best_fit_temperatures: Vec<Float>,
 }
 
+/// Write grid metadata, best-fit coordinates, and occupancy rows to a new CSV file.
+///
+/// Replaces an existing file. Metadata includes accepted count, axis bounds,
+/// and units; temperature rows run high to low and geological time runs
+/// old to young. Rejects zero/overflowing dimensions, mismatched weights, or
+/// invalid best-fit vector lengths, and reports creation/write errors.
 pub fn write_profile_grid_csv(
     path: impl AsRef<Path>,
     grid: &ProfileGrid,
@@ -414,11 +449,13 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    /// Minimal serializable profile payload used to verify chronology batch storage.
     struct TestProfile {
         times: Vec<f64>,
         temps: Vec<f64>,
     }
 
+    /// Create a unique temporary file path for an isolated output test.
     fn temporary_output_path() -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -432,6 +469,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that writes units once and streams variable length batches.
     fn writes_units_once_and_streams_variable_length_batches() {
         let path = temporary_output_path();
         let first = vec![TestProfile {
@@ -464,6 +502,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that writes grid in display axis order.
     fn writes_grid_in_display_axis_order() {
         let path = temporary_output_path();
         let grid = ProfileGrid {
@@ -488,6 +527,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify that rejects inconsistent grid dimensions.
     fn rejects_inconsistent_grid_dimensions() {
         let path = temporary_output_path();
         let grid = ProfileGrid {

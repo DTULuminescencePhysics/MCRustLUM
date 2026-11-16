@@ -71,10 +71,22 @@ pub trait HalfClosedRandom: Sized{
     /// Creates the actual HalfClosedRandom Sample (a, b\].
     fn sample_half_closed(a: Self, b: Self, rng: &mut impl Rng,) -> Self;
 }
+/// Sampling support for a symmetric, truncated exponential (Laplace) distribution.
+///
+/// The distribution is centred at the midpoint of the supplied bounds.
 pub trait BoundedExponentialRandom: Sized {
+    /// Sample a midpoint-centred Laplace distribution truncated to `min..=max`.
+    ///
+    /// Uses inverse-CDF sampling with exponential `scale`. For a non-degenerate
+    /// distribution use finite increasing bounds and a finite positive scale.
+    /// Invalid bounds, overflowing width, or negative/non-finite scale panic.
     fn sample_bounded_exponential(min: Self, max: Self, scale: Self, rng: &mut impl Rng,) -> Self;
 }
+/// Sampling support for Gaussian values with a supplied mean and standard deviation.
 pub trait GaussianRandom: Sized {
+    /// Draw a Gaussian value with the supplied mean and standard deviation.
+    ///
+    /// Panics if construction of the underlying normal distribution fails.
     fn sample_gaussian(mean: Self, sigma: Self, rng: &mut impl Rng,) -> Self;
 }
 
@@ -95,10 +107,19 @@ pub fn generate_half_closed_random<T: HalfClosedRandom>(a: T, b: T, rng: &mut im
     T::sample_half_closed(a, b, rng)
 }
 
+/// Draw from the bounded, symmetric exponential distribution implemented by `T`.
+///
+/// The floating-point implementations use a truncated Laplace distribution
+/// centred at the bounds' midpoint. Supply finite increasing bounds and a
+/// finite positive scale; invalid parameters can panic in the sampler.
 pub fn generate_bounded_exponential_random<T: BoundedExponentialRandom>(min: T, max: T, scale: T, rng: &mut impl Rng,) -> T{
     T::sample_bounded_exponential(min, max, scale, rng)
 }
 
+/// Draw a normal variate with the supplied mean and standard deviation.
+///
+/// Delegates validation to the numeric type's sampler; invalid distribution
+/// parameters can panic.
 pub fn generate_gaussian_random<T: GaussianRandom>(mean: T, sigma: T, rng: &mut impl Rng,) -> T{
     T::sample_gaussian(mean, sigma, rng)
 }
@@ -108,6 +129,10 @@ macro_rules! impl_integer {
     ($($ty:ty),*) => {
         $(
             impl OpenRandom for $ty {
+                /// Draw uniformly between `a` and `b`, excluding both endpoints.
+                ///
+                /// # Panics
+                /// Panics for invalid bounds or an interval without a representable interior value.
                 fn sample_open(a: Self, b: Self, rng: &mut impl Rng) -> Self {
                     let start = a.checked_add(1).expect("lower bound overflows");
                     assert!(start < b, "interval contains no integers");
@@ -115,6 +140,10 @@ macro_rules! impl_integer {
                 }
             }
             impl ClosedRandom for $ty {
+                /// Draw uniformly from the inclusive interval `a..=b`.
+                ///
+                /// # Panics
+                /// Panics for invalid or reversed bounds.
                 fn sample_closed(a: Self, b: Self, rng: &mut impl Rng) -> Self {
                     assert!(a <= b, "interval is too small or incorrect way round");
                     
@@ -122,11 +151,19 @@ macro_rules! impl_integer {
                 }
             }
             impl HalfOpenRandom for $ty {
+                /// Draw uniformly from `a..b`, including the lower endpoint only.
+                ///
+                /// # Panics
+                /// Panics when the range is empty or invalid.
                 fn sample_half_open(a: Self, b: Self, rng: &mut impl Rng) -> Self {
                     rng.random_range(a..b)
                 }
             }
             impl HalfClosedRandom for $ty {
+                /// Draw uniformly from `(a, b]`, including the upper endpoint only.
+                ///
+                /// # Panics
+                /// Panics when the bounds are invalid or incrementing an integer lower bound overflows.
                 fn sample_half_closed(a: Self, b: Self, rng: &mut impl Rng) -> Self {
                     let start = a.checked_add(1).expect("lower bound overflows");
                     rng.random_range(start..=b)
@@ -141,6 +178,10 @@ impl_integer!(u8, u16, u32, u64, u128, usize,
               i8, i16, i32, i64, i128);
 
 impl OpenRandom for isize {
+    /// Draw uniformly between `a` and `b`, excluding both endpoints.
+    ///
+    /// # Panics
+    /// Panics for invalid bounds or an interval without a representable interior value.
     fn sample_open(a: Self, b: Self, rng: &mut impl Rng) -> Self {
         let start = a.checked_add(1).expect("lower bound overflows");
         assert!(start < b, "interval contains no integers");
@@ -149,17 +190,29 @@ impl OpenRandom for isize {
     }
 }
 impl ClosedRandom for isize {
+    /// Draw uniformly from the inclusive interval `a..=b`.
+    ///
+    /// # Panics
+    /// Panics for invalid or reversed bounds.
     fn sample_closed(a: Self, b: Self, rng: &mut impl Rng) -> Self {
         assert!(a <= b, "interval is too small or incorrect way round");
         rng.random_range((a as i128)..=(b as i128)) as isize
     }
 }
 impl HalfOpenRandom for isize {
+    /// Draw uniformly from `a..b`, including the lower endpoint only.
+    ///
+    /// # Panics
+    /// Panics when the range is empty or invalid.
     fn sample_half_open(a: Self, b: Self, rng: &mut impl Rng) -> Self {
         rng.random_range((a as i128)..(b as i128)) as isize
     }
 }
 impl HalfClosedRandom for isize {
+    /// Draw uniformly from `(a, b]`, including the upper endpoint only.
+    ///
+    /// # Panics
+    /// Panics when the bounds are invalid or incrementing an integer lower bound overflows.
     fn sample_half_closed(a: Self, b: Self, rng: &mut impl Rng) -> Self {
         let start = a.checked_add(1).expect("lower bound overflows");
         rng.random_range((start as i128)..=(b as i128)) as isize
@@ -170,6 +223,10 @@ macro_rules! impl_float {
     ($($ty:ty),*) => {
         $(
             impl OpenRandom for $ty {
+                /// Draw uniformly between `a` and `b`, excluding both endpoints.
+                ///
+                /// # Panics
+                /// Panics for invalid bounds or an interval without a representable interior value.
                 fn sample_open(a: Self, b: Self, rng: &mut impl Rng) -> Self {
                     assert!(
                         a.is_finite() && b.is_finite() && a < b,
@@ -193,6 +250,10 @@ macro_rules! impl_float {
                 }
             }
             impl ClosedRandom for $ty {
+                /// Draw uniformly from the inclusive interval `a..=b`.
+                ///
+                /// # Panics
+                /// Panics for invalid or reversed bounds.
                 fn sample_closed(a: Self, b: Self, rng: &mut impl Rng) -> Self {
                     assert!(a <= b, "interval is too small or incorrect way round");
                     
@@ -200,11 +261,19 @@ macro_rules! impl_float {
                 }
             }
             impl HalfOpenRandom for $ty {
+                /// Draw uniformly from `a..b`, including the lower endpoint only.
+                ///
+                /// # Panics
+                /// Panics when the range is empty or invalid.
                 fn sample_half_open(a: Self, b: Self, rng: &mut impl Rng) -> Self {
                     rng.random_range(a..b)
                 }
             }
             impl HalfClosedRandom for $ty {
+                /// Draw uniformly from `(a, b]`, including the upper endpoint only.
+                ///
+                /// # Panics
+                /// Panics when the bounds are invalid or incrementing an integer lower bound overflows.
                 fn sample_half_closed(a: Self, b: Self, rng: &mut impl Rng) -> Self {
                     assert!(a.is_finite() && b.is_finite() && a < b);
                     loop {
@@ -218,6 +287,11 @@ macro_rules! impl_float {
                 }
             }
             impl BoundedExponentialRandom for $ty {
+                /// Sample a midpoint-centred Laplace distribution truncated to `min..=max`.
+                ///
+                /// Uses inverse-CDF sampling with exponential `scale`. For a non-degenerate
+                /// distribution use finite increasing bounds and a finite positive scale.
+                /// Invalid bounds, overflowing width, or negative/non-finite scale panic.
                 fn sample_bounded_exponential(min: Self, max: Self, scale: Self, rng: &mut impl Rng,) -> Self{
                     
                     assert!(min.is_finite() && max.is_finite() && min <= max,
@@ -251,6 +325,9 @@ macro_rules! impl_float {
                 }
             }
             impl GaussianRandom for $ty {
+                /// Draw a Gaussian value with the supplied mean and standard deviation.
+                ///
+                /// Panics if construction of the underlying normal distribution fails.
                 fn sample_gaussian(mean: Self, sigma: Self, rng: &mut impl Rng,) -> Self{
                     
                     let distribution = Normal::new(mean, sigma)

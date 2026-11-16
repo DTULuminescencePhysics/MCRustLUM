@@ -133,7 +133,7 @@ source link so readers can move between explanation and implementation.
 Run the source coverage check and executable documentation examples:
 
 ```console
-python3 docs/check_documentation.py
+python3 scripts/check_documentation.py
 cargo test --workspace --doc
 ```
 

@@ -484,7 +484,7 @@ where
 /// thermal state-rate functions below.
 pub fn ground_excited_state_weights
 <E, SE, SG, Temp, ENeg, KT, Ratio, Exp, ExcitationRaw,
-  ExcitationBase, Denominator, SGM, SGOut, NegExcitedWeight,      
+  ExcitationBase, Denominator, SGM, SGOut,      
 
 GroundWeight, ExcitedWeight>(
     e: &E,
@@ -503,8 +503,7 @@ where
     SGM: PrecisionInput<TimePrecision, Output = SGOut>,
     SGOut: ElementWise<ExcitationBase, Output = Denominator>,  
     SGOut: ElementWise<Denominator, Output= GroundWeight>,
-    GroundWeight: ElementWise<Float, Output = NegExcitedWeight>,
-    NegExcitedWeight: ElementWise<Float, Output = ExcitedWeight>,
+    ExcitationBase: ElementWise<Denominator, Output = ExcitedWeight>,
 
 {   
     let excited_state = first_order_delocalised_rate_equation(
@@ -518,8 +517,9 @@ where
     let denominator = s_frequency_g_prec.element_add(&excited_state)?;
 
     let ground_weight = s_frequency_g_prec.element_div(&denominator)?;
-    let negative_excited_weight = ground_weight.element_sub(&1.0)?;
-    let excited_weight = negative_excited_weight.element_mul(&-1.0)?;
+    let excited_weight = excited_state.element_div(&denominator)?;
+    // let negative_excited_weight = ground_weight.element_sub(&1.0)?;
+    // let excited_weight = negative_excited_weight.element_mul(&-1.0)?;
    
     Some((ground_weight, excited_weight))
 }

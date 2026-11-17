@@ -105,8 +105,10 @@ quantity_entity!(
     TrapDefinition {
         /// Relative/physical trap-family density used when apportioning sites; retains its input unit.
         density,
-        /// Initial occupied fraction for this family (dimensionless).
+        /// Initial occupied fraction of available traps (dimensionless).
         initial_fill,
+        /// Initial occupied fraction of available holes (dimensionless).
+        initial_holes,
         /// Energy separation between localized ground and excited states.
         ground_to_excited_state_energy,
         /// Ground-state activation energy for release to the conduction band.
@@ -473,4 +475,46 @@ pub fn read_inputs(
         Ok(experiments)
 
 
+}
+
+#[cfg(test)]
+mod tests {
+    use common::constants::quantities::{Distribution, Quantity};
+
+    #[test]
+    /// Verify that disabled or omitted distribution switches clear supplied functions.
+    fn quantity_loading_clears_disabled_distributions() {
+        for switch in ["distribute = false", ""] {
+            let input = format!(
+                "value = 1.45\nunit = \"ev\"\n{switch}\nfunction = {{ kind = \"gaussian\", sigma = 0.1 }}"
+            );
+            let quantity: Quantity = toml::from_str(&input).unwrap();
+            assert!(!quantity.distribute);
+            assert!(quantity.function.is_none());
+            assert_eq!(quantity.value, 1.45);
+        }
+    }
+
+    #[test]
+    /// Verify that enabled functions survive input loading.
+    fn quantity_loading_preserves_enabled_distributions() {
+        let quantity: Quantity = toml::from_str(
+            "value = 1.45\nunit = \"ev\"\ndistribute = true\nfunction = { kind = \"gaussian\", sigma = 0.1 }"
+        ).unwrap();
+        assert!(quantity.distribute);
+        assert!(matches!(quantity.function, Some(Distribution::Gaussian { sigma: 0.1 })));
+    }
+
+    #[test]
+    /// Verify that array quantities also clear disabled functions and allow omitted functions.
+    fn array_quantity_loading_clears_disabled_distributions() {
+        for function in ["function = { kind = \"gaussian\", sigma = 1.0 }", ""] {
+            let input = format!(
+                "value = [0.0, 800.0]\nunit = \"celsius\"\ndistribute = false\n{function}"
+            );
+            let quantity: Quantity<Vec<f64>> = toml::from_str(&input).unwrap();
+            assert!(quantity.function.is_none());
+            assert_eq!(quantity.value, vec![0.0, 800.0]);
+        }
+    }
 }

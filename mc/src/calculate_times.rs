@@ -76,7 +76,6 @@ fn build_candidates(
         }else{
             (ground_weights, excited_weights)
         };
-    
         if transitions.get_localised_recombination(){
             let mut localised_rates: Vec<Candidate> = Vec::with_capacity(trap_places.available_count()*hole_places.available_count()*2);
             let mut distance: Vec<Float> = Vec::with_capacity(hole_places.available_count());

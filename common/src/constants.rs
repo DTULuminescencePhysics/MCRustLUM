@@ -497,7 +497,6 @@ pub mod temperature {
             } 
 
         }   
-
         /// Return `°C` or `K` for temperature labels.
         pub fn get_name(&self) -> &'static str {
             match self {
@@ -759,7 +758,7 @@ pub mod quantities{
                         }),
                 "celsius" | "c" => Ok(Self {
                             metric: MetricAbbrev::STANDARD,
-                            dimension: Dimension::Temperature{kind: temperature::TemperatureUnit::Kelvin},
+                            dimension: Dimension::Temperature{kind: temperature::TemperatureUnit::Celsius},
                         }),
                 _ => {
                         let words: Vec<&str> = normalised.split_whitespace().collect();
@@ -1036,8 +1035,7 @@ pub mod quantities{
 
 
     /// Struct that holds input values 
-    #[derive(Debug, Clone, Deserialize)]
-    #[serde(deny_unknown_fields)]
+    #[derive(Debug, Clone)]
     pub struct Quantity<T = f64> {
         /// Quantity value
         pub value: T,
@@ -1045,11 +1043,34 @@ pub mod quantities{
         pub unit: Unit,
         /// Flag to decide if the value should be 
         /// generated from a distribution 
-        #[serde(default)]
         pub distribute: bool,
         /// Optional distribution function to 
-        /// generate said values
+        /// generate said values. Cleared during deserialization when `distribute` is false.
         pub function: Option<Distribution>,
+    }
+
+    impl<'de, T: Deserialize<'de>> Deserialize<'de> for Quantity<T> {
+        /// Read a quantity and retain its distribution only when explicitly enabled.
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            /// Input representation before applying the distribution switch.
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct QuantityInput<T> {
+                value: T,
+                unit: Unit,
+                #[serde(default)]
+                distribute: bool,
+                function: Option<Distribution>,
+            }
+
+            let input = QuantityInput::<T>::deserialize(deserializer)?;
+            Ok(Self {
+                value: input.value,
+                unit: input.unit,
+                distribute: input.distribute,
+                function: if input.distribute { input.function } else { None },
+            })
+        }
     }
 
     impl<T: UnitValue> Quantity<T> {
@@ -1062,14 +1083,13 @@ pub mod quantities{
             if !self.unit.dimension.same_kind(&new_unit.dimension) {
                 return Err(format!("Attempting to convert between {} and {} ",self.unit, new_unit));
             }
-
+            if self.unit == new_unit {
+                return Ok(());
+            }
             let (scale, offset) = match (source, target) {
                 (Temperature{kind}, Temperature{kind:kind_new}) => {
                     let offset = kind.convert_unit(&kind_new, 0.0).ok_or("err")?;
-                    if offset == 0.0{
-                        return Ok(());
-                    }
-                    (0.0, offset)
+                    (1.0, offset)
                 },
 
                 (Energy{kind}, Energy{kind: kind_new}) => { 
@@ -1117,7 +1137,6 @@ pub mod quantities{
                 );
             }
             self.value.apply_conversion(scale, offset);
-
             if self.distribute {
                 match self.function.as_mut() {
                     Some(Distribution::Gaussian { sigma }) => {
@@ -1196,9 +1215,64 @@ pub mod quantities{
 
 #[cfg(test)]
 mod tests {
+    use super::quantities::{Quantity, Unit};
     use super::temperature::TemperatureUnit;
     use super::time::{ TimeUnit, convert_to_seconds, unit_multiplier};
     use crate::numeric::Float;
+
+    #[test]
+    /// Verify that input unit parsing distinguishes Celsius from Kelvin.
+    fn temperature_quantity_units_parse_distinctly() {
+        for name in ["celsius", "c", "Celsius"] {
+            let unit: Unit = name.parse().unwrap();
+            assert_eq!(unit.get_temperature_unit().unwrap(), TemperatureUnit::Celsius);
+        }
+        let unit: Unit = "kelvin".parse().unwrap();
+        assert_eq!(unit.get_temperature_unit().unwrap(), TemperatureUnit::Kelvin);
+    }
+
+    #[test]
+    /// Verify that changing a temperature quantity converts every array value and its unit.
+    fn temperature_quantity_converts_array_values_and_unit() {
+        let kelvin: Unit = "kelvin".parse().unwrap();
+        let mut temperatures: Quantity<Vec<f64>> = Quantity {
+            value: vec![0.0, 800.0],
+            unit: "celsius".parse().unwrap(),
+            distribute: false,
+            function: None,
+        };
+
+        temperatures.change_unit(kelvin.clone()).unwrap();
+        assert_eq!(temperatures.value, vec![273.15, 1073.15]);
+        assert_eq!(temperatures.unit, kelvin);
+
+        // Reapplying normalization must not add the offset a second time.
+        temperatures.change_unit(kelvin).unwrap();
+        assert_eq!(temperatures.value, vec![273.15, 1073.15]);
+
+        let celsius: Unit = "celsius".parse().unwrap();
+        temperatures.change_unit(celsius.clone()).unwrap();
+        assert_eq!(temperatures.unit, celsius);
+        for (actual, expected) in temperatures.value.iter().zip([0.0, 800.0]) {
+            assert!((actual - expected).abs() < 1.0e-12);
+        }
+    }
+
+    #[test]
+    /// Verify that Celsius conversion preserves a scalar's Gaussian spread.
+    fn temperature_quantity_preserves_gaussian_spread() {
+        use super::quantities::Distribution;
+        let mut temperature = Quantity {
+            value: 20.0,
+            unit: "celsius".parse().unwrap(),
+            distribute: true,
+            function: Some(Distribution::Gaussian { sigma: 5.0 }),
+        };
+
+        temperature.change_unit("kelvin".parse().unwrap()).unwrap();
+        assert_eq!(temperature.value, 293.15);
+        assert!(matches!(temperature.function, Some(Distribution::Gaussian { sigma: 5.0 })));
+    }
 
     #[test]
     /// Verify that converts celsius to kelvin at program precision.

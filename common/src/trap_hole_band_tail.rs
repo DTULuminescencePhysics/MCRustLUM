@@ -629,6 +629,7 @@ impl TrapGenerator {
         alpha_ground_distribution: Option<Distribution>,
         alpha_excited_distribution: Option<Distribution>,) -> Self{
 
+            
             Self { parameters: TrapParameters{
                     trap_type, 
                     excited_energy_gap, 
@@ -690,6 +691,25 @@ impl TrapGenerator {
                 distributions: TrapDistributions::new_all_none()
             }
     } 
+    /// Fetches the just the parameter values not using a distribution
+    fn get_parameter_values_only(&self) -> TrapParameters {
+         TrapParameters {
+            trap_type: self.parameters.trap_type.clone(),
+            excited_energy_gap: self.parameters.excited_energy_gap,
+            s_frequency_e: self.parameters.s_frequency_e,
+            s_frequency_g: self.parameters.s_frequency_g,
+            e_cb_ground: self.parameters.e_cb_ground,
+            e_cb_excited: self.parameters.e_cb_excited,
+            de_frequency_ground: self.parameters.de_frequency_ground,
+            de_frequency_excited: self.parameters.de_frequency_excited,
+            lo_frequency_ground: self.parameters.lo_frequency_ground,
+            lo_frequency_excited: self.parameters.lo_frequency_excited,
+            alpha_ground: self.parameters.alpha_ground,
+            alpha_excited: self.parameters.alpha_excited,
+        }
+
+    }
+
 
     /// Sample one trap parameter record from the configured family distributions.
     ///
@@ -697,6 +717,9 @@ impl TrapGenerator {
     /// the excited-to-band energy as sampled ground-to-band energy minus the
     /// sampled excitation gap, even for a family without distributions.
     pub fn get_parameters(&self, rng: &mut impl Rng) -> TrapParameters {
+        if self.distributions.all_none(){
+            return self.get_parameter_values_only();
+        }
         let p = &self.parameters;
         let d = &self.distributions;
 
@@ -841,10 +864,9 @@ impl TrapParameterLayout {
                 .checked_add(count)
                 .ok_or_else(|| "total trap count overflowed usize".to_string())
         })?;
-
         // One fixed type: every trap shares the same parameters.
         if generators.len() == 1 && generators[0].distributions.all_none() {
-            let generator = generators.into_iter().next().unwrap();
+            let generator = generators.into_iter().next().unwrap(); 
             return Ok(Self::new_uniform(generator, rng));
         }
 
@@ -978,7 +1000,6 @@ impl TrapParameterLayout {
                             &parameters.s_frequency_g,
                             temperature,
                             ).ok_or_else(|| "could not calculate ground/excited-state weights".to_string())?;
-                
                 let ground_weights: Vec<TimeFloat> = vec![g];
                 let excited_weights: Vec<TimeFloat> = vec![e];
                 return Ok((ground_weights, excited_weights));
@@ -1139,7 +1160,7 @@ impl TrapParameterLayout {
         excited_weight: &'a Float,
         distance: &'a [Float],
         trap: &PlaceId,
-        temperature: Float,
+        _temperature: Float,
     ) -> Result<
         LocalisedTransitionInputs<Float, Float, &'a Float, &'a [Float]>,
         String,> 
@@ -1188,7 +1209,7 @@ impl TrapParameterLayout {
         excited_weight: &'a Float,
         distance: &'a [Float],
         trap: &PlaceId,
-        temperature: Float,
+        _temperature: Float,
     ) -> Result<
         LocalisedTransitionInputs<Float, Float, &'a Float, &'a [Float]>,
         String,> 

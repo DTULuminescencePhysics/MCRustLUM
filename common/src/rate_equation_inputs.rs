@@ -178,7 +178,7 @@ impl<E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap, SE, SG,>
     /// stored temperature, then shared by the delocalised,
     /// localised-recombination, and localised-retrapping inputs.
     pub fn update_inputs<ENeg, KT, Ratio, Exp, ExcitationRaw,
-            ExcitationBase, Denominator, SGM, SGOut, NegExcitedWeight>(
+            ExcitationBase, Denominator, SGM, SGOut>(
         &mut self,
         temp: Float,
         population: N,
@@ -194,8 +194,7 @@ impl<E, S, W, Alpha, B, R, D0, DDot, N, NTot, Gap, SE, SG,>
         SGM: PrecisionInput<TimePrecision, Output = SGOut>,
         SGOut: ElementWise<ExcitationBase, Output = Denominator>,  
         SGOut: ElementWise<Denominator, Output= W>,
-        W: ElementWise<Float, Output = NegExcitedWeight>,
-        NegExcitedWeight: ElementWise<Float, Output = W>,
+        ExcitationBase: ElementWise<Denominator, Output = W>,
 
         W: Clone,
     {

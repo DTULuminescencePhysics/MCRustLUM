@@ -74,6 +74,7 @@ impl MonteCarloSimulation {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
+       
         let initial_traps: Vec<Vec<usize>> = (0..experiments)
             .map(|experiment_index| {
                 cubes[experiment_index].trap_total
@@ -85,10 +86,15 @@ impl MonteCarloSimulation {
             }).collect();
         
         let initial_holes: Vec<usize> = (0..experiments)
-            .map(|experiment_index| 
-                initial_traps[experiment_index].iter().sum()
-            ).collect();
-
+            .map(|experiment_index| {
+                let hole_ratio:Float = inputs[experiment_index].traps.iter()
+                .map(|(_,trap)| {
+                    trap.initial_holes.value
+                    
+                }).sum();
+                (cubes[experiment_index].hole_total as Float * (hole_ratio/inputs[experiment_index].traps.len() as Float)).round() as usize
+            }).collect();
+        
         let time_temperature = (0..experiments)
             .map(|experiment_index| {
                 MonteCarloSimulation::generate_time_temperature(&inputs[experiment_index].time_temperature)
@@ -159,6 +165,7 @@ impl MonteCarloSimulation {
             inputs.periodic,
             minimum_traps,
         )
+       
     }
     /// Validate and generate the piecewise-linear time/temperature profile.
     pub fn generate_time_temperature(
@@ -450,6 +457,7 @@ mod tests {
         )
         .expect("the checked-in input fixture should parse");
         let experiment = &mut inputs[0];
+        experiment.total_traps = 8;
         experiment.cube.cube_height.value = 2.0;
         experiment.cube.cube_width.value = 2.0;
         experiment.cube.cube_length.value = 2.0;

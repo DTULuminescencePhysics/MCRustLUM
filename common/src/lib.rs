@@ -13,8 +13,12 @@
 
 /// Numeric precision aliases and shape-aware arithmetic traits.
 pub mod numeric;
-/// Physical constants and unit conversions.
+/// Physical constants and metric, time, temperature conversions.
 pub mod constants;
+/// Holds unit structs and helper routines needed to make conversions.
+pub mod units;
+/// Holds structs describing specific quantities and the methods for how they can be generated.
+pub mod quantities;
 /// Crystal geometry and randomly generated electron-site positions.
 pub mod crystal;
 /// Spatial sites and the physical parameters assigned to electron traps.

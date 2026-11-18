@@ -1003,7 +1003,7 @@ fn average_events_in_configured(
 mod tests {
     use super::*;
     use common::charge_transfer::Event;
-    use common::constants::time::{self, TimeUnit};
+    use common::constants::time::TimeUnit;
     use common::place_ids::PlaceId;
     use io::outputs::{
         append_monte_carlo_experiment_batch_to_file, create_monte_carlo_experiment_file,
@@ -1260,7 +1260,7 @@ mod tests {
         let output_file = directory.join("average_event_0.csv");
         fs::create_dir(&temporary_directory).unwrap();
         let place = PlaceId::new(0).unwrap();
-        let half_ma = time::convert_to_seconds(TimeUnit::MaAnnum, 0.5).unwrap();
+        let half_ma = TimeUnit::Second.convert_unit(&TimeUnit::MAnnum, 0.5).unwrap();
 
         write_records(
             &temporary_directory.join("experiment_results_0_0.bin.gz"),
@@ -1302,7 +1302,7 @@ mod tests {
     #[test]
     /// Verify that rejects an explicit width that would create too many bins.
     fn rejects_an_explicit_width_that_would_create_too_many_bins() {
-        let half_ma = time::convert_to_seconds(TimeUnit::MaAnnum, 0.5).unwrap();
+        let half_ma = TimeUnit::Second.convert_unit(&TimeUnit::MAnnum, 0.5).unwrap();
         let error = event_bin_count(0.0, half_ma, MINIMUM_EVENT_BIN_WIDTH).unwrap_err();
 
         assert!(error.contains("the maximum is 1000000"));

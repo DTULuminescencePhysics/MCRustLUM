@@ -10,7 +10,9 @@
 //! A [`crate::inputs::ResolvedExperiment`] contains concrete definitions in configured order.
 
 
-use common::constants::{metric::MetricAbbrev, quantities::{Dimension, Quantity, Unit}, temperature::TemperatureUnit};
+use common::constants::{metric::MetricAbbrev,  temperature::TemperatureUnit};
+use common::units::{Dimension, Unit};
+use common::quantities::Quantity;
 use serde::{de::DeserializeOwned, Deserialize};
 use std::{fs, path::Path};
 type InputResult<T> = Result<T, String>;
@@ -479,8 +481,8 @@ pub fn read_inputs(
 
 #[cfg(test)]
 mod tests {
-    use common::constants::quantities::{Distribution, Quantity};
-
+    use super::*;
+    use common::quantities::Distribution;
     #[test]
     /// Verify that disabled or omitted distribution switches clear supplied functions.
     fn quantity_loading_clears_disabled_distributions() {

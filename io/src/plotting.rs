@@ -12,9 +12,8 @@
 use crate::errors::PlotError;
 use crate::outputs::{AverageEventRow, ContinuousValueRow};
 use crate::inputs::TimeTemperatureDefinition;
-use common::constants::quantities::{Dimension, };
-use common::constants::temperature::TemperatureUnit;
-use common::constants::time::TimeUnit;
+use common::units::Dimension;
+use common::constants::{temperature::TemperatureUnit, time::TimeUnit};
 use common::numeric::{Float, TimeFloat};
 use plotters::coord::types::RangedCoordf64;
 use plotters::coord::Shift;
@@ -1603,11 +1602,11 @@ mod unit_conversion_tests {
     #[test]
     /// Verify that converts canonical values to requested plot units.
     fn converts_canonical_values_to_requested_plot_units() {
-        let one_ma_in_seconds = TimeUnit::MaAnnum.convert_unit(&TimeUnit::Second, 1.0).unwrap();
+        let one_ma_in_seconds = TimeUnit::MAnnum.convert_unit(&TimeUnit::Second, 1.0).unwrap();
 
         assert_eq!(TimeUnit::Second.convert_unit(&TimeUnit::Second, 60.0).unwrap(),60.0);
         assert_eq!(TimeUnit::Minute.convert_unit(&TimeUnit::Second, 60.0).unwrap(), 1.0);
-        assert_eq!(TimeUnit::Second.convert_unit(&TimeUnit::MaAnnum, one_ma_in_seconds).unwrap(), 1.0);
+        assert_eq!(TimeUnit::Second.convert_unit(&TimeUnit::MAnnum, one_ma_in_seconds).unwrap(), 1.0);
         assert_eq!(TemperatureUnit::Kelvin.convert_unit(&TemperatureUnit::Kelvin, 273.15).unwrap(), 273.15);
         assert!(TemperatureUnit::Kelvin.convert_unit(&TemperatureUnit::Celsius, 273.15).unwrap().abs()< 1.0e-12);
     }
@@ -1616,7 +1615,7 @@ mod unit_conversion_tests {
     /// Verify that geological time ranges run from age to zero.
     fn geological_time_ranges_run_from_age_to_zero() {
         assert_eq!(
-            orient_range(Axis::Time { unit: TimeUnit::MaAnnum }, 0.0..2.0),
+            orient_range(Axis::Time { unit: TimeUnit::MAnnum }, 0.0..2.0),
             2.0..0.0,
         );
         assert_eq!(

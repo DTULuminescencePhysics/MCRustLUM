@@ -634,7 +634,7 @@ mod tests {
     fn convert_time_temperature_adds_one_second_to_duplicate_reverse_times() {
         let (times, time_advance, _min_step) = TimeTemperature::convert_time_temperature(
             vec![2.0, 1.0, 1.0, 0.0],
-            TimeUnit::MaAnnum
+            TimeUnit::MAnnum
         )
         .unwrap();
 

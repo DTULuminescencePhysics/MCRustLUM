@@ -10,7 +10,7 @@
 //! Constructors validate geometry before allocating or randomly generating
 //! site coordinates.
 use crate::numeric::{Float, TimeFloat, Numeric};
-use crate::constants::quantities::Distribution;
+use crate::quantities::Distribution;
 use crate::place_ids::{PlaceId, PlaceAvailability};
 use crate::rate_equation_inputs::{DelocalisedTransitionInputs, LocalisedTransitionInputs,};
 use crate::rate_equations::ground_excited_state_weights;

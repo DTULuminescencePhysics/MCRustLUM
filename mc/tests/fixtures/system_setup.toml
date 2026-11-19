@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: 2026 <Oliver A. Bramley; Technical University of Denmark>
+#
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[shared_settings]
+experiment_list = ["small"]
+cube = "small"
+time_temperature = "constant"
+transitions = "disabled"
+
+[small]
+filling = "small"
+band = "small"
+trap_types = ["single"]
+total_traps = 8
+
+[cubes.small]
+unit_cell_height = {value = 0.1, unit = "nano metre"}
+unit_cell_width = {value = 0.1, unit = "nano metre"}
+unit_cell_length = {value = 0.1, unit = "nano metre"}
+cube_height = {value = 2.0, unit = "nano metre"}
+cube_width = {value = 2.0, unit = "nano metre"}
+cube_length = {value = 2.0, unit = "nano metre"}
+hole_count = 1
+bandtail_count = 0
+periodic = false
+
+[time_temperature.constant]
+times = {value = [0.0, 1.0], unit = "second"}
+temperatures = {value = [298.15, 298.15], unit = "kelvin"}
+
+# Values use the runtime spatial unit (nanometres); parse_experiments
+# preserves values without applying the normalization in read_inputs.
+[traps.single]
+density = {value = 1.0, unit = "1 / nano metre cube"}
+initial_fill = {value = 0.25, unit = ""}
+initial_holes = {value = 0.0, unit = ""}
+ground_to_excited_state_energy = {value = 1.45, unit = "ev"}
+ground_to_conduction_band_energy = {value = 2.0, unit = "ev"}
+s_ground_to_excited_frequency = {value = 9.0e10, unit = "1 / second"}
+s_excited_to_ground_frequency = {value = 9.0e10, unit = "1 / second"}
+b_ground_state_to_hole_frequency = {value = 3.0e15, unit = "1 / second"}
+b_excited_state_to_hole_frequency = {value = 3.0e15, unit = "1 / second"}
+alpha_ground_state_barrier_constant = {value = 1600.0, unit = "1 / nano metre"}
+alpha_excited_state_barrier_constant = {value = 1.6, unit = "1 / nano metre"}
+s_ground_state_to_conduction_band_frequency = {value = 2.4e10, unit = "1 / second"}
+s_excited_state_to_conduction_band_frequency = {value = 2.4e10, unit = "1 / second"}
+
+[filling.small]
+d0 = {value = 1600.0, unit = "Gy"}
+d_dot = {value = 4.0, unit = "Gy / second"}
+
+[bands.small]
+conduction_band_hole_to_trap_preference = {value = 1.0e6, unit = ""}
+valence_band_hole_to_trap_preference = {value = 5.0e6, unit = ""}
+mu_conduction_band_distance = {value = 0.1, unit = "nano metre"}
+mu_valence_band_distance = {value = 0.1, unit = "nano metre"}
+
+[transitions.disabled]
+ground_state_tunnelling = false
+excited_state_tunnelling = false
+vrh = false
+ground_state_to_conduction_band = false
+excited_state_to_conduction_band = false
+filling = false
+conduction_band_retrapping = false
+ground_state_tunnelling_retrapping = false
+excited_state_tunnelling_retrapping = false
+filling_retrapping = false
+gaussian_kernel = false

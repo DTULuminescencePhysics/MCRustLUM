@@ -8,15 +8,15 @@
 //! intervals. Walk generation inserts/removes points or perturbs coordinates.
 //! Proposal generation is separate from physical simulation and statistical acceptance.
 
-
+use rand::Rng;
 
 use common::constants::time::TimeUnit;
 use common::numeric::{Float, Numeric, TimeFloat};
-use common::time_temperature::TimeTemperature;
-use common::random::{generate_half_closed_random, generate_half_open_random, generate_normal_random, generate_open_random, generate_weighted_index_random};
+use common::random::{generate_half_closed_random, generate_half_open_random, 
+    generate_normal_random, generate_open_random, generate_weighted_index_random};
+use physics::time_temperature::TimeTemperature;
 use io::chrono_inputs::{ChronologyInputs};
 
-use rand::Rng;
 
 /// Return two numeric bounds in ascending order.
 fn ordered_pair<T: Numeric>(first: T, second: T) -> (T, T) {

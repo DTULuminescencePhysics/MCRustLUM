@@ -3,20 +3,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! Creation and per-iteration reset of Monte Carlo state.
-
-use crate::experiment::MCExperiment;
-use common::crystal::Cube;
-use common::numeric::Float;
-use common::rate_equation_selection::Transitions;
-use common::time_temperature::TimeTemperature;
-use io::inputs::{CubeDefinition, 
-    ResolvedExperiment, TimeTemperatureDefinition, TrapDefinition, BandDefinition, 
-    FillingDefinition, TransitionDefinition};
-use common::trap_hole_band_tail::{TrapGenerator, ReTrapParameterLayout};
-use common::rate_equation_inputs::FillingTransitionInputs;
 use std::path::Path;
 use rayon::prelude::*;
 // use std::sync::atomic::{AtomicUsize, Ordering};
+
+use crate::experiment::MCExperiment;
+use common::numeric::Float;
+use physics::crystal::Cube;
+use physics::rate_equation_selection::Transitions;
+use physics::time_temperature::TimeTemperature;
+use physics::trap_hole_band_tail::{TrapGenerator, ReTrapParameterLayout};
+use physics::rate_equation_inputs::FillingTransitionInputs;
+use io::inputs::{CubeDefinition, 
+    ResolvedExperiment, TimeTemperatureDefinition, TrapDefinition, BandDefinition, 
+    FillingDefinition, TransitionDefinition};
+
+
 
 /// State shared by the repetitions and experiments in one Monte Carlo run.
 ///
@@ -424,7 +426,7 @@ impl MonteCarloSimulation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::rate_equation_selection::{
+    use physics::rate_equation_selection::{
         DelocalisedRateEquation, DelocalisedRateEquationType, FillingRateEquation,
         LocalisedRateEquation,
     };
@@ -447,36 +449,12 @@ mod tests {
 
     /// Construct a small resolved experiment fixture for fast simulation setup tests.
     fn small_inputs() -> Vec<ResolvedExperiment> {
-        let fixture = include_str!("../../input.toml")
-            .replace("ma_annum", "ma annum")
-            .replace("unit = \"Gy\"", "unit = \"\"")
-            .replace("unit = \"Gy / k_annum\"", "unit = \"\"");
-        let mut inputs = io::inputs::parse_experiments(
-            &fixture,
+        // Keep runtime tests independent of edits to the user-facing input.toml.
+        io::inputs::parse_experiments(
+            include_str!("../tests/fixtures/system_setup.toml"),
             1,
         )
-        .expect("the checked-in input fixture should parse");
-        let experiment = &mut inputs[0];
-        experiment.total_traps = 8;
-        experiment.cube.cube_height.value = 2.0;
-        experiment.cube.cube_width.value = 2.0;
-        experiment.cube.cube_length.value = 2.0;
-        experiment.cube.hole_count = 1;
-        experiment.cube.bandtail_count = 0;
-        experiment.cube.periodic = false;
-        experiment.traps[0].1.density.value = 1.0;
-        experiment.traps[0].1.initial_fill.value = 0.25;
-        experiment.transitions.ground_state_tunnelling = false;
-        experiment.transitions.excited_state_tunnelling = false;
-        experiment.transitions.vrh = false;
-        experiment.transitions.ground_state_to_conduction_band = false;
-        experiment.transitions.excited_state_to_conduction_band = false;
-        experiment.transitions.filling = false;
-        experiment.transitions.conduction_band_retrapping = false;
-        experiment.transitions.ground_state_tunnelling_retrapping = false;
-        experiment.transitions.excited_state_tunnelling_retrapping = false;
-        experiment.transitions.filling_retrapping = false;
-        inputs
+        .expect("the simulation setup fixture should parse")
     }
 
     #[test]

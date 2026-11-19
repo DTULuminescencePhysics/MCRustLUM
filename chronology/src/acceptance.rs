@@ -7,20 +7,21 @@
 //! Residuals are normalized by measurement uncertainties. Bayesian rules use
 //! log likelihoods; frequentist rules combine p-values. Accepted histories can
 //! be buffered into compressed batches independently of the acceptance calculation.
-
-use common::numeric::{Float, TimeFloat};
-use common::constants::temperature::TemperatureUnit;
-use common::constants::time::TimeUnit;
-use io::chrono_inputs::{ChronologyInputs};
-use io::chrono_outputs::{append_chronology_profile_to_experiment_file, 
-    create_temporary_chronology_experiment_file, 
-    write_temporary_chronology_units,
-    AcceptanceInfo, AcceptedProfile};
-use crate::profiles::{TimeTempProfile, MoveKind};
-use common::random::generate_log_open_uniform_random;
-use statrs::distribution::{ChiSquared, ContinuousCDF};
 use rand::Rng;
+use statrs::distribution::{ChiSquared, ContinuousCDF};
 use std::path::{Path, PathBuf};
+
+use crate::profiles::{TimeTempProfile, MoveKind};
+use common::numeric::{Float, TimeFloat};
+use common::constants::{temperature::TemperatureUnit, time::TimeUnit};
+use common::random::generate_log_open_uniform_random;
+use io::chrono_inputs::ChronologyInputs;
+use io::chrono_outputs::{
+    AcceptanceInfo, AcceptedProfile,
+    append_chronology_profile_to_experiment_file, 
+    create_temporary_chronology_experiment_file, 
+    write_temporary_chronology_units,};
+
 
 
 /// Likelihood state and proposal scales used by the Bayesian profile walk.

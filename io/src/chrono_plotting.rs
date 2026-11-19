@@ -3,15 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! Load a chronology profile-grid CSV and plot its weighted path heatmap.
+use plotters::{coord::Shift, prelude::*};
+use std::{path::Path, str::FromStr};
 
 use crate::errors::PlotError;
-use common::constants::temperature::TemperatureUnit;
-use common::constants::time::TimeUnit;
+use common::constants::{temperature::TemperatureUnit, time::TimeUnit};
 use common::numeric::{Float, TimeFloat};
-use plotters::coord::Shift;
-use plotters::prelude::*;
-use std::path::Path;
-use std::str::FromStr;
+
 
 /// One lower/upper weighted-quantile interval drawn around the median path.
 #[derive(Debug, Clone, PartialEq)]

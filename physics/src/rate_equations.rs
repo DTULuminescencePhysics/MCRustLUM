@@ -14,8 +14,8 @@
 //! container shapes were incompatible. Successful rate values are converted
 //! to `TimePrecision` before being returned.
 
-use crate::numeric::{Float, ElementWise, ElementWiseUnary, PrecisionInput, TimePrecision};
-use crate::constants::physical_constants::{BOLTZMANN_EV};
+use common::numeric::{Float, ElementWise, ElementWiseUnary, PrecisionInput, TimePrecision};
+use common::constants::physical_constants::{BOLTZMANN_EV};
 
 
 /// Function to calculate the exponential of the energy over KbT.

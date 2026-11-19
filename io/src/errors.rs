@@ -6,9 +6,7 @@
 
 //! Error catching for the filesystem and input and outputs
 
-use std::error::Error;
-use std::fmt;
-use std::path::PathBuf;
+use std::{error::Error, fmt, path::PathBuf};
 
 /// An error produced while preparing an experiment directory.
 #[derive(Debug)]

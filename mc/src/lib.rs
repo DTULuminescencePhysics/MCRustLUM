@@ -27,7 +27,6 @@ use std::error::Error;
 use crate::system_setup::MonteCarloSimulation;
 use crate::average::{average_fill,rolling_average_fill,average_events};
 use common::numeric::TimeFloat;
-
 use io::inputs::{read_inputs, ResolvedExperiment};
 use io::plotting::{plot_time_temperature, plot_default_continuous_results,plot_rolling_average_fill_results, plot_default_event_results};
 

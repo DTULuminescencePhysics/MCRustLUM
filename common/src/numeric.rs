@@ -19,9 +19,10 @@
 //! individual values or complete containers between them.
 
 use ndarray::{Array, Array1, ArrayBase, ArrayD, Data, Dimension, Zip};
-use crate::random::{OpenRandom, ClosedRandom, HalfOpenRandom, HalfClosedRandom};
-use rand::{Rng};
+use rand::Rng;
 use std::ops::{Add, Div, Mul, Sub};
+
+use crate::random::{OpenRandom, ClosedRandom, HalfOpenRandom, HalfClosedRandom};
 
 /// Default floating-point precision used for model parameters and state.
 pub type Float = f64;

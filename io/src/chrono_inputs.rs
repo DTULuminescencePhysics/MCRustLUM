@@ -6,12 +6,13 @@
 //!
 //! Omitted fields are filled by Serde defaults. Model constructors perform
 //! additional validation; loading alone does not establish a valid inference run.
-use crate::errors::InputError;
-use common::constants::temperature::TemperatureUnit;
-use common::constants::time::TimeUnit;
-use common::numeric::{Float, TimeFloat};
 use std::fs::read_to_string;
 use std::path::Path;
+
+use crate::errors::InputError;
+use common::constants::{temperature::TemperatureUnit, time::TimeUnit};
+use common::numeric::{Float, TimeFloat};
+
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
 #[serde(default)]

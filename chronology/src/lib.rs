@@ -25,20 +25,18 @@ pub mod burn_in;
 
 /// Construction and execution of the inference workflow.
 pub mod system_setup;
-
+/// Analyses the results
 pub mod analyse;
 
-use std::time::Instant;
+use std::{time::Instant, path::Path, error::Error};
 use crate::analyse::{build_profile_grid,plot_profile_grid_heatmap};
 use crate::profiles::TimeTempProfile;
 use crate::system_setup::ChronologyExperiment;
-use std::error::Error;
 use io::errors::PlotError;
 use io::chrono_plotting::ProfileHeatmapOptions;
 use io::inputs::{read_inputs, ResolvedExperiment};
 use io::chrono_inputs::{ChronologyInputs,read_chrono_inputs};
 use io::chrono_outputs::write_profile_grid_csv;
-use std::path::Path;
 
 /// Run profile inference from `input.toml` and `chron_input.toml` in the current directory.
 ///

@@ -7,9 +7,10 @@
 //! Convergence requires consecutive observed windows inside every target range.
 //! Birth and death corrections share scales; coordinate moves are tuned separately.
 
-use crate::{profiles::{MoveKind, RandomWalkConstructor}};
-use io::chrono_inputs::ChronologyInputs;
+use crate::profiles::{MoveKind, RandomWalkConstructor};
 use common::numeric::Float;
+use io::chrono_inputs::ChronologyInputs;
+
 
 /// Acceptance counts and consecutive stable-window count for one proposal kind.
 pub struct AcceptanceWindow {

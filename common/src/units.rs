@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2026 <Oliver A. Bramley; Technical University of Denmark>
 //
 // SPDX-License-Identifier: AGPL-3.0-only
+use serde::{Deserialize, Deserializer};
+use std::{fmt, str::FromStr};  
 
 use crate::constants::{time::TimeUnit, temperature::TemperatureUnit, physical_constants::EnergyUnit};
 use crate::constants::metric::MetricAbbrev;
-use serde::{Deserialize, Deserializer};
-use std::{fmt, str::FromStr};        
+      
 
 /// Physical dimension and, where needed, its concrete time, temperature, or energy unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

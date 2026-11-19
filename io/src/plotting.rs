@@ -9,19 +9,18 @@
 //! create filling, temperature, and event-frequency plots, while
 //! [`crate::plotting::plot_default_continuous_results`] creates a useful standard set in one call.
 
+use plotters::{coord::{Shift, types::RangedCoordf64}, prelude::*};
+use std::{fs, ops::Range, path::{Path, PathBuf}, str::FromStr};
+
 use crate::errors::PlotError;
 use crate::outputs::{AverageEventRow, ContinuousValueRow};
 use crate::inputs::TimeTemperatureDefinition;
 use common::units::Dimension;
 use common::constants::{temperature::TemperatureUnit, time::TimeUnit};
 use common::numeric::{Float, TimeFloat};
-use plotters::coord::types::RangedCoordf64;
-use plotters::coord::Shift;
-use plotters::prelude::*;
-use std::fs;
-use std::ops::Range;
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
+
+
+
 
 /// Expand a finite data extent so Plotters always receives a non-empty range.
 fn padded_range(values: impl IntoIterator<Item = Float>) -> Range<Float> {

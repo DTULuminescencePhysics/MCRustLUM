@@ -2,17 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only
 //! Convert stored time-temperature profiles into a two-dimensional occupancy grid.
-use crate::profiles::TimeTempProfile;
+use std::path::Path;
 
+use crate::profiles::TimeTempProfile;
 use common::numeric::{Float, Numeric, TimeFloat};
-use io::chrono_inputs::{GridOptions};
-use io::chrono_outputs::{read_all_chrono_batches, ProfileGrid, AcceptedProfile};
+use io::chrono_inputs::GridOptions;
+use io::chrono_outputs::{
+    read_all_chrono_batches, 
+    ProfileGrid, AcceptedProfile};
 use io::chrono_plotting::{
     plot_profile_grid_heatmap as plot_grid_heatmap, ProfileHeatmapOptions, ProfilePath,
 };
 use io::errors::PlotError;
-
-use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Ascending physical bounds used for grid clipping and cell lookup.

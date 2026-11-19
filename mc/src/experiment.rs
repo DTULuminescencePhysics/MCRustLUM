@@ -8,20 +8,21 @@
 //! occupancy partitions, temperature-profile state, and random-number stream.
 //! Trap-family parameters may vary between experiment indices while remaining
 //! uniform across all traps within one current experiment.
-
-use crate::calculate_times::{run_standard, run_final_ratio_only};
-use common::charge_transfer::RecordedEvent;
-use common::crystal::Cube;
-use common::numeric::Float;
-use common::place_ids::PlaceAvailability;
-use common::rate_equation_selection::Transitions;
-use common::time_temperature::TimeTemperature;
-use common::trap_hole_band_tail::{TrapGenerator, ElectronPlaces, TrapParameterLayout, ReTrapParameterLayout};
-use common::rate_equation_inputs::FillingTransitionInputs;
-use io::outputs::create_monte_carlo_experiment_file;
 use std::path::Path;
 use rand::rngs::StdRng;
+
+use crate::calculate_times::{run_standard, run_final_ratio_only};
+use common::numeric::Float;
+use common::place_ids::PlaceAvailability;
 use common::random::get_std_rng_for_rep;
+use physics::charge_transfer::RecordedEvent;
+use physics::crystal::Cube;
+use physics::rate_equation_selection::Transitions;
+use physics::time_temperature::TimeTemperature;
+use physics::trap_hole_band_tail::{TrapGenerator, ElectronPlaces, TrapParameterLayout, ReTrapParameterLayout};
+use physics::rate_equation_inputs::FillingTransitionInputs;
+use io::outputs::create_monte_carlo_experiment_file;
+
 
 /// Mutable state for one independently randomized Monte Carlo repetition.
 ///
@@ -237,9 +238,9 @@ impl MCExperiment {
 mod tests {
     use super::*;
     use common::constants::time::TimeUnit;
-    use common::crystal::Cube;
-    use common::rate_equation_inputs::FillingTransitionInputs;
-    use common::trap_hole_band_tail::{ReTrapParameterLayout, TrapGenerator};
+    use physics::crystal::Cube;
+    use physics::rate_equation_inputs::FillingTransitionInputs;
+    use physics::trap_hole_band_tail::{ReTrapParameterLayout, TrapGenerator};
 
     #[test]
     /// Verify that initialise uses current runtime inputs and updates filling population.

@@ -4,8 +4,8 @@
 
 //! Holds the structs that are used as inputs for the various rate equations.
 
-use crate::numeric::{ElementWise, ElementWiseUnary, Float, TimeFloat, PrecisionInput, TimePrecision};
 use crate::rate_equations::ground_excited_state_weights;
+use common::numeric::{ElementWise, ElementWiseUnary, Float, TimeFloat, PrecisionInput, TimePrecision};
 
 /// Identifies the physical pathway associated with a calculated rate.
 ///
@@ -33,7 +33,7 @@ pub enum TransitionKind {
 /// One calculated rate together with the pathway that generated it.
 ///
 /// ```
-/// use common::rate_equation_inputs::{TransitionKind, TransitionRate};
+/// use physics::rate_equation_inputs::{TransitionKind, TransitionRate};
 ///
 /// let transition = TransitionRate {
 ///     kind: TransitionKind::Filling,

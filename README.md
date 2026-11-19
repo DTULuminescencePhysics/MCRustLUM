@@ -19,7 +19,7 @@ Build the full reference, including private helpers locally:
 cargo doc --workspace --no-deps --document-private-items
 ```
 
-Open `target/doc/luminescence/index.html`, or the `common`, `io`, `mc`, and
+Open `target/doc/luminescence/index.html`, or the `common`, `physics`, `io`, `mc`, and
 `chronology` crate indexes in the same directory. Check declaration coverage with
 `python3 scripts/check_documentation.py`; run examples with
 `cargo test --workspace --doc`.
@@ -59,10 +59,11 @@ copies this file into the experiment directory before starting a run.
 
 | Crate | Purpose | Workspace Dependencies | External Dependencies |
 | --- | --- | --- | --- |
-| `common` | Crystal geometry, numerical operations, rate equations, and time-temperature profiles | — |`rand` 0.10.0, `rand_distr` 0.6.0, `ndarray` 0.17.2, `serde` 1.0 |
+| `common` | Shared structs and backend behaviour | — |`rand` 0.10.0, `rand_distr` 0.6.0, `ndarray` 0.17.2, `serde` 1.0 |
+| `phyics` | Crystal geometry, numerical operations, rate equations, and time-temperature profiles | `common` |`rand` 0.10.0,  `ndarray` 0.17.2, `serde` 1.0 |
 | `io` | Grouped simulation inputs, defaults, and TOML loading |`common` | `csv` 1.3, `flate2` 1.0, `plotters` 0.3.7, `serde` 1.0, `toml` 0.8 |
-| `mc` | Monte Carlo simulation setup and state management | `common`, `io` | `rand` 0.10.0, `serde` 1.0, `rayon` 1.12.0 |
-| `chronology` | Thermochronology simulation setup and state management | `common`, `io`, `mc` | `rand` 0.10.0, `statrs` 0.19, `serde` 1.0 |
+| `mc` | Monte Carlo simulation setup and state management | `common`, `physics` `io` | `rand` 0.10.0, `serde` 1.0, `rayon` 1.12.0 |
+| `chronology` | Thermochronology simulation setup and state management | `common`, `physics`, `io`, `mc` | `rand` 0.10.0, `statrs` 0.19, `serde` 1.0 |
 | `luminescence` | Application entry point | `common`, `io`, `mc` `chronology` | — |
 
 External dependency versions show the requirements declared in `Cargo.toml`; exact resolved versions are recorded in [`Cargo.lock`](Cargo.lock).

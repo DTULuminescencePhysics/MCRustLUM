@@ -8,21 +8,19 @@
 //! adds one bincode-encoded batch as a new gzip member.
 //! [`crate::outputs::read_all_batches`] decodes
 //! those members as a stream, keeping only the current batch in memory.
+use bincode::Options;
+use std::{fmt, fs::{File, OpenOptions},
+    io::{BufRead, BufReader, BufWriter, Write},
+    path::{Path, PathBuf}, marker::PhantomData};
+use flate2::{Compression, write::GzEncoder, bufread::MultiGzDecoder};
+use serde::{Serialize,de::DeserializeOwned};
 
 use crate::errors::{CsvOutputError, OutputError};
 use common::numeric::{Float, TimeFloat};
-use std::fmt;
-use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::marker::PhantomData;
-use std::path::{Path, PathBuf};
 
-use bincode::Options;
-use flate2::bufread::MultiGzDecoder;
-use flate2::write::GzEncoder;
-use flate2::Compression;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+
+
+
 
 /// Return the stable bincode configuration shared by the writer and reader.
 fn bincode_options() -> impl Options {

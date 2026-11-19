@@ -6,8 +6,8 @@
 //! A [`crate::crystal::Cube`] combines its boundary condition with the
 //! number of electron traps, hole recombination sites, and bandtail states.
 
-use crate::numeric::{Float, Numeric};
 use crate::trap_hole_band_tail::Coord;
+use common::numeric::{Float, Numeric};
 
 /// Distance behaviour at the faces of a simulation volume.
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -7,17 +7,18 @@
 //! A run may tune a Bayesian walker first, then evaluate production proposals
 //! and flush accepted profiles to the configured compressed output file.
 
+use rand::Rng;
+use std::path::Path;
+
 use crate::profiles::{ProfileType, TimeTempProfile,MoveKind};
 use crate::acceptance::{AcceptanceConstructor, AcceptorType};
 use crate::burn_in::BurnInApparatus;
+use common::constants::{temperature::TemperatureUnit,time::TimeUnit};
+use common::random::get_std_rng_for_rep;
 use io::chrono_inputs::ChronologyInputs;
 use io::inputs::ResolvedExperiment;
 use mc::system_setup::MonteCarloSimulation;
-use common::constants::temperature::TemperatureUnit;
-use common::constants::time::TimeUnit;
-use rand::Rng;
-use common::random::get_std_rng_for_rep;
-use std::path::Path;
+
 
 /// Profile generator, acceptance state, and forward Monte Carlo model for inference.
 ///

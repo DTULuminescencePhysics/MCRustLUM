@@ -9,14 +9,15 @@
 //! defaults; [`crate::inputs::read_inputs`] also normalizes the units needed by simulation.
 //! A [`crate::inputs::ResolvedExperiment`] contains concrete definitions in configured order.
 
+use serde::{de::DeserializeOwned, Deserialize};
+use std::{fs, path::Path};
 
 use common::constants::{metric::MetricAbbrev,  temperature::TemperatureUnit};
 use common::units::{Dimension, Unit};
 use common::quantities::Quantity;
-use serde::{de::DeserializeOwned, Deserialize};
-use std::{fs, path::Path};
-type InputResult<T> = Result<T, String>;
 
+
+type InputResult<T> = Result<T, String>;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

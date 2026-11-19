@@ -7,9 +7,7 @@
 //! The program creates a directory under `run/`, copies `input.toml` into it,
 //! and runs the simulation from that directory.
 
-use std::error::Error;
-use std::ffi::OsString;
-use std::time::Instant;
+use std::{error::Error, ffi::OsString, time::Instant};
 
 const HELP: &str = "Usage: luminescence [OPTIONS]
 

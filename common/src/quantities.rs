@@ -4,14 +4,15 @@
 
 /// Holds structs that control how values are input 
 /// and converted between different units
-    
+use serde::{Deserialize, Deserializer}; 
+use rand::Rng;
+  
 use crate::units::{Unit, UnitValue};
 use crate::random::{
     BoundedExponentialRandom, GaussianRandom,
     generate_bounded_exponential_random, generate_gaussian_random,
 };
-use serde::{Deserialize, Deserializer}; 
-use rand::Rng;
+
 
 
 /// Struct that holds input values 

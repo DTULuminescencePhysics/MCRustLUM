@@ -5,11 +5,10 @@
 //! Program-wide deterministic random number generation.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use rand::SeedableRng;
-use rand::rngs::StdRng;
-use rand_distr::{Distribution, Exp1, Normal, StandardNormal, weighted::WeightedIndex};
-use rand::distr::{Open01, OpenClosed01};
-use rand::{Rng, RngExt};
+use rand::{SeedableRng, Rng, RngExt, rngs::StdRng,
+    distr::{Open01, OpenClosed01}};
+use rand_distr::{Distribution, Exp1, 
+    Normal, StandardNormal, weighted::WeightedIndex};
 
 /// Seed used when [`set_seed`] is not called during program startup.
 pub const DEFAULT_SEED: u64 = 0;

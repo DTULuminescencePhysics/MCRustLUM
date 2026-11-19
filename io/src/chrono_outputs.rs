@@ -12,22 +12,20 @@
 //!
 //! The header and every appended batch are separate gzip members. A
 //! [`flate2::bufread::MultiGzDecoder`] exposes them as one continuous bincode stream when read.
+use bincode::Options;
+use std::{fs::{File, OpenOptions},
+    io::{BufRead, BufReader, BufWriter, Write},
+    marker::PhantomData,path::{Path, PathBuf}};
+use serde::{Serialize,Deserialize, de::DeserializeOwned};
+use flate2::{Compression,bufread::MultiGzDecoder,write::GzEncoder};
 
 use crate::errors::{CsvOutputError, OutputError};
-use common::constants::temperature::TemperatureUnit;
-use common::constants::time::TimeUnit;
+use common::constants::{temperature::TemperatureUnit, time::TimeUnit};
 use common::numeric::{Float, TimeFloat};
-use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::marker::PhantomData;
-use std::path::{Path, PathBuf};
 
-use bincode::Options;
-use flate2::bufread::MultiGzDecoder;
-use flate2::write::GzEncoder;
-use flate2::Compression;
-use serde::de::DeserializeOwned;
-use serde::{Serialize,Deserialize};
+
+
+
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

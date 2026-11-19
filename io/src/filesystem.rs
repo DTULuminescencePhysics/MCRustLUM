@@ -5,9 +5,8 @@
 //! Creation of the directory layout used by a simulation run.
 
 use crate::errors::FilesystemError;
-use std::ffi::OsStr;
-use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::{fs, ffi::OsStr, path::{Component, Path, PathBuf}};
+
 
 /// Create an error adapter that adds operation and path context to an I/O error.
 fn operation_error(

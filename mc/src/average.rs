@@ -9,19 +9,15 @@
 //! complete files, carrying each repetition's last fill forward before
 //! calculating ensemble statistics. Event trajectories are instead grouped
 //! into fixed-width bins and normalized into observed frequencies.
-
-use common::charge_transfer::{ElectronicState, Event, RecordedEvent};
+use std::{fs, path::{Path, PathBuf}, vec::IntoIter, collections::BTreeMap, cmp::Ordering};
 use common::numeric::{Float, TimeFloat};
+use physics::charge_transfer::{ElectronicState, Event, RecordedEvent};
 use io::outputs::{
     AverageEventRow, BatchReader, ContinuousValueRow,RollingAverageFillRow, read_all_batches, write_average_events_csv,
     write_continuous_values_csv, write_rolling_average_fill_csv,
 
 };
-use std::cmp::Ordering;
-use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::vec::IntoIter;
+
 
 /// Default directory containing per-repetition compressed trajectories.
 const TEMPORARY_DIRECTORY: &str = "tmp";
@@ -1002,7 +998,7 @@ fn average_events_in_configured(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::charge_transfer::Event;
+    use physics::charge_transfer::Event;
     use common::constants::time::TimeUnit;
     use common::place_ids::PlaceId;
     use io::outputs::{

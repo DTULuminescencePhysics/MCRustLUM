@@ -5,17 +5,17 @@
 //! [`crate::trap_hole_band_tail::Coord`] contains the spatial coordinates of
 //! each site that can contain an electron. These are then stored in vectors
 //! in [`crate::trap_hole_band_tail::ElectronPlaces`]
-
-
 //! Constructors validate geometry before allocating or randomly generating
 //! site coordinates.
-use crate::numeric::{Float, TimeFloat, Numeric};
-use crate::quantities::Distribution;
-use crate::place_ids::{PlaceId, PlaceAvailability};
+use rand::Rng;
 use crate::rate_equation_inputs::{DelocalisedTransitionInputs, LocalisedTransitionInputs,};
 use crate::rate_equations::ground_excited_state_weights;
-use crate::random::{generate_closed_random};
-use rand::Rng;
+
+use common::numeric::{Float, TimeFloat, Numeric};
+use common::quantities::Distribution;
+use common::place_ids::{PlaceId, PlaceAvailability};
+use common::random::{generate_closed_random};
+
 
 /// A three-dimensional site position.
 ///
@@ -1484,7 +1484,7 @@ impl ReTrapParameterLayout{
 
 #[cfg(test)]
 mod tests {
-    use crate::random;
+    use common::random;
 
 use super::*;
     /// Print labelled site coordinates for inspecting spatial test fixtures.

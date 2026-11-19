@@ -7,26 +7,29 @@
 //! At each profile state, the engine constructs every enabled microscopic
 //! pathway, samples an exponential waiting time for each independent 
 //! process, and advances to the shortest lifetime. The temperature profile's
-//! maximum step competes as an inert [`common::charge_transfer::Event::None`]
+//! maximum step competes as an inert [`physics::charge_transfer::Event::None`]
 //! candidate so rates are
 //! rebuilt whenever temperature changes by one kelvin or a control-point
 //! boundary is reached.
-
-use common::charge_transfer::{ElectronicState, Event, Candidate, ReciprocalCandidate, TimedCandidate, RecordedEvent};
-use common::charge_transfer::{delocalised_candidates, localised_recombination_candidates,localised_retrapping_candidates, 
-    filling_candidate, gaussian_kernel, find_shortest_from_summed_reciprocal_rates}; 
-use common::place_ids::{PlaceAvailability, PlaceId};
-use common::trap_hole_band_tail::{TrapParameterLayout, ReTrapParameterLayout};
-use common::crystal::Cube;
-use common::rate_equation_inputs::FillingTransitionInputs;
-use common::rate_equation_selection::Transitions;
-use common::time_temperature::TimeTemperature;
-use common::trap_hole_band_tail::{ElectronPlaces, Coord};
-
-use common::numeric::Float;
-use io::outputs::append_monte_carlo_experiment_batch_to_file;
 use rand::{Rng, RngExt};
 use std::path::Path;
+use common::place_ids::{PlaceAvailability, PlaceId};
+use common::numeric::Float;
+use physics::charge_transfer::{
+    ElectronicState, Event, 
+    Candidate, ReciprocalCandidate, 
+    TimedCandidate, RecordedEvent};
+use physics::charge_transfer::{
+    delocalised_candidates, localised_recombination_candidates,
+    localised_retrapping_candidates, filling_candidate, gaussian_kernel, 
+    find_shortest_from_summed_reciprocal_rates}; 
+use physics::trap_hole_band_tail::{ElectronPlaces, Coord, TrapParameterLayout, ReTrapParameterLayout};
+use physics::crystal::Cube;
+use physics::rate_equation_inputs::FillingTransitionInputs;
+use physics::rate_equation_selection::Transitions;
+use physics::time_temperature::TimeTemperature;
+use io::outputs::append_monte_carlo_experiment_batch_to_file;
+
 
 
 /// Sample all enabled events and update the current minimum lifetime.
@@ -35,7 +38,7 @@ use std::path::Path;
 /// available-destination pair using boundary-aware distances. Thermal release
 /// contributes two candidates per occupied trap, and filling contributes one
 /// population-level candidate.
-/// Trial [Candidate] rates are calculated from [common::charge_transfer::Candidate]
+/// Trial [Candidate] rates are calculated from [physics::charge_transfer::Candidate]
 /// These are converted to [TimedCandidate] and only retained if a shorter time is generated.
 fn build_candidates(
     places: &ElectronPlaces,
@@ -890,7 +893,7 @@ pub fn run_final_ratio_only(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::trap_hole_band_tail::{Coord, TrapParameters};
+    use physics::trap_hole_band_tail::{Coord, TrapParameters};
 
     /// Build a transition selection with the requested pathways for an event test.
     fn selected_transitions(

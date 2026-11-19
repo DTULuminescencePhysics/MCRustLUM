@@ -9,9 +9,11 @@
 //! split changes occupancy without scanning the full crystal, which is
 //! important when every Monte Carlo event updates multiple site populations.
 
-use crate::numeric::Float;
 use serde::{Deserialize, Serialize};
 use rand::{Rng, RngExt};
+
+use crate::numeric::Float;
+
 
 /// Compact zero-based identifier for a trap, hole, or band-tail site.
 ///

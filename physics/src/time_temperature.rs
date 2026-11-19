@@ -15,8 +15,8 @@
 //! run in reverse from the oldest supplied age toward zero, so their valid
 //! timesteps and timestep limits are negative.
 
-use crate::constants::time::TimeUnit;
-use crate::numeric::{TimeFloat, Float};
+use common::constants::time::TimeUnit;
+use common::numeric::{TimeFloat, Float};
 
 /// Direction and current position of a bounded time interval.
 ///
@@ -304,7 +304,7 @@ impl TimeTemperature {
     ///
     /// ```
     /// use common::constants::time::TimeUnit;
-    /// use common::time_temperature::TimeTemperature;
+    /// use physics::time_temperature::TimeTemperature;
     ///
     /// let profile = TimeTemperature::new(
     ///     vec![0.0, 60.0],

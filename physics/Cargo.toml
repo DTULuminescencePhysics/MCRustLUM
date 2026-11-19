@@ -1,0 +1,11 @@
+[package]
+name = "physics"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+common = { path = "../common" }
+rand = "0.10.0"
+serde = { version = "1", features = ["derive"] }
+ndarray = "0.17.2"

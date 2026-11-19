@@ -8,8 +8,7 @@
 //! which physical equation to evaluate and which transition pathways are active.
 //! The selection types then dispatch to the generic implementations in
 //! [`crate::rate_equations`].
-
-use crate::numeric::{Float, ElementWise, ElementWiseUnary, PrecisionInput, TimePrecision};
+use std::str::FromStr;
 use crate::rate_equations;
 use crate::rate_equation_inputs::{
     DelocalisedTransitionInputs,
@@ -19,7 +18,8 @@ use crate::rate_equation_inputs::{
     TransitionKind,
     TransitionRate,
 };
-use std::str::FromStr;
+use common::numeric::{Float, ElementWise, ElementWiseUnary, PrecisionInput, TimePrecision};
+
 
 
 /// Runtime-selectable delocalised rate equation.
@@ -725,7 +725,7 @@ mod tests {
         FillingTransitionInputs,
         LocalisedTransitionInputs,
     };
-    use crate::numeric::TimeFloat;
+    use common::numeric::TimeFloat;
 
     /// Construct scalar physical parameters for transition-selection tests.
     fn scalar_transition_inputs() -> TransitionInputs {

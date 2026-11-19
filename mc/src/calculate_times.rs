@@ -50,7 +50,7 @@ fn build_candidates(
     shortest: &mut TimedCandidate, 
 ) -> Result<(), String> {
 
-    
+
     if trap_places.available_count() > 0 {
         let (ground_weights, 
             excited_weights) = trap_parameters
@@ -98,7 +98,6 @@ fn build_candidates(
                                     .map(|hole_coord| 
                                         cube.distance(source_coord, hole_coord)),
                                 );
-                // println!("{:?}",distance);
                 let inputs = trap_parameters.get_localised_recombination(
                                                                         &ground_weight, 
                                                                         &excited_weight, 
@@ -158,12 +157,11 @@ fn build_candidates(
     match filling_inputs {
         Some(filling_inputs) => {
             filling_inputs.update_occ(trap_places.available_count());
-        
+            
             let fill = filling_candidate(
                 &transitions.filling,
                 &filling_inputs,
             )?;
-            
             shortest.find_shortest(fill, rng)?;
         },
         None => {}
@@ -187,6 +185,7 @@ fn apply_event(
     cube: &Cube,
     rng: &mut impl Rng,
 ) -> Result<Event, String> {
+
     match event {
         Event::LocalisedRecombination { source, hole, .. }
         | Event::DelocalisedRecombination { source, hole, .. } 
@@ -779,12 +778,13 @@ pub fn run_standard(
                     temperature: time_temperature.current_temperature(),
                     event: Event::None,
                 });
-   
+    
+
     while time_temperature.current_max_dt() != 0.0 {
        
         let temperature = time_temperature.current_temperature();
         let max_dt = time_temperature.current_max_dt();
-      
+
         let mut next_event = TimedCandidate { event: Event::None, time: max_dt,};
         // Contains localised, delocalised, and one aggregate filling event.
         build_candidates(
@@ -799,7 +799,6 @@ pub fn run_standard(
             rng,
             &mut next_event,
         )?;
-      
         time_temperature.advance(next_event.time);
         let applied_event = apply_event(
                     next_event.event,

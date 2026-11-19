@@ -200,7 +200,6 @@ impl Step {
             } else {
                 direction * TimeFloat::INFINITY
             };
-
             max_dt.push(section_max_dt);
         }
 
@@ -384,10 +383,9 @@ impl TimeTemperature {
         let min_step = if unit.is_ka_or_ma() {
             Self::minimum_time_step(times[0])
         } else {
-            let last = times.len()-1;
-            Self::minimum_time_step(times[last])
+            Self::minimum_time_step(times[times.len()-1])
         };
-       
+
         let time_advance = if unit.is_ka_or_ma() {
             Self::fix_duplicate_times(&mut times, -min_step);
             let end = *times

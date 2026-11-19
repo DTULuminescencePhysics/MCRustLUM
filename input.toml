@@ -6,40 +6,40 @@
 # from the corresponding structure in io/src/inputs.rs.
 
 [shared_settings]
-experiment_list = ["experiment_paper","experiment_1","experiment_2","experiment_3","experiment_4"]
-time_temperature = "paper"
-cube = "paper"
-transitions = "delocalised"
+experiment_list = ["experiment_5","experiment_1","experiment_3","experiment_4"]
+time_temperature = "i"
+cube = "cube_1"
+transitions = "all"
 
 [experiment_1]
 filling = "fill_1"
 band = "band_1"
 trap_types = ["trap_1"]
-total_traps = 200
+total_traps = 500
 
 [experiment_2]
 filling = "fill_2"
 band = "band_1"
 trap_types = ["trap_2"]
-total_traps = 200
+total_traps = 500
 
 [experiment_3]
 filling = "fill_3"
 band = "band_1"
 trap_types = ["trap_3"]
-total_traps = 200
+total_traps = 500
 
 [experiment_4]
 filling = "fill_4"
 band = "band_1"
 trap_types = ["trap_4"]
-total_traps = 200
+total_traps = 500
 
 [experiment_5]
 filling = "fill_1"
 band = "band_1"
-trap_types = ["trap_1","trap_2"]
-total_traps = 200
+trap_types = ["trap_1","trap_2","trap_3","trap_4"]
+total_traps = 500
 
 [experiment_paper]
 filling = "paper"
@@ -108,58 +108,62 @@ temperatures = {value = [0.0, 800.0], unit = "celsius"}
 ####################################################################################################################################
 
 [traps.trap_1]
-density = {value = 1.22e26, unit = "1 / metre cube" } 
+density = {value = 3.80e24, unit = "1 / metre cube" } 
 initial_fill = {value = 0.0, unit = "" } 
+initial_holes = {value = 0.0, unit = "" } 
 ground_to_excited_state_energy =  {value = 1.45, unit = "ev", distribute = false, function = {kind="gaussian", sigma=0} }
 ground_to_conduction_band_energy = {value = 2.0, unit = "ev", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_to_excited_frequency = {value = 9.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_to_ground_frequency = {value = 9.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_ground_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_excited_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
-alpha_ground_state_barrier_constant = {value = 1.1e13, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
-alpha_excited_state_barrier_constant = {value = 1.1e10, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} }
+alpha_ground_state_barrier_constant = {value = 1.6e12, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
+alpha_excited_state_barrier_constant = {value = 1.6e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_state_to_conduction_band_frequency = {value = 2.4e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_state_to_conduction_band_frequency = {value = 2.4e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 
 [traps.trap_2]
-density = {value = 3.09e21, unit = "1 / metre cube" } 
+density = {value = 3.09e24, unit = "1 / metre cube" } 
 initial_fill = {value = 0.0, unit = "" } 
+initial_holes = {value = 0.0, unit = "" } 
 ground_to_excited_state_energy =  {value = 1.45, unit = "ev", distribute = false, function = {kind="exp", rate=1.0, min=1.4, max=1.5} }
-ground_to_conduction_band_energy = {value = 2.1, unit = "ev", distribute = false, function = {kind="gaussian", sigma=0} }
+ground_to_conduction_band_energy = {value = 2.0, unit = "ev", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_to_excited_frequency = {value = 9.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_to_ground_frequency = {value = 9.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_ground_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_excited_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
-alpha_ground_state_barrier_constant = {value = 1.6e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
-alpha_excited_state_barrier_constant = {value = 1.1e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} }
+alpha_ground_state_barrier_constant = {value = 1.6e12, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
+alpha_excited_state_barrier_constant = {value = 1.6e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_state_to_conduction_band_frequency= {value = 1.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_state_to_conduction_band_frequency = {value = 1.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 
 [traps.trap_3]
-density = {value = 1.41e21, unit = "1 / metre cube" } 
+density = {value = 1.41e24, unit = "1 / metre cube" } 
 initial_fill = {value = 0.0, unit = "" } 
+initial_holes = {value = 0.0, unit = "" } 
 ground_to_excited_state_energy =  {value = 1.49, unit = "ev", distribute = false, function = {kind="exp", rate=1.0, min=1.4, max=1.5} }
-ground_to_conduction_band_energy = {value = 2.3, unit = "ev", distribute = false, function = {kind="gaussian", sigma=0} }
+ground_to_conduction_band_energy = {value = 2.0, unit = "ev", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_to_excited_frequency = {value = 9.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_to_ground_frequency = {value = 9.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_ground_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_excited_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
-alpha_ground_state_barrier_constant = {value = 1.6e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
-alpha_excited_state_barrier_constant = {value = 1.1e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} }
+alpha_ground_state_barrier_constant = {value = 1.6e12, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
+alpha_excited_state_barrier_constant = {value = 1.9e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_state_to_conduction_band_frequency= {value = 6.76e9, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_state_to_conduction_band_frequency = {value = 6.76e9, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 
 [traps.trap_4]
-density = {value = 1.32e21, unit = "1 / metre cube" } 
+density = {value = 1.32e24, unit = "1 / metre cube" } 
 initial_fill = {value = 0.0, unit = "" } 
+initial_holes = {value = 0.0, unit = "" } 
 ground_to_excited_state_energy =  {value = 1.57, unit = "ev", distribute = false, function = {kind="exp", rate=1.0, min=1.4, max=1.5} }
-ground_to_conduction_band_energy = {value = 2.6, unit = "ev", distribute = false, function = {kind="gaussian", sigma=0} }
+ground_to_conduction_band_energy = {value = 2.0, unit = "ev", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_to_excited_frequency = {value = 9.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_to_ground_frequency = {value = 9.0e10, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_ground_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_excited_state_to_hole_frequency = {value = 3e15, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
-alpha_ground_state_barrier_constant = {value = 1.6e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
-alpha_excited_state_barrier_constant = {value = 1.1e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} }
+alpha_ground_state_barrier_constant = {value = 1.6e12, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
+alpha_excited_state_barrier_constant = {value = 1.6e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_state_to_conduction_band_frequency= {value = 5.62e9, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_state_to_conduction_band_frequency = {value = 5.62e9, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 
@@ -167,13 +171,13 @@ s_excited_state_to_conduction_band_frequency = {value = 5.62e9, unit = "1 / seco
 density = {value = 5.22e25, unit = "1 / metre cube" } 
 initial_fill = {value = 1.0, unit = "" }
 initial_holes = {value = 1.0, unit = "" } 
-ground_to_excited_state_energy =  {value = 1.4, unit = "ev", distribute = false, function = {kind="gaussian", sigma=0} }
+ground_to_excited_state_energy =  {value = 1.45, unit = "ev", distribute = false, function = {kind="gaussian", sigma=0} }
 ground_to_conduction_band_energy = {value = 2.0, unit = "ev", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_to_excited_frequency = {value = 1.0e12, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_to_ground_frequency = {value = 1.0e12, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_ground_state_to_hole_frequency = {value = 1.0e12, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 b_excited_state_to_hole_frequency = {value = 1.0e12, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
-alpha_ground_state_barrier_constant = {value = 9.0e11, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
+alpha_ground_state_barrier_constant = {value = 9.0e12, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} } 
 alpha_excited_state_barrier_constant = {value = 9.0e9, unit = "1 / metre", distribute = false, function = {kind="gaussian", sigma=0} }
 s_ground_state_to_conduction_band_frequency = {value = 1.0e12, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
 s_excited_state_to_conduction_band_frequency = {value = 1.2e12, unit = "1 / second", distribute = false, function = {kind="gaussian", sigma=0} }
@@ -182,20 +186,20 @@ s_excited_state_to_conduction_band_frequency = {value = 1.2e12, unit = "1 / seco
 ####                                                          Filling                                                            ###
 ####################################################################################################################################
 [filling.fill_1]
-d0 = {value = 620.0, unit = "Gy" } 
-d_dot = {value = 7.0, unit = "Gy / ka" }
+d0 = {value = 1600.0, unit = "Gy" } 
+d_dot = {value = 4.0, unit = "Gy / ka" }
 
 [filling.fill_2]
-d0 = {value = 681.0, unit = "Gy" } 
-d_dot = {value = 7.0, unit = "Gy / ka" }
+d0 = {value = 1757.0, unit = "Gy" } 
+d_dot = {value = 4.0, unit = "Gy / ka" }
 
 [filling.fill_3]
-d0 = {value = 767.0, unit = "Gy" } 
-d_dot = {value = 7.0, unit = "Gy / ka" }
+d0 = {value = 1979, unit = "Gy" } 
+d_dot = {value = 4.0, unit = "Gy / ka" }
 
 [filling.fill_4]
-d0 = {value = 669.0, unit = "Gy" } 
-d_dot = {value = 7.0, unit = "Gy / ka" }
+d0 = {value = 1726, unit = "Gy" } 
+d_dot = {value = 4.0, unit = "Gy / ka" }
 
 [filling.paper]
 d0 = {value = 400.0, unit = "Gy" } 
